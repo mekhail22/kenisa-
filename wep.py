@@ -409,12 +409,12 @@ elif page == 7:
 elif page == 8:
     st.markdown("<h1 style='text-align: center;'>📋 سجل الافتقاد</h1>", unsafe_allow_html=True)
 
-    records = load_records1()
+    records1 = load_records1()
 
-    if len(records) == 0:
+    if len(records1) == 0:
         st.info("ℹ️ لا توجد أي سجلات حتى الآن")
     else:
-        for i, (timestamp, rec) in enumerate(records, start=1):
+        for i, (timestamp, rec) in enumerate(records1, start=1):
             st.markdown(
                 f"""
                 <div style='background-color:#f8f9fa; border:1px solid #ddd; border-radius:10px;
@@ -430,12 +430,12 @@ elif page == 8:
 elif page == 9:
     st.markdown("<h1 style='text-align: center;'>📋 سجل الغياب</h1>", unsafe_allow_html=True)
 
-    records1 = load_records2()
+    records2 = load_records2()
 
-    if len(records1) == 0:
+    if len(records2) == 0:
         st.info("ℹ️ لا توجد أي سجلات حتى الآن")
     else:
-        for i1, (timestamp1, rec1) in enumerate(records1, start=1):
+        for i1, (timestamp1, rec1) in enumerate(records2, start=1):
             st.markdown(
                 f"""
                 <div style='background-color:#f8f9fa; border:1px solid #ddd; border-radius:10px;
