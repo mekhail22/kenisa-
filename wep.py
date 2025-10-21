@@ -3,6 +3,14 @@ import requests
 from datetime import datetime
 import csv
 import os
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+if not firebase_admin._apps:
+    cred = credentials.Certificate("kenisa-67bbf-firebase-adminsdk-fbsvc-682ef5f97d.json")
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
 
 st.markdown("""
 <style>
@@ -62,45 +70,7 @@ def send_to_telegram(message):
     data = {"chat_id": CHAT_ID, "text": message}
     requests.post(url, data=data)
 
-# ====== دوال السجل الافتقاد(CSV) ======
-def save_record1(message1):
-    timestamp1 = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
-    row1 = [timestamp1, message1]
 
-    file_exists1 = os.path.isfile("records.csv1")
-    with open("records.csv1", "a", newline="", encoding="utf-8") as f1:
-        writer1 = csv.writer(f1)
-        if not file_exists1:  # أول مرة: نكتب الهيدر
-            writer1.writerow(["التاريخ", "الرسالة"])
-        writer1.writerow(row1)
-
-def load_records1():
-    if not os.path.isfile("records.csv1"):
-        return []
-    with open("records.csv1", "r", encoding="utf-8") as f:
-        reader1 = csv.reader(f)
-        next(reader1, None)  # تجاهل الهيدر
-        return list(reader1)
-    
-    # ====== دوال السجل الغياب(CSV) ======
-def save_record2(message2):
-    timestamp2 = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
-    row2 = [timestamp2, message2]
-
-    file_exists2 = os.path.isfile("records.csv2")
-    with open("records.csv2", "a", newline="", encoding="utf-8") as f2:
-        writer2 = csv.writer(f2)
-        if not file_exists2:  # أول مرة: نكتب الهيدر
-            writer2.writerow(["التاريخ", "الرسالة"])
-        writer2.writerow(row2)
-
-def load_records2():
-    if not os.path.isfile("records.csv2"):
-        return []
-    with open("records.csv2", "r", encoding="utf-8") as f:
-        reader2 = csv.reader(f)
-        next(reader2, None)  # تجاهل الهيدر
-        return list(reader2)
 
 
 # ====== إعداد الصفحة ======
@@ -341,8 +311,12 @@ elif page == 6:
                 # إرسال للتيليجرام
                 send_to_telegram(msg)
 
-                # تسجيل في CSV
-                save_record1(msg)
+
+                db.collection("efteqad").add({
+    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    "message": msg
+})
+
 
                 st.success("✅ تم إرسال الرسالة على التلجرام وتم تسجيلها")
 
@@ -389,7 +363,12 @@ elif page == 7:
                 send_to_telegram(msg)
 
                 # تسجيل في CSV
-                save_record2(msg)
+                db.collection("gheab").add({
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "message": msg
+})
+
+
 
                 st.success("✅ تم إرسال الرسالة على التلجرام وتم تسجيلها")
 
@@ -409,41 +388,54 @@ elif page == 7:
 elif page == 8:
     st.markdown("<h1 style='text-align: center;'>📋 سجل الافتقاد</h1>", unsafe_allow_html=True)
 
-    records = load_records1()
+    docs = db.collection("efteqad").stream()
+
+
+    records = []
+    for doc in docs:
+        data = doc.to_dict()
+        records.append((data.get("timestamp"), data.get("message")))
 
     if len(records) == 0:
         st.info("ℹ️ لا توجد أي سجلات حتى الآن")
     else:
         for i, (timestamp, rec) in enumerate(records, start=1):
             st.markdown(
-                f"""
-                <div style='background-color:#f8f9fa; border:1px solid #ddd; border-radius:10px;
-                            padding:15px; margin-bottom:10px;'>
-                    <h4 style='color:#2c3e50;'>📌 سجل رقم {i}</h4>
-                    <p style='font-size:14px; color:#555;'>🕒 {timestamp}</p>
-                    <p style='font-size:16px; color:#333;'>{rec}</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+            f"""
+            <div style='background-color:#f8f9fa; border:1px solid #ddd; border-radius:10px;
+                        padding:15px; margin-bottom:10px;'>
+                <h4 style='color:#2c3e50;'>📌 سجل رقم {i}</h4>
+                <p style='font-size:14px; color:#555;'>🕒 {timestamp}</p>
+                <p style='font-size:16px; color:#333;'>{rec}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 elif page == 9:
     st.markdown("<h1 style='text-align: center;'>📋 سجل الغياب</h1>", unsafe_allow_html=True)
 
-    records1 = load_records2()
+
+    docs = db.collection("gheab").stream()
+
+
+    records1 = []
+    for doc in docs:
+            data = doc.to_dict()
+            records1.append((data.get("timestamp"), data.get("message")))
 
     if len(records1) == 0:
         st.info("ℹ️ لا توجد أي سجلات حتى الآن")
     else:
         for i1, (timestamp1, rec1) in enumerate(records1, start=1):
             st.markdown(
-                f"""
-                <div style='background-color:#f8f9fa; border:1px solid #ddd; border-radius:10px;
-                            padding:15px; margin-bottom:10px;'>
-                    <h4 style='color:#2c3e50;'>📌 سجل رقم {i1}</h4>
-                    <p style='font-size:14px; color:#555;'>🕒 {timestamp1}</p>
-                    <p style='font-size:16px; color:#333;'>{rec1}</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+            f"""
+            <div style='background-color:#f8f9fa; border:1px solid #ddd; border-radius:10px;
+                        padding:15px; margin-bottom:10px;'>
+                <h4 style='color:#2c3e50;'>📌 سجل رقم {i1}</h4>
+                <p style='font-size:14px; color:#555;'>🕒 {timestamp1}</p>
+                <p style='font-size:16px; color:#333;'>{rec1}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
