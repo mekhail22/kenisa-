@@ -1,4 +1,0 @@
-streamlit
-requests
-firebase-admin
-pandas
