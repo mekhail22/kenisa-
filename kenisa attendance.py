@@ -1,624 +1,659 @@
-# app.py - نظام إدارة الغياب والافتقاد لكنيسة الشهيدة دميانه
-# نسخة آمنة - تقرأ بيانات الاعتماديات من ملف خارجي
-
-import os
-import json
+import streamlit as st
 import gspread
-from flask import Flask, render_template_string, request, jsonify
-from datetime import datetime
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import hashlib
+import uuid
+import json
+import random
+import string
+import jwt
+import secrets
 
-app = Flask(__name__)
+# ===================== الإعدادات العامة =====================
+SALT = st.secrets["sheets"]["password_salt"]
+JWT_SECRET = st.secrets["sheets"]["jwt_secret"]
+SPREADSHEET_ID = st.secrets["sheets"]["spreadsheet_id"]
+CREDENTIALS = Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"],
+    scopes=["https://www.googleapis.com/auth/spreadsheets"]
+)
 
-# ============================================
-# تحميل بيانات الاعتماديات من ملف خارجي
-# ============================================
-def load_credentials():
-    """تحميل بيانات الاعتماديات من ملف JSON"""
-    try:
-        with open('credentials.json', 'r', encoding='utf-8') as f:
-            print("✅ تم تحميل بيانات الاعتماديات من credentials.json")
-            return json.load(f)
-    except FileNotFoundError:
-        print("❌ ملف credentials.json غير موجود!")
-        print("""
-        ⚠️ يرجى:
-        1. إنشاء ملف credentials.json في نفس مجلد البرنامج
-        2. وضع بيانات Google Service Account فيه
-        
-        مثال لشكل الملف:
-        {
-            "type": "service_account",
-            "project_id": "your-project",
-            "private_key_id": "your-key-id",
-            "private_key": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
-            "client_email": "your-email@project.iam.gserviceaccount.com",
-            "client_id": "your-client-id"
-        }
-        """)
-        return None
-    except Exception as e:
-        print(f"❌ خطأ في تحميل الملف: {e}")
-        return None
-
-# تحميل بيانات الاعتماديات
-SERVICE_ACCOUNT_INFO = load_credentials()
-
-if not SERVICE_ACCOUNT_INFO:
-    print("❌ لا يمكن تشغيل البرنامج بدون بيانات الاعتماديات!")
-    exit(1)
-
-# رابط الشيت
-SHEET_NAME = "كنيسة الشهيدة دميانه - نظام المتابعة"
-
-# ============================================
-# دوال التعامل مع Google Sheets
-# ============================================
-def get_sheets_client():
-    """تهيئة العميل للاتصال مع Google Sheets"""
-    try:
-        scope = ["https://spreadsheets.google.com/feeds", 
-                 "https://www.googleapis.com/auth/drive",
-                 "https://www.googleapis.com/auth/spreadsheets"]
-        
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(SERVICE_ACCOUNT_INFO, scope)
-        client = gspread.authorize(creds)
-        print("✅ تم الاتصال بـ Google Sheets بنجاح")
-        return client
-    except Exception as e:
-        print(f"❌ خطأ في الاتصال: {e}")
-        return None
-
-def init_sheets():
-    """تهيئة الشيتات إذا لم تكن موجودة"""
-    client = get_sheets_client()
-    if not client:
-        return False
-    
-    try:
-        try:
-            sh = client.open(SHEET_NAME)
-            print(f"✅ تم فتح الشيت الموجود: {SHEET_NAME}")
-        except:
-            sh = client.create(SHEET_NAME)
-            print(f"✅ تم إنشاء شيت جديد: {SHEET_NAME}")
-        
-        # تعريف الأوراق المطلوبة
-        worksheets_needed = {
-            'الفصول': ['الفصل', 'مسؤول الفصل', 'المساعد', 'عدد الأعضاء', 'الشعب'],
-            'الأعضاء': ['الاسم', 'الفصل', 'الشعبة', 'دور الخدمة', 'التليفون', 'العنوان', 'ملاحظات'],
-            'الغياب': ['التاريخ', 'الاسم', 'الفصل', 'سبب الغياب', 'تم التواصل', 'ملاحظات'],
-            'الافتقاد': ['التاريخ', 'الاسم', 'الفصل', 'نوع الزيارة', 'الحالة', 'تقرير الزيارة']
-        }
-        
-        for sheet_name, headers in worksheets_needed.items():
-            try:
-                worksheet = sh.worksheet(sheet_name)
-                print(f"✅ الورقة موجودة: {sheet_name}")
-            except:
-                worksheet = sh.add_worksheet(title=sheet_name, rows=100, cols=20)
-                worksheet.append_row(headers)
-                print(f"✅ تم إنشاء ورقة جديدة: {sheet_name}")
-                
-                if sheet_name == 'الفصول':
-                    default_classes = [
-                        ['الفصل الأول', 'أمينة الخدمة - ماري', 'مساعدة', 10, 'A,B,C'],
-                        ['الفصل الثاني', 'أمينة الخدمة - سارة', 'مساعدة', 10, 'A,B,C'],
-                        ['الفصل الثالث', 'أمينة الخدمة - ريتا', 'مساعدة', 10, 'A,B,C'],
-                        ['الفصل الرابع', 'أمينة الخدمة - فيفيان', 'مساعدة', 10, 'A,B,C']
-                    ]
-                    for class_data in default_classes:
-                        worksheet.append_row(class_data)
-                
-                if sheet_name == 'الأعضاء':
-                    for class_num in range(1, 5):
-                        for member_num in range(1, 11):
-                            worksheet.append_row([
-                                f"عضو {member_num} فصل {class_num}",
-                                f"الفصل {class_num}",
-                                chr(64 + (member_num % 3 + 1)),
-                                ['خادم', 'مرتل', 'شماس'][member_num % 3],
-                                f"0123456789{member_num}",
-                                "عنوان العضو",
-                                ""
-                            ])
-        return True
-    except Exception as e:
-        print(f"❌ خطأ في تهيئة الشيتات: {e}")
-        return False
-
-def get_worksheet(sheet_name):
-    """الحصول على ورقة عمل معينة"""
-    try:
-        client = get_sheets_client()
-        if not client:
-            return None
-        sh = client.open(SHEET_NAME)
-        return sh.worksheet(sheet_name)
-    except Exception as e:
-        print(f"خطأ في جلب الورقة {sheet_name}: {e}")
-        return None
-
-def get_all_records(sheet_name):
-    """جلب كل السجلات من ورقة معينة"""
-    try:
-        worksheet = get_worksheet(sheet_name)
-        if worksheet:
-            return worksheet.get_all_records()
-        return []
-    except Exception as e:
-        print(f"خطأ في جلب السجلات من {sheet_name}: {e}")
-        return []
-
-def add_record(sheet_name, data):
-    """إضافة سجل جديد إلى ورقة معينة"""
-    try:
-        worksheet = get_worksheet(sheet_name)
-        if worksheet:
-            worksheet.append_row(data)
-            return True
-        return False
-    except Exception as e:
-        print(f"خطأ في إضافة السجل إلى {sheet_name}: {e}")
-        return False
-
-# ============================================
-# صفحات API
-# ============================================
-@app.route('/')
-def index():
-    """الصفحة الرئيسية"""
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/api/classes')
-def get_classes():
-    records = get_all_records('الفصول')
-    return jsonify(records)
-
-@app.route('/api/members')
-def get_members():
-    records = get_all_records('الأعضاء')
-    class_name = request.args.get('class', '')
-    if class_name:
-        records = [r for r in records if r.get('الفصل') == class_name]
-    return jsonify(records)
-
-@app.route('/api/absence')
-def get_absence():
-    records = get_all_records('الغياب')
-    date = request.args.get('date', '')
-    if date:
-        records = [r for r in records if r.get('التاريخ') == date]
-    return jsonify(records)
-
-@app.route('/api/followup')
-def get_followup():
-    records = get_all_records('الافتقاد')
-    status = request.args.get('status', '')
-    if status:
-        records = [r for r in records if r.get('الحالة') == status]
-    return jsonify(records)
-
-@app.route('/api/add_absence', methods=['POST'])
-def add_absence():
-    try:
-        data = request.json
-        success = add_record('الغياب', [
-            data.get('date', ''),
-            data.get('name', ''),
-            data.get('class', ''),
-            data.get('reason', ''),
-            data.get('contacted', 'لا'),
-            data.get('notes', '')
-        ])
-        return jsonify({'success': success, 'message': 'تم التسجيل بنجاح' if success else 'فشل التسجيل'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/add_followup', methods=['POST'])
-def add_followup():
-    try:
-        data = request.json
-        success = add_record('الافتقاد', [
-            data.get('date', ''),
-            data.get('name', ''),
-            data.get('class', ''),
-            data.get('visit_type', 'منزلية'),
-            data.get('status', 'معلق'),
-            data.get('report', '')
-        ])
-        return jsonify({'success': success, 'message': 'تم التسجيل بنجاح' if success else 'فشل التسجيل'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/stats')
-def get_stats():
-    members = get_all_records('الأعضاء')
-    absences = get_all_records('الغياب')
-    followups = get_all_records('الافتقاد')
-    
-    classes_stats = {}
-    for member in members:
-        class_name = member.get('الفصل', '')
-        if class_name:
-            if class_name not in classes_stats:
-                classes_stats[class_name] = {'total': 0, 'absence_today': 0, 'followup_pending': 0}
-            classes_stats[class_name]['total'] += 1
-    
-    today = datetime.now().strftime('%Y-%m-%d')
-    for absence in absences:
-        if absence.get('التاريخ') == today:
-            class_name = absence.get('الفصل', '')
-            if class_name in classes_stats:
-                classes_stats[class_name]['absence_today'] += 1
-    
-    for followup in followups:
-        if followup.get('الحالة') == 'معلق':
-            class_name = followup.get('الفصل', '')
-            if class_name in classes_stats:
-                classes_stats[class_name]['followup_pending'] += 1
-    
-    return jsonify({
-        'total_members': len(members),
-        'total_absence': len(absences),
-        'total_followup': len(followups),
-        'classes_stats': classes_stats
-    })
-
-# ============================================
-# قالب HTML
-# ============================================
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>كنيسة الشهيدة دميانه - نظام المتابعة</title>
+# ===================== النمط العام للـ CSS =====================
+def inject_css():
+    st.markdown("""
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+
+        * {
+            font-family: 'Cairo', sans-serif;
+        }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
-            min-height: 100vh;
-            padding: 20px;
+            direction: rtl;
+            text-align: right;
         }
-        .container { max-width: 1400px; margin: 0 auto; }
-        .header {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 30px;
-            border-radius: 20px;
-            margin-bottom: 30px;
+
+        .stApp {
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%);
+        }
+
+        .css-18e3th9 {
+            padding-top: 2rem;
+        }
+
+        .stSidebar {
+            background-color: #f8f9fa;
+            border-left: 1px solid #dee2e6;
+        }
+
+        .main-header {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #2c3e50;
             text-align: center;
-            border: 3px solid gold;
-        }
-        .header h1 { color: #8B0000; font-size: 2.5em; }
-        .header h2 { color: #4a148c; font-size: 1.8em; }
-        .classes-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        .class-card {
+            margin-bottom: 2rem;
+            padding: 1rem;
             background: white;
             border-radius: 15px;
-            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            margin-bottom: 1rem;
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.2rem;
             text-align: center;
-            border-right: 8px solid gold;
-            cursor: pointer;
-            transition: transform 0.3s;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         }
-        .class-card:hover { transform: translateY(-5px); }
-        .class-card h3 { color: #8B0000; font-size: 1.8em; margin-bottom: 10px; }
-        .tabs {
-            display: flex;
-            gap: 10px;
-            margin: 30px 0;
-            flex-wrap: wrap;
-            justify-content: center;
+        .stat-card .value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin: 0.5rem 0;
         }
-        .tab-btn {
-            padding: 15px 30px;
-            border: none;
-            border-radius: 30px;
-            background: white;
-            color: #8B0000;
-            border: 2px solid gold;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 1.1em;
+        .stat-card .label {
+            font-size: 1rem;
+            color: #7f8c8d;
         }
-        .tab-btn.active { background: #8B0000; color: gold; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .form-container {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin: 20px 0;
-        }
-        .form-group { margin-bottom: 20px; }
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #8B0000;
-            font-weight: bold;
-        }
-        .form-group input, .form-group select, .form-group textarea {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-size: 1em;
-        }
-        .btn {
-            background: #8B0000;
-            color: gold;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 30px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 1.1em;
-        }
-        .btn:hover { background: gold; color: #8B0000; }
-        .table-container {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            overflow-x: auto;
-        }
-        table { width: 100%; border-collapse: collapse; }
-        th { background: #8B0000; color: gold; padding: 15px; }
-        td { padding: 12px; border-bottom: 1px solid #eee; text-align: center; }
-        .footer { text-align: center; margin-top: 50px; color: white; padding: 20px; }
-        .quick-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
-        }
-        .quick-stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 15px;
-            text-align: center;
-            border: 2px solid gold;
-        }
-        .quick-stat-card .big-number { font-size: 2.5em; font-weight: bold; color: #4a148c; }
-        .success-message {
-            background: #4CAF50;
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 10px 0;
-            text-align: center;
-            display: none;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-primary:hover {
+            transform: scale(1.02);
+            box-shadow: 0 5px 15px rgba(102,126,234,0.4);
+        }
+
+        /* RTL fix for Streamlit elements */
+        .stRadio > div, .stSelectbox > div, .stMultiSelect > div {
+            direction: rtl;
+        }
+        .stMarkdown {
+            text-align: right;
         }
     </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>✝ كنيسة الشهيدة دميانه ✝</h1>
-            <h2>نظام إدارة الغياب والافتقاد</h2>
-            <p>4 فصول - كل فصل 10 أفراد - مع مسؤول لكل فصل</p>
-        </div>
-        
-        <div id="classesContainer" class="classes-grid"></div>
-        
-        <div class="tabs">
-            <button class="tab-btn active" onclick="showTab('absence')">تسجيل غياب</button>
-            <button class="tab-btn" onclick="showTab('followup')">تسجيل افتقاد</button>
-            <button class="tab-btn" onclick="showTab('reports')">تقارير</button>
-            <button class="tab-btn" onclick="showTab('members')">الأعضاء</button>
-        </div>
-        
-        <div id="successMessage" class="success-message"></div>
-        
-        <div id="absence" class="tab-content active">
-            <div class="quick-stats">
-                <div class="quick-stat-card"><h4>غياب اليوم</h4><div class="big-number" id="todayAbsence">0</div></div>
-                <div class="quick-stat-card"><h4>إجمالي الغياب</h4><div class="big-number" id="totalAbsence">0</div></div>
-            </div>
-            <div class="form-container">
-                <h3>✝ تسجيل حالة غياب جديدة</h3>
-                <form id="absenceForm">
-                    <div class="form-group"><label>الفصل</label><select id="absenceClass" required></select></div>
-                    <div class="form-group"><label>الاسم</label><select id="absenceName" required></select></div>
-                    <div class="form-group"><label>تاريخ الغياب</label><input type="date" id="absenceDate" required></div>
-                    <div class="form-group"><label>سبب الغياب</label><input type="text" id="absenceReason" required></div>
-                    <button type="submit" class="btn">تسجيل الغياب</button>
-                </form>
-            </div>
-            <div class="table-container">
-                <h3>سجل الغياب</h3>
-                <table id="absenceTable"><thead><tr><th>التاريخ</th><th>الاسم</th><th>الفصل</th><th>السبب</th></tr></thead><tbody></tbody></table>
-            </div>
-        </div>
-        
-        <div id="followup" class="tab-content">
-            <div class="quick-stats">
-                <div class="quick-stat-card"><h4>افتقاد معلق</h4><div class="big-number" id="pendingFollowup">0</div></div>
-                <div class="quick-stat-card"><h4>إجمالي الافتقاد</h4><div class="big-number" id="totalFollowup">0</div></div>
-            </div>
-            <div class="form-container">
-                <h3>✝ تسجيل افتقاد جديد</h3>
-                <form id="followupForm">
-                    <div class="form-group"><label>الفصل</label><select id="followupClass" required></select></div>
-                    <div class="form-group"><label>الاسم</label><select id="followupName" required></select></div>
-                    <div class="form-group"><label>تاريخ الزيارة</label><input type="date" id="followupDate" required></div>
-                    <div class="form-group"><label>نوع الزيارة</label><select id="visitType"><option value="منزلية">منزلية</option><option value="هاتفية">هاتفية</option></select></div>
-                    <button type="submit" class="btn">تسجيل الافتقاد</button>
-                </form>
-            </div>
-            <div class="table-container">
-                <h3>سجل الافتقاد</h3>
-                <table id="followupTable"><thead><tr><th>التاريخ</th><th>الاسم</th><th>الفصل</th><th>النوع</th></tr></thead><tbody></tbody></table>
-            </div>
-        </div>
-        
-        <div id="reports" class="tab-content">
-            <div class="table-container">
-                <h3>إحصائيات الفصول</h3>
-                <table id="statsTable"><thead><tr><th>الفصل</th><th>المسؤول</th><th>عدد الأعضاء</th><th>غياب اليوم</th></tr></thead><tbody></tbody></table>
-            </div>
-        </div>
-        
-        <div id="members" class="tab-content">
-            <div class="table-container">
-                <h3>أعضاء الخدمة</h3>
-                <table id="membersTable"><thead><tr><th>الاسم</th><th>الفصل</th><th>دور الخدمة</th><th>التليفون</th></tr></thead><tbody></tbody></table>
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p>✝ كنيسة الشهيدة دميانه - جميع الحقوق محفوظة © 2024 ✝</p>
-        </div>
-    </div>
-    
-    <script>
-        let classes = [], members = [];
-        function showMessage(msg, isSuccess = true) {
-            const msgDiv = document.getElementById('successMessage');
-            msgDiv.style.display = 'block';
-            msgDiv.textContent = msg;
-            msgDiv.style.background = isSuccess ? '#4CAF50' : '#f44336';
-            setTimeout(() => { msgDiv.style.display = 'none'; }, 3000);
-        }
-        async function fetchData() {
-            try {
-                const classesRes = await fetch('/api/classes');
-                classes = await classesRes.json();
-                const membersRes = await fetch('/api/members');
-                members = await membersRes.json();
-                const statsRes = await fetch('/api/stats');
-                const stats = await statsRes.json();
-                const absenceRes = await fetch('/api/absence');
-                const followupRes = await fetch('/api/followup');
-                displayClasses(classes, stats.classes_stats || {});
-                updateClassDropdowns();
-                displayAbsences(await absenceRes.json());
-                displayFollowups(await followupRes.json());
-                displayMembers(members);
-                displayStats(classes, stats.classes_stats || {});
-                document.getElementById('todayAbsence').textContent = stats.total_absence || 0;
-                document.getElementById('totalAbsence').textContent = stats.total_absence || 0;
-                document.getElementById('pendingFollowup').textContent = stats.total_followup || 0;
-                document.getElementById('totalFollowup').textContent = stats.total_followup || 0;
-            } catch(e) { console.error(e); showMessage('خطأ في الاتصال', false); }
-        }
-        function displayClasses(classesList, stats) {
-            const container = document.getElementById('classesContainer');
-            container.innerHTML = classesList.map(c => {
-                const s = stats[c['الفصل']] || { total: 10, absence_today: 0 };
-                return `<div class="class-card" onclick="selectClass('${c['الفصل']}')">
-                    <h3>${c['الفصل']}</h3>
-                    <div>مسؤول: ${c['مسؤول الفصل'] || 'أمينة الخدمة'}</div>
-                    <div>أعضاء: ${s.total} | غياب اليوم: ${s.absence_today}</div>
-                </div>`;
-            }).join('');
-        }
-        function selectClass(className) {
-            document.getElementById('absenceClass').value = className;
-            document.getElementById('followupClass').value = className;
-            updateNamesByClass('absenceClass', 'absenceName');
-            updateNamesByClass('followupClass', 'followupName');
-        }
-        function updateClassDropdowns() {
-            const options = classes.map(c => `<option value="${c['الفصل']}">${c['الفصل']}</option>`).join('');
-            document.getElementById('absenceClass').innerHTML = '<option value="">اختر الفصل</option>' + options;
-            document.getElementById('followupClass').innerHTML = '<option value="">اختر الفصل</option>' + options;
-        }
-        function updateNamesByClass(classId, targetId) {
-            const selectedClass = document.getElementById(classId).value;
-            const classMembers = members.filter(m => m['الفصل'] === selectedClass);
-            const names = classMembers.length ? classMembers.map(m => m['الاسم']) : ['بيتر جرجس', 'ماريا رفعت', 'يوسف ملاك', 'مريم سامي', 'كيرلس نصيف'];
-            document.getElementById(targetId).innerHTML = '<option value="">اختر الاسم</option>' + names.map(n => `<option value="${n}">${n}</option>`).join('');
-        }
-        function displayAbsences(absences) {
-            const tbody = document.querySelector('#absenceTable tbody');
-            tbody.innerHTML = absences.map(a => `<tr><td>${a['التاريخ'] || ''}</td><td>${a['الاسم'] || ''}</td><td>${a['الفصل'] || ''}</td><td>${a['سبب الغياب'] || ''}</td></tr>`).join('');
-        }
-        function displayFollowups(followups) {
-            const tbody = document.querySelector('#followupTable tbody');
-            tbody.innerHTML = followups.map(f => `<tr><td>${f['التاريخ'] || ''}</td><td>${f['الاسم'] || ''}</td><td>${f['الفصل'] || ''}</td><td>${f['نوع الزيارة'] || ''}</td></tr>`).join('');
-        }
-        function displayMembers(membersList) {
-            const tbody = document.querySelector('#membersTable tbody');
-            tbody.innerHTML = membersList.map(m => `<tr><td>${m['الاسم'] || ''}</td><td>${m['الفصل'] || ''}</td><td>${m['دور الخدمة'] || ''}</td><td>${m['التليفون'] || ''}</td></tr>`).join('');
-        }
-        function displayStats(classesList, stats) {
-            const tbody = document.querySelector('#statsTable tbody');
-            tbody.innerHTML = classesList.map(c => {
-                const s = stats[c['الفصل']] || { total: 10, absence_today: 0 };
-                return `<tr><td>${c['الفصل']}</td><td>${c['مسؤول الفصل'] || 'أمينة الخدمة'}</td><td>${s.total}</td><td>${s.absence_today}</td></tr>`;
-            }).join('');
-        }
-        function showTab(tabName) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            document.getElementById(tabName).classList.add('active');
-        }
-        document.getElementById('absenceForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = {
-                date: document.getElementById('absenceDate').value,
-                name: document.getElementById('absenceName').value,
-                class: document.getElementById('absenceClass').value,
-                reason: document.getElementById('absenceReason').value,
-                contacted: 'لا', notes: ''
-            };
-            const res = await fetch('/api/add_absence', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
-            const result = await res.json();
-            showMessage(result.message, result.success);
-            if(result.success) fetchData();
-        });
-        document.getElementById('followupForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = {
-                date: document.getElementById('followupDate').value,
-                name: document.getElementById('followupName').value,
-                class: document.getElementById('followupClass').value,
-                visit_type: document.getElementById('visitType').value,
-                status: 'معلق', report: ''
-            };
-            const res = await fetch('/api/add_followup', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
-            const result = await res.json();
-            showMessage(result.message, result.success);
-            if(result.success) fetchData();
-        });
-        document.getElementById('absenceClass').addEventListener('change', () => updateNamesByClass('absenceClass', 'absenceName'));
-        document.getElementById('followupClass').addEventListener('change', () => updateNamesByClass('followupClass', 'followupName'));
-        document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('absenceDate').value = new Date().toISOString().split('T')[0];
-            document.getElementById('followupDate').value = new Date().toISOString().split('T')[0];
-            fetchData();
-        });
-    </script>
-</body>
-</html>
-"""
+    """, unsafe_allow_html=True)
 
-# ============================================
-# تشغيل التطبيق
-# ============================================
-if __name__ == '__main__':
-    print("""
-    ═══════════════════════════════════════════
-    ✝ كنيسة الشهيدة دميانه ✝
-    نظام إدارة الغياب والافتقاد
-    ═══════════════════════════════════════════
-    """)
-    
-    if init_sheets():
-        print("""
-    ✅ تم الاتصال بـ Google Sheets بنجاح
-    🌐 شغل المتصفح على: http://localhost:5000
-    """)
+# ===================== قاعدة البيانات عبر Google Sheets =====================
+class Database:
+    def __init__(self):
+        self.client = gspread.authorize(CREDENTIALS)
+        self.spreadsheet = self.client.open_by_key(SPREADSHEET_ID)
+
+    def get_or_create_worksheet(self, name, columns):
+        """إرجاع ورقة العمل وإنشائها مع الأعمدة إن لم تكن موجودة."""
+        try:
+            ws = self.spreadsheet.worksheet(name)
+        except gspread.WorksheetNotFound:
+            ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=len(columns))
+            ws.append_row(columns)
+        return ws
+
+    def _sheet_to_df(self, sheet_name):
+        ws = self.get_or_create_worksheet(sheet_name, [])
+        data = ws.get_all_records()
+        return pd.DataFrame(data)
+
+    def _df_to_sheet(self, sheet_name, df, columns):
+        ws = self.get_or_create_worksheet(sheet_name, columns)
+        ws.clear()
+        ws.update([columns] + df.values.tolist())
+
+    # ---------- جداول المستخدمين ----------
+    def get_users(self):
+        return self._sheet_to_df("Users")
+
+    def add_user(self, user_data: dict):
+        df = self.get_users()
+        df = pd.concat([df, pd.DataFrame([user_data])], ignore_index=True)
+        self._df_to_sheet("Users", df, ["user_id", "username", "password_hash", "role", "full_name", "section_id"])
+
+    def update_user(self, user_id, updates):
+        df = self.get_users()
+        idx = df[df.user_id == user_id].index
+        if len(idx) > 0:
+            for k, v in updates.items():
+                df.at[idx[0], k] = v
+            self._df_to_sheet("Users", df, df.columns.tolist())
+
+    def delete_user(self, user_id):
+        df = self.get_users()
+        df = df[df.user_id != user_id]
+        self._df_to_sheet("Users", df, df.columns.tolist())
+
+    # ---------- الأقسام ----------
+    def get_sections(self):
+        return self._sheet_to_df("Sections")
+
+    def add_section(self, sec_data: dict):
+        df = self.get_sections()
+        df = pd.concat([df, pd.DataFrame([sec_data])], ignore_index=True)
+        self._df_to_sheet("Sections", df, ["section_id", "section_name", "manager_user_id"])
+
+    # ---------- الطالبات ----------
+    def get_students(self):
+        return self._sheet_to_df("Students")
+
+    def add_student(self, student_data: dict):
+        df = self.get_students()
+        df = pd.concat([df, pd.DataFrame([student_data])], ignore_index=True)
+        self._df_to_sheet("Students", df, ["student_id", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "status"])
+
+    def update_student(self, student_id, updates):
+        df = self.get_students()
+        idx = df[df.student_id == student_id].index
+        if len(idx) > 0:
+            for k, v in updates.items():
+                df.at[idx[0], k] = v
+            self._df_to_sheet("Students", df, df.columns.tolist())
+
+    def delete_student(self, student_id):
+        df = self.get_students()
+        df = df[df.student_id != student_id]
+        self._df_to_sheet("Students", df, df.columns.tolist())
+
+    # ---------- الحضور ----------
+    def get_attendance(self):
+        return self._sheet_to_df("Attendance")
+
+    def add_attendance_record(self, record: dict):
+        df = self.get_attendance()
+        df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
+        self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+
+    # ---------- الافتقاد ----------
+    def get_followup(self):
+        return self._sheet_to_df("FollowUp")
+
+    def add_followup_record(self, record: dict):
+        df = self.get_followup()
+        df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
+        self._df_to_sheet("FollowUp", df, ["record_id", "student_id", "teacher_id", "followup_date", "followup_type", "notes", "regularity_status"])
+
+    # ---------- الاختبارات ----------
+    def get_quizzes(self):
+        return self._sheet_to_df("Quizzes")
+
+    def add_quiz(self, quiz_data: dict):
+        df = self.get_quizzes()
+        df = pd.concat([df, pd.DataFrame([quiz_data])], ignore_index=True)
+        self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id", "num_questions", "time_limit_minutes", "total_marks", "expiry_date", "quiz_code", "password", "is_active"])
+
+    def get_quiz_questions(self, quiz_id):
+        df = self._sheet_to_df("QuizQuestions")
+        return df[df.quiz_id == quiz_id] if not df.empty else pd.DataFrame()
+
+    def add_question(self, q_data: dict):
+        df = self._sheet_to_df("QuizQuestions")
+        df = pd.concat([df, pd.DataFrame([q_data])], ignore_index=True)
+        self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer"])
+
+    def save_quiz_result(self, result: dict):
+        df = self._sheet_to_df("QuizResults")
+        df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
+        self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name", "score", "total_marks", "submission_time", "answers"])
+
+    def get_quiz_results(self, quiz_id=None):
+        df = self._sheet_to_df("QuizResults")
+        if quiz_id:
+            df = df[df.quiz_id == quiz_id]
+        return df
+
+    # ---------- السجلات ----------
+    def add_log(self, user_id, action, details=""):
+        df = self._sheet_to_df("Logs")
+        log = {"log_id": str(uuid.uuid4()), "timestamp": datetime.now().isoformat(), "user_id": user_id, "action": action, "details": details}
+        df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
+        self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
+
+# ===================== إدارة الجلسة والصلاحيات =====================
+def hash_password(password):
+    return hashlib.sha256((password + SALT).encode()).hexdigest()
+
+def generate_token(user):
+    payload = {
+        "user_id": user["user_id"],
+        "role": user["role"],
+        "full_name": user["full_name"],
+        "exp": datetime.utcnow() + timedelta(hours=24)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+def verify_token(token):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+def check_authentication():
+    if "token" not in st.session_state:
+        return False
+    payload = verify_token(st.session_state.token)
+    if payload:
+        st.session_state.user = payload
+        return True
     else:
-        print("❌ فشل الاتصال بـ Google Sheets")
+        st.session_state.clear()
+        return False
+
+# ===================== واجهة تسجيل الدخول والطالبات =====================
+def show_login_page():
+    st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
+
+    with tab1:
+        with st.form("login_form"):
+            username = st.text_input("اسم المستخدم")
+            password = st.text_input("كلمة المرور", type="password")
+            submitted = st.form_submit_button("تسجيل الدخول", use_container_width=True)
+            if submitted:
+                db = Database()
+                users = db.get_users()
+                user_row = users[users.username == username]
+                if not user_row.empty:
+                    user = user_row.iloc[0].to_dict()
+                    if user["password_hash"] == hash_password(password):
+                        token = generate_token(user)
+                        st.session_state.token = token
+                        st.session_state.user = user
+                        st.session_state.authenticated = True
+                        db.add_log(user["user_id"], "login")
+                        st.rerun()
+                    else:
+                        st.error("كلمة المرور غير صحيحة")
+                else:
+                    st.error("المستخدم غير موجود")
+
+    with tab2:
+        st.subheader("دخول الاختبار الإلكتروني")
+        code = st.text_input("كود الاختبار")
+        passwd = st.text_input("كلمة مرور الاختبار", type="password")
+        if st.button("بدء الاختبار", key="student_quiz_btn"):
+            db = Database()
+            quizzes = db.get_quizzes()
+            quiz = quizzes[(quizzes.quiz_code == code) & (quizzes.password == passwd)]
+            if quiz.empty:
+                st.error("كود أو كلمة مرور خاطئة")
+            else:
+                quiz = quiz.iloc[0].to_dict()
+                if pd.to_datetime(quiz["expiry_date"]) < datetime.now():
+                    st.error("انتهت صلاحية الاختبار")
+                else:
+                    st.session_state.student_quiz = quiz
+                    st.session_state.student_quiz_started = True
+                    st.rerun()
+
+# ===================== صفحة حل الاختبار للطالبة =====================
+def show_student_quiz():
+    quiz = st.session_state.student_quiz
+    db = Database()
+    questions = db.get_quiz_questions(quiz["quiz_id"])
+    if questions.empty:
+        st.warning("لا توجد أسئلة في هذا الاختبار")
+        return
+
+    st.title(quiz["title"])
+    st.markdown(f"**الوقت المتبقي:** {quiz['time_limit_minutes']} دقيقة")
+    student_name = st.text_input("الاسم الثلاثي للطالبة")
+    answers = {}
+
+    for i, q in questions.iterrows():
+        q = q.to_dict()
+        st.markdown(f"**سؤال {i+1}:** {q['question_text']}")
+        q_type = q["question_type"]
+        if q_type in ["اختيار من متعدد", "صح وخطأ"]:
+            options = []
+            if q_type == "اختيار من متعدد":
+                options = [q["option1"], q["option2"], q["option3"], q["option4"]]
+            else:
+                options = ["صح", "خطأ"]
+            ans = st.radio("اختر الإجابة", options, key=f"q_{i}")
+            answers[q["question_id"]] = ans
+        else:
+            ans = st.text_input("الإجابة", key=f"q_{i}")
+            answers[q["question_id"]] = ans
+
+    if st.button("تسليم الاختبار"):
+        if not student_name.strip():
+            st.error("الرجاء إدخال الاسم")
+            return
+        # تصحيح تلقائي
+        score = 0
+        total = len(questions)
+        for _, q in questions.iterrows():
+            q = q.to_dict()
+            correct = str(q["correct_answer"]).strip()
+            user_ans = str(answers.get(q["question_id"], "")).strip()
+            if correct.lower() == user_ans.lower():
+                score += 1
+        result = {
+            "result_id": str(uuid.uuid4()),
+            "quiz_id": quiz["quiz_id"],
+            "student_id": "student_external",  # لا يوجد حساب، لذلك نضع معرف ثابت
+            "student_name": student_name,
+            "score": score,
+            "total_marks": total,
+            "submission_time": datetime.now().isoformat(),
+            "answers": json.dumps(answers, ensure_ascii=False)
+        }
+        db.save_quiz_result(result)
+        st.success(f"تم تسليم الاختبار! نتيجتك: {score}/{total}")
+        st.session_state.pop("student_quiz", None)
+        st.session_state.pop("student_quiz_started", None)
+
+# ===================== الصفحات الرئيسية بعد تسجيل الدخول =====================
+def sidebar_menu():
+    role = st.session_state.user["role"]
+    menus = {
+        "System Admin": ["🏠 لوحة التحكم", "👥 إدارة المستخدمين", "👩‍🎓 الطالبات", "👩‍🏫 المدرسات والأقسام", "📋 الحضور", "💬 الافتقاد", "📝 المسابقات والاختبارات", "📊 السجلات"],
+        "Father Account": ["🏠 لوحة التحكم", "📋 الحضور", "💬 الافتقاد", "📝 المسابقات والاختبارات"],
+        "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد", "📝 المسابقات والاختبارات"],
+        "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد"]
+    }
+    menu = menus.get(role, [])
+    if not menu:
+        st.sidebar.error("صلاحية غير معروفة")
+        return
+    choice = st.sidebar.radio("القائمة", menu)
+    return choice
+
+def show_dashboard():
+    st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
+    db = Database()
+    students = db.get_students()
+    attendance = db.get_attendance()
+    followup = db.get_followup()
+
+    # بطاقات إحصائية
+    col1, col2, col3, col4 = st.columns(4)
+    col1.markdown(f"<div class='stat-card'><div class='label'>إجمالي البنات</div><div class='value'>{len(students)}</div></div>", unsafe_allow_html=True)
+    present_today = len(attendance[(attendance.date == datetime.now().strftime("%Y-%m-%d")) & (attendance.status == "حاضر")]) if not attendance.empty else 0
+    absent_today = len(attendance[(attendance.date == datetime.now().strftime("%Y-%m-%d")) & (attendance.status == "غائب")]) if not attendance.empty else 0
+    col2.markdown(f"<div class='stat-card'><div class='label'>الحضور اليوم</div><div class='value'>{present_today}</div></div>", unsafe_allow_html=True)
+    col3.markdown(f"<div class='stat-card'><div class='label'>الغياب اليوم</div><div class='value'>{absent_today}</div></div>", unsafe_allow_html=True)
+    need_followup = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty else 0
+    col4.markdown(f"<div class='stat-card'><div class='label'>منقطعات عن المتابعة</div><div class='value'>{need_followup}</div></div>", unsafe_allow_html=True)
+
+    # رسم بياني للحضور
+    st.markdown("#### 📈 تحليل الحضور الشهري")
+    if not attendance.empty:
+        attendance["date"] = pd.to_datetime(attendance["date"])
+        monthly = attendance.groupby([attendance.date.dt.to_period("M"), "status"]).size().unstack(fill_value=0)
+        fig = px.bar(monthly, x=monthly.index.astype(str), y=monthly.columns, title="الحضور الشهري", labels={"value":"العدد", "index":"الشهر"})
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("لا توجد بيانات حضور بعد")
+
+    # قائمة البنات المحتاجات متابعة
+    st.markdown("#### 🔔 بنات بحاجة لافتقاد عاجل")
+    if not followup.empty:
+        urgent = followup[followup.regularity_status == "منقطع"].merge(students[["student_id", "full_name"]], on="student_id", how="left")
+        st.dataframe(urgent[["full_name", "followup_date", "notes"]], use_container_width=True)
+    else:
+        st.info("لا توجد متابعات حالياً")
+
+def show_admin_users():
+    st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
+    db = Database()
+    users = db.get_users()
+    st.dataframe(users, use_container_width=True)
+    with st.expander("➕ إضافة مستخدم"):
+        with st.form("add_user"):
+            username = st.text_input("اسم المستخدم")
+            full_name = st.text_input("الاسم الكامل")
+            password = st.text_input("كلمة المرور", type="password")
+            role = st.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"])
+            section = st.selectbox("القسم (للمدير الخدمة/مدرسة)", ["None"] + db.get_sections()["section_id"].tolist())
+            if st.form_submit_button("إضافة"):
+                user_data = {
+                    "user_id": str(uuid.uuid4()),
+                    "username": username,
+                    "password_hash": hash_password(password),
+                    "role": role,
+                    "full_name": full_name,
+                    "section_id": section if section != "None" else ""
+                }
+                db.add_user(user_data)
+                st.success("تم إضافة المستخدم")
+                st.rerun()
+
+def show_students_management():
+    st.markdown("<h2 class='main-header'>👩‍🎓 إدارة الطالبات</h2>", unsafe_allow_html=True)
+    db = Database()
+    students = db.get_students()
+    sections = db.get_sections()
+    teachers = db.get_users()[db.get_users().role == "Teacher"]
+
+    st.dataframe(students.merge(sections[["section_id", "section_name"]], on="section_id"), use_container_width=True)
+    with st.expander("➕ إضافة طالبة"):
+        with st.form("add_student"):
+            name = st.text_input("الاسم الكامل")
+            sec = st.selectbox("القسم", sections["section_id"])
+            teacher = st.selectbox("المدرسة المسؤولة عن الافتقاد", teachers["user_id"])
+            phone = st.text_input("رقم الهاتف")
+            parent_phone = st.text_input("رقم ولي الأمر")
+            st.form_submit_button("إضافة", on_click=lambda: db.add_student({
+                "student_id": str(uuid.uuid4()),
+                "full_name": name,
+                "section_id": sec,
+                "teacher_id": teacher,
+                "phone": phone,
+                "parent_phone": parent_phone,
+                "birthdate": "",
+                "address": "",
+                "notes": "",
+                "status": "active"
+            }))
+
+def show_attendance():
+    st.markdown("<h2 class='main-header'>📋 تسجيل الحضور</h2>", unsafe_allow_html=True)
+    db = Database()
+    students = db.get_students()
+    section = st.selectbox("القسم", db.get_sections()["section_id"])
+    date = st.date_input("التاريخ", datetime.now())
+    st.markdown("#### سجل الحضور للطالبات في هذا القسم")
+    section_students = students[students.section_id == section]
+    if section_students.empty:
+        st.warning("لا توجد طالبات في هذا القسم")
+        return
+    statuses = {}
+    for _, s in section_students.iterrows():
+        status = st.radio(f"{s['full_name']}", ["حاضر", "غائب", "متأخر"], key=s["student_id"])
+        statuses[s["student_id"]] = status
+    if st.button("حفظ الحضور"):
+        for sid, status in statuses.items():
+            record = {
+                "record_id": str(uuid.uuid4()),
+                "date": date.strftime("%Y-%m-%d"),
+                "student_id": sid,
+                "status": status,
+                "notes": "",
+                "recorded_by": st.session_state.user["user_id"],
+                "section_id": section
+            }
+            db.add_attendance_record(record)
+        st.success("تم تسجيل الحضور بنجاح")
+
+def show_followup():
+    st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
+    db = Database()
+    students = db.get_students()
+    followup = db.get_followup()
+
+    teacher_id = st.session_state.user["user_id"]
+    my_students = students[students.teacher_id == teacher_id]
+    if my_students.empty:
+        st.info("ليس لديك طالبات للمتابعة")
+        return
+
+    student = st.selectbox("اختر الطالبة", my_students["full_name"])
+    student_data = my_students[my_students.full_name == student].iloc[0].to_dict()
+    with st.form("add_followup"):
+        ftype = st.selectbox("نوع الافتقاد", ["زيارة", "اتصال", "رسالة", "لقاء شخصي"])
+        notes = st.text_area("ملاحظات")
+        regularity = st.selectbox("حالة الانتظام", ["منتظم", "متقطع", "منقطع"])
+        if st.form_submit_button("حفظ"):
+            db.add_followup_record({
+                "record_id": str(uuid.uuid4()),
+                "student_id": student_data["student_id"],
+                "teacher_id": teacher_id,
+                "followup_date": datetime.now().strftime("%Y-%m-%d"),
+                "followup_type": ftype,
+                "notes": notes,
+                "regularity_status": regularity
+            })
+            st.success("تم تسجيل الافتقاد")
+
+def show_quizzes():
+    st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
+    db = Database()
+    if st.session_state.user["role"] in ["Service Manager", "System Admin"]:
+        with st.expander("➕ إنشاء اختبار جديد"):
+            with st.form("new_quiz"):
+                title = st.text_input("عنوان الاختبار")
+                desc = st.text_area("وصف")
+                num_q = st.number_input("عدد الأسئلة", 1, 20, 5)
+                time_limit = st.number_input("الوقت بالدقائق", 1, 120, 15)
+                expiry = st.date_input("تاريخ الانتهاء", datetime.now() + timedelta(days=7))
+                if st.form_submit_button("إنشاء"):
+                    quiz_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                    password = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+                    quiz_id = str(uuid.uuid4())
+                    db.add_quiz({
+                        "quiz_id": quiz_id,
+                        "title": title,
+                        "description": desc,
+                        "created_by": st.session_state.user["user_id"],
+                        "section_id": "",
+                        "num_questions": num_q,
+                        "time_limit_minutes": time_limit,
+                        "total_marks": num_q,
+                        "expiry_date": expiry.strftime("%Y-%m-%d"),
+                        "quiz_code": quiz_code,
+                        "password": password,
+                        "is_active": "True"
+                    })
+                    st.success(f"تم إنشاء الاختبار. الكود: {quiz_code} - كلمة المرور: {password}")
+                    st.rerun()
+
+        # إدارة الأسئلة لاختبار موجود
+        quizzes = db.get_quizzes()
+        if not quizzes.empty:
+            quiz_choice = st.selectbox("اختبار لإضافة أسئلة", quizzes["quiz_id"])
+            q_df = db.get_quiz_questions(quiz_choice)
+            st.dataframe(q_df)
+            with st.form("add_question"):
+                qtext = st.text_input("نص السؤال")
+                qtype = st.selectbox("نوع السؤال", ["اختيار من متعدد", "صح وخطأ", "أكمل", "إجابة قصيرة"])
+                opts = {}
+                if qtype == "اختيار من متعدد":
+                    for i in range(1,5):
+                        opts[f"option{i}"] = st.text_input(f"الخيار {i}")
+                correct = st.text_input("الإجابة الصحيحة")
+                if st.form_submit_button("إضافة سؤال"):
+                    db.add_question({
+                        "question_id": str(uuid.uuid4()),
+                        "quiz_id": quiz_choice,
+                        "question_text": qtext,
+                        "question_type": qtype,
+                        "option1": opts.get("option1", ""),
+                        "option2": opts.get("option2", ""),
+                        "option3": opts.get("option3", ""),
+                        "option4": opts.get("option4", ""),
+                        "correct_answer": correct
+                    })
+                    st.success("تمت الإضافة")
+
+    # عرض النتائج
+    st.markdown("### نتائج الاختبارات")
+    results = db.get_quiz_results()
+    if not results.empty:
+        st.dataframe(results[["quiz_id", "student_name", "score", "total_marks", "submission_time"]])
+    else:
+        st.info("لا توجد نتائج بعد")
+
+# ===================== التطبيق الرئيسي =====================
+def main():
+    inject_css()
+    st.set_page_config(page_title="نظام الغياب والافتقاد", layout="wide", initial_sidebar_state="expanded")
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    # إذا كانت الطالبة تقدم اختباراً
+    if "student_quiz_started" in st.session_state and st.session_state.student_quiz_started:
+        show_student_quiz()
+        return
+
+    if not st.session_state.authenticated:
+        show_login_page()
+    else:
+        if not check_authentication():
+            st.error("انتهت الجلسة، الرجاء تسجيل الدخول مجدداً")
+            st.session_state.clear()
+            st.rerun()
+        choice = sidebar_menu()
+        if choice == "🏠 لوحة التحكم":
+            show_dashboard()
+        elif choice == "👥 إدارة المستخدمين":
+            show_admin_users()
+        elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
+            show_students_management()
+        elif choice == "📋 الحضور":
+            show_attendance()
+        elif choice == "💬 الافتقاد":
+            show_followup()
+        elif choice == "📝 المسابقات والاختبارات":
+            show_quizzes()
+        elif choice == "📊 السجلات":
+            st.write("قيد التطوير")
+
+if __name__ == "__main__":
+    main()
