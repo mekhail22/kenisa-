@@ -35,43 +35,107 @@ def get_jwt_secret():
     except:
         return DEFAULT_JWT_SECRET
 
-# ===================== CSS مخصص =====================
+# ===================== التصميم العام (CSS) =====================
 def inject_css():
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-        * { font-family: 'Cairo', sans-serif; }
-        body { direction: rtl; text-align: right; }
-        .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%); }
+
+        * {
+            font-family: 'Cairo', sans-serif;
+        }
+
+        body {
+            direction: rtl;
+            text-align: right;
+        }
+
+        .stApp {
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%);
+        }
 
         .main-header {
-            font-size: 2.2rem; font-weight: 700; color: #2c3e50; text-align: center;
-            margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 15px;
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: white;
+            border-radius: 15px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
         .card {
-            background: white; border-radius: 15px; padding: 1.5rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem;
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            margin-bottom: 1rem;
             transition: transform 0.2s;
         }
-        .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        }
 
         .stat-card {
-            background: white; border-radius: 15px; padding: 1.2rem; text-align: center;
+            background: white;
+            border-radius: 15px;
+            padding: 1.2rem;
+            text-align: center;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         }
-        .stat-card .value { font-size: 2.2rem; font-weight: 700; color: #2c3e50; margin: 0.5rem 0; }
-        .stat-card .label { font-size: 1rem; color: #7f8c8d; }
+        .stat-card .value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin: 0.5rem 0;
+        }
+        .stat-card .label {
+            font-size: 1rem;
+            color: #7f8c8d;
+        }
 
         .stButton > button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;
-            border: none; border-radius: 8px; font-weight: 600; transition: 0.2s;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: 0.2s;
         }
-        .stButton > button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }
+        .stButton > button:hover {
+            transform: scale(1.02);
+            box-shadow: 0 5px 15px rgba(102,126,234,0.4);
+        }
 
-        .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
-        .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
+        .stRadio > div, .stSelectbox > div, .stMultiSelect > div {
+            direction: rtl;
+        }
+        .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput {
+            text-align: right;
+        }
+
+        /* إصلاح القائمة الجانبية عند الطي في الوضع العربي */
+        @media (max-width: 768px) {
+            .stSidebar {
+                display: none !important;
+            }
+        }
+        /* ضمان اختفاء الشريط الجانبي تمامًا عند غلقه */
+        [data-testid="collapsedControl"] {
+            display: none !important;
+        }
+        section[data-testid="stSidebar"][aria-expanded="false"] {
+            width: 0px !important;
+            min-width: 0px !important;
+            overflow: hidden;
+            visibility: hidden;
+        }
+        section[data-testid="stSidebar"][aria-expanded="false"] > div {
+            display: none;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -469,7 +533,7 @@ def show_student_quiz(db: Database):
             st.session_state.student_quiz_started = False
             st.rerun()
 
-# ===================== القائمة الجانبية (تم التصحيح) =====================
+# ===================== القائمة الجانبية (مصححة) =====================
 def sidebar_menu():
     role = st.session_state.user["role"]
     menus = {
@@ -520,7 +584,7 @@ def sidebar_menu():
         logout()
     return choice
 
-# ===================== صفحات التطبيق (جميعها مفصلة) =====================
+# ===================== صفحات التطبيق =====================
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
     students = db.get_students()
@@ -963,7 +1027,6 @@ def change_password(db: Database):
                 st.error("كلمتا المرور الجديدتان غير متطابقتين")
             else:
                 db.update_user(current_user["user_id"], {"password": new_pwd})
-                # تحديث الجلسة
                 st.session_state.user["password"] = new_pwd
                 db.add_log(current_user["user_id"], "تغيير كلمة المرور")
                 st.success("تم تغيير كلمة المرور بنجاح!")
@@ -988,7 +1051,6 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
-    # اختبار طالبة
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
         show_student_quiz(db)
         return
