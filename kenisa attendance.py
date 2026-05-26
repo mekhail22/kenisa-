@@ -14,8 +14,8 @@ import jwt
 import secrets
 import time
 
-# ===================== الإعدادات العامة (قيم افتراضية قابلة للتجاوز) =====================
-DEFAULT_PASSWORD_SALT = "K9f2Lm8QxP4rV7sA"          # يمكن تغييرها في secrets.toml
+# ===================== الإعدادات العامة =====================
+# لاحظ: لم نعد نستخدم password_salt ولا hashing
 DEFAULT_JWT_SECRET = "t7Yp!2kL$9xR@vN8#wQ3^eH*5Jm+6Uc0"
 
 def get_credentials():
@@ -26,18 +26,11 @@ def get_credentials():
         )
         return creds
     except Exception as e:
-        st.error(f"❌ خطأ في بيانات اعتماد Google. تأكد من .streamlit/secrets.toml: {e}")
+        st.error(f"❌ خطأ في بيانات اعتماد Google: {e}")
         st.stop()
 
 def get_spreadsheet_id():
     return st.secrets["sheets"]["spreadsheet_id"]
-
-def get_salt():
-    # استخدام القيمة من secrets إذا وجدت، وإلا الافتراضية
-    try:
-        return st.secrets["sheets"]["password_salt"]
-    except:
-        return DEFAULT_PASSWORD_SALT
 
 def get_jwt_secret():
     try:
@@ -107,15 +100,22 @@ class Database:
         else:
             ws.update([columns])
 
-    # --- المستخدمون ---
+    # --- المستخدمون (مع تخزين كلمة المرور كنص) ---
     def get_users(self):
-        return self._sheet_to_df("Users")
+        df = self._sheet_to_df("Users")
+        # إعادة تسمية العمود القديم إذا كان موجوداً (password_hash -> password)
+        if not df.empty and "password_hash" in df.columns:
+            df = df.rename(columns={"password_hash": "password"})
+        return df
 
     def add_user(self, user_data: dict):
         df = self.get_users()
+        # ضمان وجود عمود password
+        if "password" not in df.columns:
+            df["password"] = ""
         df = pd.concat([df, pd.DataFrame([user_data])], ignore_index=True)
         self._df_to_sheet("Users", df, [
-            "user_id", "username", "password_hash", "role",
+            "user_id", "username", "password", "role",
             "full_name", "section_id", "phone", "email"
         ])
 
@@ -216,10 +216,7 @@ class Database:
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
         self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
 
-# ===================== التشفير والتوثيق =====================
-def hash_password(password: str, salt: str) -> str:
-    return hashlib.sha256((password + salt).encode()).hexdigest()
-
+# ===================== التشفير (فقط JWT) =====================
 def generate_token(user: dict, secret: str) -> str:
     payload = {
         "user_id": user["user_id"],
@@ -256,8 +253,8 @@ def logout():
     st.session_state.clear()
     st.rerun()
 
-# ===================== صفحة التهيئة الإجبارية =====================
-def show_initialization(db: Database, salt: str):
+# ===================== صفحة التهيئة (إنشاء مدير النظام) =====================
+def show_initialization(db: Database):
     users = db.get_users()
     if users.empty:
         st.markdown("<div class='card'><h2 style='text-align:center;'>🔧 لا يوجد مستخدمون بعد</h2>", unsafe_allow_html=True)
@@ -266,7 +263,7 @@ def show_initialization(db: Database, salt: str):
             admin_data = {
                 "user_id": "admin-001",
                 "username": "admin",
-                "password_hash": hash_password("admin123", salt),
+                "password": "admin123",   # تخزين مباشر لكلمة المرور
                 "role": "System Admin",
                 "full_name": "مدير النظام",
                 "section_id": "",
@@ -280,13 +277,13 @@ def show_initialization(db: Database, salt: str):
             st.markdown("**التالي:** أعد تحميل الصفحة أو انتظر التحديث التلقائي...")
             time.sleep(2)
             st.rerun()
-        st.stop()  # منع عرض باقي الصفحة حتى التهيئة
+        st.stop()
 
 # ===================== واجهة تسجيل الدخول =====================
-def show_login_page(db: Database, salt: str, jwt_secret: str):
+def show_login_page(db: Database, jwt_secret: str):
     st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
 
-    show_initialization(db, salt)
+    show_initialization(db)
 
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
 
@@ -303,8 +300,8 @@ def show_login_page(db: Database, salt: str, jwt_secret: str):
                     st.error("اسم المستخدم غير موجود")
                 else:
                     user = user_row.iloc[0].to_dict()
-                    expected_hash = hash_password(password, salt)
-                    if expected_hash == user["password_hash"]:
+                    # مقارنة مباشرة بدون تشفير
+                    if password == user.get("password", ""):
                         token = generate_token(user, jwt_secret)
                         st.session_state.token = token
                         st.session_state.user = user
@@ -315,13 +312,6 @@ def show_login_page(db: Database, salt: str, jwt_secret: str):
                         st.rerun()
                     else:
                         st.error("كلمة المرور غير صحيحة")
-                        # تشخيص مبسط (قابل للإخفاء)
-                        with st.expander("لماذا تظهر خاطئة؟ (تشخيص)"):
-                            st.write("**الهاش المحسوب من كلمة المرور المدخلة:**")
-                            st.code(expected_hash)
-                            st.write("**الهاش المخزن في قاعدة البيانات:**")
-                            st.code(user["password_hash"])
-                            st.write("**الـ Salt المستخدم حاليًا:**", salt)
 
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
@@ -415,7 +405,7 @@ def sidebar_menu():
         logout()
     return choice
 
-# ===================== صفحات التطبيق =====================
+# ===================== صفحات التطبيق (مختصرة) =====================
 def show_dashboard(db):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
     students = db.get_students()
@@ -439,7 +429,7 @@ def show_dashboard(db):
             fig = px.histogram(recent, x="date", color="status", barmode="group", title="الحضور الأسبوعي")
             st.plotly_chart(fig, use_container_width=True)
 
-def show_admin_users(db, salt):
+def show_admin_users(db):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
     users = db.get_users()
     if not users.empty:
@@ -462,7 +452,7 @@ def show_admin_users(db, salt):
                     db.add_user({
                         "user_id": str(uuid.uuid4()),
                         "username": uname,
-                        "password_hash": hash_password(pwd, salt),
+                        "password": pwd,  # تخزين مباشر
                         "role": role,
                         "full_name": full,
                         "section_id": sec if sec and sec != "None" else "",
@@ -688,7 +678,6 @@ def main():
     except:
         return
     db = Database(creds, get_spreadsheet_id())
-    salt = get_salt()
     jwt_secret = get_jwt_secret()
 
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
@@ -696,7 +685,7 @@ def main():
         return
 
     if not st.session_state.authenticated:
-        show_login_page(db, salt, jwt_secret)
+        show_login_page(db, jwt_secret)
     else:
         if not verify_token(st.session_state.token, jwt_secret):
             st.error("انتهت الجلسة، سجل الدخول مجددًا")
@@ -709,7 +698,7 @@ def main():
         if choice == "🏠 لوحة التحكم":
             show_dashboard(db)
         elif choice == "👥 إدارة المستخدمين":
-            if st.session_state.user["role"] == "System Admin": show_admin_users(db, salt)
+            if st.session_state.user["role"] == "System Admin": show_admin_users(db)
             else: st.error("غير مصرح")
         elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
             show_students(db)
