@@ -12,17 +12,31 @@ import random
 import string
 import jwt
 import secrets
+import time
+import re
 
 # ===================== الإعدادات العامة =====================
-SALT = st.secrets["sheets"]["password_salt"]
-JWT_SECRET = st.secrets["sheets"]["jwt_secret"]
-SPREADSHEET_ID = st.secrets["sheets"]["spreadsheet_id"]
-CREDENTIALS = Credentials.from_service_account_info(
-    st.secrets["gcp_service_account"],
-    scopes=["https://www.googleapis.com/auth/spreadsheets"]
-)
+# قراءة بيانات الاعتماد من ملف secrets.toml (يجب وضعه في .streamlit/)
+def get_credentials():
+    try:
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+        return creds
+    except Exception as e:
+        st.error(f"❌ خطأ في بيانات اعتماد Google: {e}")
+        st.stop()
 
-# ===================== النمط العام للـ CSS =====================
+def get_salt():
+    return st.secrets["sheets"]["password_salt"]
+
+def get_jwt_secret():
+    return st.secrets["sheets"]["jwt_secret"]
+
+SPREADSHEET_ID = st.secrets["sheets"]["spreadsheet_id"]
+
+# ===================== التصميم العام (CSS) =====================
 def inject_css():
     st.markdown("""
     <style>
@@ -41,25 +55,16 @@ def inject_css():
             background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%);
         }
 
-        .css-18e3th9 {
-            padding-top: 2rem;
-        }
-
-        .stSidebar {
-            background-color: #f8f9fa;
-            border-left: 1px solid #dee2e6;
-        }
-
         .main-header {
             font-size: 2.2rem;
             font-weight: 700;
             color: #2c3e50;
             text-align: center;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             padding: 1rem;
             background: white;
             border-radius: 15px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
         .card {
@@ -83,7 +88,7 @@ def inject_css():
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         }
         .stat-card .value {
-            font-size: 2.5rem;
+            font-size: 2.2rem;
             font-weight: 700;
             color: #2c3e50;
             margin: 0.5rem 0;
@@ -93,64 +98,75 @@ def inject_css():
             color: #7f8c8d;
         }
 
-        .btn-primary {
+        .stButton > button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 0.5rem 1.5rem;
             border-radius: 8px;
             font-weight: 600;
-            cursor: pointer;
             transition: 0.2s;
         }
-        .btn-primary:hover {
+        .stButton > button:hover {
             transform: scale(1.02);
             box-shadow: 0 5px 15px rgba(102,126,234,0.4);
         }
 
-        /* RTL fix for Streamlit elements */
+        /* تصحيح اتجاه العناصر */
         .stRadio > div, .stSelectbox > div, .stMultiSelect > div {
             direction: rtl;
         }
-        .stMarkdown {
+        .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput {
             text-align: right;
         }
     </style>
     """, unsafe_allow_html=True)
 
-# ===================== قاعدة البيانات عبر Google Sheets =====================
+# ===================== إدارة قاعدة البيانات (Google Sheets) =====================
 class Database:
-    def __init__(self):
-        self.client = gspread.authorize(CREDENTIALS)
-        self.spreadsheet = self.client.open_by_key(SPREADSHEET_ID)
+    """كلاس للتعامل مع Google Sheets كقاعدة بيانات."""
+    def __init__(self, creds, spreadsheet_id):
+        self.client = gspread.authorize(creds)
+        self.spreadsheet = self.client.open_by_key(spreadsheet_id)
 
-    def get_or_create_worksheet(self, name, columns):
-        """إرجاع ورقة العمل وإنشائها مع الأعمدة إن لم تكن موجودة."""
+    def _get_or_create_worksheet(self, name, columns):
+        """إرجاع ورقة العمل وإنشائها مع الأعمدة إذا لم تكن موجودة."""
         try:
             ws = self.spreadsheet.worksheet(name)
         except gspread.WorksheetNotFound:
-            ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=len(columns))
+            ws = self.spreadsheet.add_worksheet(title=name, rows=2000, cols=len(columns))
             ws.append_row(columns)
         return ws
 
     def _sheet_to_df(self, sheet_name):
-        ws = self.get_or_create_worksheet(sheet_name, [])
+        """تحويل ورقة العمل إلى DataFrame."""
+        ws = self._get_or_create_worksheet(sheet_name, [])
         data = ws.get_all_records()
+        if not data:
+            return pd.DataFrame()
         return pd.DataFrame(data)
 
     def _df_to_sheet(self, sheet_name, df, columns):
-        ws = self.get_or_create_worksheet(sheet_name, columns)
+        """كتابة DataFrame إلى ورقة العمل مع الحفاظ على الأعمدة."""
+        ws = self._get_or_create_worksheet(sheet_name, columns)
         ws.clear()
-        ws.update([columns] + df.values.tolist())
+        # تحديث البيانات
+        if not df.empty:
+            ws.update([columns] + df.values.tolist())
+        else:
+            ws.update([columns])  # فقط الأعمدة بدون بيانات
 
-    # ---------- جداول المستخدمين ----------
+    # ---------- المستخدمون ----------
     def get_users(self):
         return self._sheet_to_df("Users")
 
     def add_user(self, user_data: dict):
         df = self.get_users()
-        df = pd.concat([df, pd.DataFrame([user_data])], ignore_index=True)
-        self._df_to_sheet("Users", df, ["user_id", "username", "password_hash", "role", "full_name", "section_id"])
+        new_row = pd.DataFrame([user_data])
+        df = pd.concat([df, new_row], ignore_index=True)
+        self._df_to_sheet("Users", df, [
+            "user_id", "username", "password_hash", "role",
+            "full_name", "section_id", "phone", "email"
+        ])
 
     def update_user(self, user_id, updates):
         df = self.get_users()
@@ -181,7 +197,10 @@ class Database:
     def add_student(self, student_data: dict):
         df = self.get_students()
         df = pd.concat([df, pd.DataFrame([student_data])], ignore_index=True)
-        self._df_to_sheet("Students", df, ["student_id", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "status"])
+        self._df_to_sheet("Students", df, [
+            "student_id", "full_name", "section_id", "teacher_id",
+            "phone", "parent_phone", "birthdate", "address", "notes", "status"
+        ])
 
     def update_student(self, student_id, updates):
         df = self.get_students()
@@ -203,7 +222,15 @@ class Database:
     def add_attendance_record(self, record: dict):
         df = self.get_attendance()
         df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
-        self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+        self._df_to_sheet("Attendance", df, [
+            "record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"
+        ])
+
+    def get_attendance_by_date_section(self, date_str, section_id):
+        df = self.get_attendance()
+        if df.empty:
+            return df
+        return df[(df.date == date_str) & (df.section_id == section_id)]
 
     # ---------- الافتقاد ----------
     def get_followup(self):
@@ -212,7 +239,10 @@ class Database:
     def add_followup_record(self, record: dict):
         df = self.get_followup()
         df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
-        self._df_to_sheet("FollowUp", df, ["record_id", "student_id", "teacher_id", "followup_date", "followup_type", "notes", "regularity_status"])
+        self._df_to_sheet("FollowUp", df, [
+            "record_id", "student_id", "teacher_id", "followup_date",
+            "followup_type", "notes", "regularity_status"
+        ])
 
     # ---------- الاختبارات ----------
     def get_quizzes(self):
@@ -221,132 +251,205 @@ class Database:
     def add_quiz(self, quiz_data: dict):
         df = self.get_quizzes()
         df = pd.concat([df, pd.DataFrame([quiz_data])], ignore_index=True)
-        self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id", "num_questions", "time_limit_minutes", "total_marks", "expiry_date", "quiz_code", "password", "is_active"])
+        self._df_to_sheet("Quizzes", df, [
+            "quiz_id", "title", "description", "created_by", "section_id",
+            "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
+            "quiz_code", "password", "is_active"
+        ])
+
+    def update_quiz(self, quiz_id, updates):
+        df = self.get_quizzes()
+        idx = df[df.quiz_id == quiz_id].index
+        if len(idx) > 0:
+            for k, v in updates.items():
+                df.at[idx[0], k] = v
+            self._df_to_sheet("Quizzes", df, df.columns.tolist())
 
     def get_quiz_questions(self, quiz_id):
         df = self._sheet_to_df("QuizQuestions")
-        return df[df.quiz_id == quiz_id] if not df.empty else pd.DataFrame()
+        if df.empty:
+            return pd.DataFrame()
+        return df[df.quiz_id == quiz_id]
 
     def add_question(self, q_data: dict):
         df = self._sheet_to_df("QuizQuestions")
         df = pd.concat([df, pd.DataFrame([q_data])], ignore_index=True)
-        self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer"])
+        self._df_to_sheet("QuizQuestions", df, [
+            "question_id", "quiz_id", "question_text", "question_type",
+            "option1", "option2", "option3", "option4", "correct_answer"
+        ])
 
-    def save_quiz_result(self, result: dict):
-        df = self._sheet_to_df("QuizResults")
-        df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
-        self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name", "score", "total_marks", "submission_time", "answers"])
+    def delete_question(self, question_id):
+        df = self._sheet_to_df("QuizQuestions")
+        df = df[df.question_id != question_id]
+        self._df_to_sheet("QuizQuestions", df, df.columns.tolist())
 
+    # ---------- نتائج الاختبارات ----------
     def get_quiz_results(self, quiz_id=None):
         df = self._sheet_to_df("QuizResults")
+        if df.empty:
+            return pd.DataFrame()
         if quiz_id:
             df = df[df.quiz_id == quiz_id]
         return df
 
+    def save_quiz_result(self, result: dict):
+        df = self._sheet_to_df("QuizResults")
+        df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
+        self._df_to_sheet("QuizResults", df, [
+            "result_id", "quiz_id", "student_id", "student_name",
+            "score", "total_marks", "submission_time", "answers"
+        ])
+
     # ---------- السجلات ----------
     def add_log(self, user_id, action, details=""):
         df = self._sheet_to_df("Logs")
-        log = {"log_id": str(uuid.uuid4()), "timestamp": datetime.now().isoformat(), "user_id": user_id, "action": action, "details": details}
+        log = {
+            "log_id": str(uuid.uuid4()),
+            "timestamp": datetime.now().isoformat(),
+            "user_id": user_id,
+            "action": action,
+            "details": details
+        }
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
         self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
 
-# ===================== إدارة الجلسة والصلاحيات =====================
-def hash_password(password):
-    return hashlib.sha256((password + SALT).encode()).hexdigest()
+# ===================== دوال الأمان والتوثيق =====================
+def hash_password(password: str, salt: str) -> str:
+    """تشفير كلمة المرور مع salt."""
+    return hashlib.sha256((password + salt).encode()).hexdigest()
 
-def generate_token(user):
+def generate_token(user: dict, secret: str) -> str:
+    """توليد توكن JWT."""
     payload = {
         "user_id": user["user_id"],
         "role": user["role"],
         "full_name": user["full_name"],
+        "section_id": user.get("section_id", ""),
         "exp": datetime.utcnow() + timedelta(hours=24)
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    return jwt.encode(payload, secret, algorithm="HS256")
 
-def verify_token(token):
+def verify_token(token: str, secret: str):
+    """التحقق من صحة التوكن وإرجاع البيانات."""
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
         return payload
     except jwt.ExpiredSignatureError:
         return None
     except jwt.InvalidTokenError:
         return None
 
-def check_authentication():
+# ===================== الجلسة (Session State) =====================
+def init_session():
+    """تهيئة الجلسة."""
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    if "user" not in st.session_state:
+        st.session_state.user = None
     if "token" not in st.session_state:
-        return False
-    payload = verify_token(st.session_state.token)
-    if payload:
-        st.session_state.user = payload
-        return True
-    else:
-        st.session_state.clear()
-        return False
+        st.session_state.token = None
+    if "student_quiz" not in st.session_state:
+        st.session_state.student_quiz = None
+    if "student_quiz_started" not in st.session_state:
+        st.session_state.student_quiz_started = False
 
-# ===================== واجهة تسجيل الدخول والطالبات =====================
-def show_login_page():
+def logout():
+    """تسجيل الخروج."""
+    if st.session_state.user:
+        db = Database(get_credentials(), SPREADSHEET_ID)
+        db.add_log(st.session_state.user["user_id"], "تسجيل الخروج")
+    st.session_state.clear()
+    st.rerun()
+
+# ===================== واجهات المستخدم =====================
+def show_login_page(db: Database, salt: str, jwt_secret: str):
+    """صفحة تسجيل الدخول."""
     st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
 
     with tab1:
         with st.form("login_form"):
-            username = st.text_input("اسم المستخدم")
-            password = st.text_input("كلمة المرور", type="password")
+            username = st.text_input("اسم المستخدم", placeholder="أدخل اسم المستخدم")
+            password = st.text_input("كلمة المرور", type="password", placeholder="أدخل كلمة المرور")
             submitted = st.form_submit_button("تسجيل الدخول", use_container_width=True)
             if submitted:
-                db = Database()
-                users = db.get_users()
-                user_row = users[users.username == username]
-                if not user_row.empty:
-                    user = user_row.iloc[0].to_dict()
-                    if user["password_hash"] == hash_password(password):
-                        token = generate_token(user)
-                        st.session_state.token = token
-                        st.session_state.user = user
-                        st.session_state.authenticated = True
-                        db.add_log(user["user_id"], "login")
-                        st.rerun()
-                    else:
-                        st.error("كلمة المرور غير صحيحة")
+                if not username or not password:
+                    st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
                 else:
-                    st.error("المستخدم غير موجود")
+                    users = db.get_users()
+                    if users.empty:
+                        st.error("لا يوجد مستخدمين في النظام. الرجاء إضافة مسؤول أول.")
+                    else:
+                        user_row = users[users.username == username]
+                        if user_row.empty:
+                            st.error("اسم المستخدم غير موجود")
+                        else:
+                            user = user_row.iloc[0].to_dict()
+                            if user["password_hash"] == hash_password(password, salt):
+                                token = generate_token(user, jwt_secret)
+                                st.session_state.token = token
+                                st.session_state.user = user
+                                st.session_state.authenticated = True
+                                db.add_log(user["user_id"], "تسجيل الدخول")
+                                st.success("تم تسجيل الدخول بنجاح!")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("كلمة المرور غير صحيحة")
 
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
-        code = st.text_input("كود الاختبار")
-        passwd = st.text_input("كلمة مرور الاختبار", type="password")
+        code = st.text_input("كود الاختبار", placeholder="مثال: DMN482")
+        passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="أدخل كلمة المرور الخاصة بالاختبار")
         if st.button("بدء الاختبار", key="student_quiz_btn"):
-            db = Database()
-            quizzes = db.get_quizzes()
-            quiz = quizzes[(quizzes.quiz_code == code) & (quizzes.password == passwd)]
-            if quiz.empty:
-                st.error("كود أو كلمة مرور خاطئة")
+            if not code or not passwd:
+                st.error("الرجاء إدخال الكود وكلمة المرور")
             else:
-                quiz = quiz.iloc[0].to_dict()
-                if pd.to_datetime(quiz["expiry_date"]) < datetime.now():
-                    st.error("انتهت صلاحية الاختبار")
+                quizzes = db.get_quizzes()
+                if quizzes.empty:
+                    st.error("لا توجد اختبارات متاحة حالياً.")
                 else:
-                    st.session_state.student_quiz = quiz
-                    st.session_state.student_quiz_started = True
-                    st.rerun()
+                    quiz = quizzes[(quizzes.quiz_code == code) & (quizzes.password == passwd)]
+                    if quiz.empty:
+                        st.error("كود أو كلمة مرور خاطئة")
+                    else:
+                        quiz = quiz.iloc[0].to_dict()
+                        if pd.to_datetime(quiz["expiry_date"]) < datetime.now():
+                            st.error("انتهت صلاحية هذا الاختبار")
+                            # إخفاء الاختبار تلقائياً بتحديث حالته
+                            db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
+                        else:
+                            st.session_state.student_quiz = quiz
+                            st.session_state.student_quiz_started = True
+                            st.rerun()
 
-# ===================== صفحة حل الاختبار للطالبة =====================
-def show_student_quiz():
+def show_student_quiz(db: Database):
+    """واجهة حل الاختبار للطالبة."""
     quiz = st.session_state.student_quiz
-    db = Database()
+    st.title(f"📝 {quiz['title']}")
+    st.markdown(f"**الوقت المحدد:** {quiz['time_limit_minutes']} دقيقة | **عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** {quiz['total_marks']}")
+    st.markdown("---")
+
     questions = db.get_quiz_questions(quiz["quiz_id"])
     if questions.empty:
-        st.warning("لا توجد أسئلة في هذا الاختبار")
+        st.warning("لا توجد أسئلة في هذا الاختبار بعد.")
+        if st.button("العودة للرئيسية"):
+            st.session_state.student_quiz = None
+            st.session_state.student_quiz_started = False
+            st.rerun()
         return
 
-    st.title(quiz["title"])
-    st.markdown(f"**الوقت المتبقي:** {quiz['time_limit_minutes']} دقيقة")
-    student_name = st.text_input("الاسم الثلاثي للطالبة")
-    answers = {}
+    student_name = st.text_input("الاسم الثلاثي للطالبة", placeholder="أدخل اسمك الكامل")
+    if not student_name.strip():
+        st.info("الرجاء إدخال الاسم قبل البدء.")
 
-    for i, q in questions.iterrows():
-        q = q.to_dict()
-        st.markdown(f"**سؤال {i+1}:** {q['question_text']}")
+    # نموذج الإجابات
+    answers = {}
+    for idx, row in questions.iterrows():
+        q = row.to_dict()
+        st.markdown(f"**سؤال {idx+1}:** {q['question_text']}")
         q_type = q["question_type"]
         if q_type in ["اختيار من متعدد", "صح وخطأ"]:
             options = []
@@ -354,29 +457,35 @@ def show_student_quiz():
                 options = [q["option1"], q["option2"], q["option3"], q["option4"]]
             else:
                 options = ["صح", "خطأ"]
-            ans = st.radio("اختر الإجابة", options, key=f"q_{i}")
-            answers[q["question_id"]] = ans
+            # إزالة الخيارات الفارغة
+            options = [opt for opt in options if opt]
+            if options:
+                ans = st.radio("اختر الإجابة", options, key=f"q_{idx}", index=None)
+                answers[q["question_id"]] = ans if ans else ""
+            else:
+                st.warning("لا توجد خيارات متاحة.")
         else:
-            ans = st.text_input("الإجابة", key=f"q_{i}")
+            ans = st.text_input("الإجابة", key=f"q_{idx}")
             answers[q["question_id"]] = ans
+        st.markdown("---")
 
-    if st.button("تسليم الاختبار"):
+    if st.button("تسليم الاختبار", type="primary", disabled=not student_name.strip()):
         if not student_name.strip():
-            st.error("الرجاء إدخال الاسم")
+            st.error("الرجاء إدخال الاسم أولاً")
             return
         # تصحيح تلقائي
         score = 0
         total = len(questions)
         for _, q in questions.iterrows():
             q = q.to_dict()
-            correct = str(q["correct_answer"]).strip()
-            user_ans = str(answers.get(q["question_id"], "")).strip()
-            if correct.lower() == user_ans.lower():
+            correct = str(q["correct_answer"]).strip().lower()
+            user_ans = str(answers.get(q["question_id"], "")).strip().lower()
+            if correct == user_ans:
                 score += 1
         result = {
             "result_id": str(uuid.uuid4()),
             "quiz_id": quiz["quiz_id"],
-            "student_id": "student_external",  # لا يوجد حساب، لذلك نضع معرف ثابت
+            "student_id": "external",
             "student_name": student_name,
             "score": score,
             "total_marks": total,
@@ -384,133 +493,288 @@ def show_student_quiz():
             "answers": json.dumps(answers, ensure_ascii=False)
         }
         db.save_quiz_result(result)
-        st.success(f"تم تسليم الاختبار! نتيجتك: {score}/{total}")
-        st.session_state.pop("student_quiz", None)
-        st.session_state.pop("student_quiz_started", None)
+        st.balloons()
+        st.success(f"تم تسليم الاختبار بنجاح! نتيجتك: {score}/{total}")
+        if st.button("إنهاء والعودة"):
+            st.session_state.student_quiz = None
+            st.session_state.student_quiz_started = False
+            st.rerun()
 
-# ===================== الصفحات الرئيسية بعد تسجيل الدخول =====================
 def sidebar_menu():
+    """القائمة الجانبية حسب الصلاحية."""
     role = st.session_state.user["role"]
     menus = {
-        "System Admin": ["🏠 لوحة التحكم", "👥 إدارة المستخدمين", "👩‍🎓 الطالبات", "👩‍🏫 المدرسات والأقسام", "📋 الحضور", "💬 الافتقاد", "📝 المسابقات والاختبارات", "📊 السجلات"],
-        "Father Account": ["🏠 لوحة التحكم", "📋 الحضور", "💬 الافتقاد", "📝 المسابقات والاختبارات"],
-        "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد", "📝 المسابقات والاختبارات"],
-        "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد"]
+        "System Admin": [
+            "🏠 لوحة التحكم",
+            "👥 إدارة المستخدمين",
+            "👩‍🎓 الطالبات",
+            "👩‍🏫 المدرسات والأقسام",
+            "📋 الحضور",
+            "💬 الافتقاد",
+            "📝 المسابقات والاختبارات",
+            "📊 التقارير والإحصائيات",
+            "📜 سجل العمليات"
+        ],
+        "Father Account": [
+            "🏠 لوحة التحكم",
+            "📋 الحضور",
+            "💬 الافتقاد",
+            "📝 المسابقات والاختبارات",
+            "📊 التقارير والإحصائيات"
+        ],
+        "Service Manager": [
+            "🏠 لوحة التحكم",
+            "👩‍🎓 طالباتي",
+            "📋 الحضور",
+            "💬 الافتقاد",
+            "📝 المسابقات والاختبارات",
+            "📊 التقارير والإحصائيات"
+        ],
+        "Teacher": [
+            "🏠 لوحة التحكم",
+            "👩‍🎓 طالباتي",
+            "📋 الحضور",
+            "💬 الافتقاد"
+        ]
     }
     menu = menus.get(role, [])
     if not menu:
-        st.sidebar.error("صلاحية غير معروفة")
-        return
-    choice = st.sidebar.radio("القائمة", menu)
+        st.sidebar.warning("صلاحية غير معروفة")
+        return None
+    st.sidebar.markdown(f"### 👤 {st.session_state.user['full_name']}")
+    st.sidebar.markdown(f"*{role}*")
+    st.sidebar.markdown("---")
+    choice = st.sidebar.radio("القائمة الرئيسية", menu)
+    st.sidebar.markdown("---")
+    if st.sidebar.button("تسجيل الخروج"):
+        logout()
     return choice
 
-def show_dashboard():
+# ===================== صفحات التطبيق =====================
+def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
-    db = Database()
     students = db.get_students()
     attendance = db.get_attendance()
     followup = db.get_followup()
+    users = db.get_users()
 
     # بطاقات إحصائية
     col1, col2, col3, col4 = st.columns(4)
-    col1.markdown(f"<div class='stat-card'><div class='label'>إجمالي البنات</div><div class='value'>{len(students)}</div></div>", unsafe_allow_html=True)
-    present_today = len(attendance[(attendance.date == datetime.now().strftime("%Y-%m-%d")) & (attendance.status == "حاضر")]) if not attendance.empty else 0
-    absent_today = len(attendance[(attendance.date == datetime.now().strftime("%Y-%m-%d")) & (attendance.status == "غائب")]) if not attendance.empty else 0
+    col1.markdown(f"<div class='stat-card'><div class='label'>عدد الطالبات</div><div class='value'>{len(students)}</div></div>", unsafe_allow_html=True)
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    present_today = len(attendance[(attendance.date == today) & (attendance.status == "حاضر")]) if not attendance.empty else 0
+    absent_today = len(attendance[(attendance.date == today) & (attendance.status == "غائب")]) if not attendance.empty else 0
     col2.markdown(f"<div class='stat-card'><div class='label'>الحضور اليوم</div><div class='value'>{present_today}</div></div>", unsafe_allow_html=True)
     col3.markdown(f"<div class='stat-card'><div class='label'>الغياب اليوم</div><div class='value'>{absent_today}</div></div>", unsafe_allow_html=True)
-    need_followup = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty else 0
-    col4.markdown(f"<div class='stat-card'><div class='label'>منقطعات عن المتابعة</div><div class='value'>{need_followup}</div></div>", unsafe_allow_html=True)
 
-    # رسم بياني للحضور
-    st.markdown("#### 📈 تحليل الحضور الشهري")
+    need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty else 0
+    col4.markdown(f"<div class='stat-card'><div class='label'>منقطعات</div><div class='value'>{need_follow}</div></div>", unsafe_allow_html=True)
+
+    # رسم بياني للحضور الأسبوعي
+    st.markdown("#### 📈 تحليل الحضور (آخر 7 أيام)")
     if not attendance.empty:
         attendance["date"] = pd.to_datetime(attendance["date"])
-        monthly = attendance.groupby([attendance.date.dt.to_period("M"), "status"]).size().unstack(fill_value=0)
-        fig = px.bar(monthly, x=monthly.index.astype(str), y=monthly.columns, title="الحضور الشهري", labels={"value":"العدد", "index":"الشهر"})
-        st.plotly_chart(fig, use_container_width=True)
+        last_week = datetime.now() - timedelta(days=7)
+        recent = attendance[attendance.date >= last_week]
+        if not recent.empty:
+            fig = px.histogram(recent, x="date", color="status", barmode="group",
+                               title="الحضور اليومي", labels={"date": "التاريخ", "count": "العدد"})
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("لا توجد بيانات حضور للأيام الماضية.")
     else:
-        st.info("لا توجد بيانات حضور بعد")
+        st.info("لا توجد بيانات حضور بعد.")
 
-    # قائمة البنات المحتاجات متابعة
-    st.markdown("#### 🔔 بنات بحاجة لافتقاد عاجل")
+    # تنبيهات
+    st.markdown("#### 🔔 تنبيهات هامة")
+    if absent_today > 5:
+        st.warning(f"عدد الغائبات اليوم {absent_today} طالبة، يرجى المتابعة.")
     if not followup.empty:
-        urgent = followup[followup.regularity_status == "منقطع"].merge(students[["student_id", "full_name"]], on="student_id", how="left")
-        st.dataframe(urgent[["full_name", "followup_date", "notes"]], use_container_width=True)
-    else:
-        st.info("لا توجد متابعات حالياً")
+        urgent = followup[followup.regularity_status == "منقطع"].merge(
+            students[["student_id", "full_name"]], on="student_id", how="left"
+        )
+        if not urgent.empty:
+            st.error(f"هناك {len(urgent)} طالبة منقطعة عن المتابعة!")
+            st.dataframe(urgent[["full_name", "followup_date", "notes"]], use_container_width=True)
 
-def show_admin_users():
+def show_admin_users(db: Database, salt: str):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
-    db = Database()
     users = db.get_users()
-    st.dataframe(users, use_container_width=True)
-    with st.expander("➕ إضافة مستخدم"):
-        with st.form("add_user"):
-            username = st.text_input("اسم المستخدم")
-            full_name = st.text_input("الاسم الكامل")
-            password = st.text_input("كلمة المرور", type="password")
-            role = st.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"])
-            section = st.selectbox("القسم (للمدير الخدمة/مدرسة)", ["None"] + db.get_sections()["section_id"].tolist())
+    if not users.empty:
+        st.dataframe(users, use_container_width=True)
+    else:
+        st.info("لا يوجد مستخدمين بعد.")
+
+    with st.expander("➕ إضافة مستخدم جديد"):
+        with st.form("add_user_form"):
+            col1, col2 = st.columns(2)
+            username = col1.text_input("اسم المستخدم")
+            full_name = col2.text_input("الاسم الكامل")
+            password = col1.text_input("كلمة المرور", type="password")
+            role = col2.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"])
+            sections = db.get_sections()
+            section = None
+            if role in ["Service Manager", "Teacher"]:
+                section = st.selectbox("القسم", ["None"] + sections["section_id"].tolist() if not sections.empty else ["None"])
+            phone = st.text_input("رقم الهاتف (اختياري)")
+            email = st.text_input("البريد الإلكتروني (اختياري)")
             if st.form_submit_button("إضافة"):
-                user_data = {
-                    "user_id": str(uuid.uuid4()),
-                    "username": username,
-                    "password_hash": hash_password(password),
-                    "role": role,
-                    "full_name": full_name,
-                    "section_id": section if section != "None" else ""
-                }
-                db.add_user(user_data)
-                st.success("تم إضافة المستخدم")
+                if not username or not password:
+                    st.error("اسم المستخدم وكلمة المرور مطلوبان")
+                else:
+                    user_data = {
+                        "user_id": str(uuid.uuid4()),
+                        "username": username,
+                        "password_hash": hash_password(password, salt),
+                        "role": role,
+                        "full_name": full_name,
+                        "section_id": section if section and section != "None" else "",
+                        "phone": phone,
+                        "email": email
+                    }
+                    db.add_user(user_data)
+                    db.add_log(st.session_state.user["user_id"], f"إضافة مستخدم {username}")
+                    st.success("تم إضافة المستخدم بنجاح")
+                    st.rerun()
+
+    with st.expander("✏️ تعديل / حذف مستخدم"):
+        if not users.empty:
+            user_ids = users["user_id"].tolist()
+            selected_user_id = st.selectbox("اختر المستخدم", user_ids,
+                                             format_func=lambda x: users[users.user_id==x]["full_name"].values[0])
+            user_row = users[users.user_id == selected_user_id].iloc[0]
+            new_role = st.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"],
+                                    index=["System Admin", "Father Account", "Service Manager", "Teacher"].index(user_row["role"]))
+            if st.button("تحديث الصلاحية"):
+                db.update_user(selected_user_id, {"role": new_role})
+                db.add_log(st.session_state.user["user_id"], f"تعديل صلاحية المستخدم {user_row['username']}")
+                st.success("تم التحديث")
+                st.rerun()
+            if st.button("حذف المستخدم", type="primary"):
+                db.delete_user(selected_user_id)
+                db.add_log(st.session_state.user["user_id"], f"حذف المستخدم {user_row['username']}")
+                st.success("تم الحذف")
                 st.rerun()
 
-def show_students_management():
+def show_students_management(db: Database):
     st.markdown("<h2 class='main-header'>👩‍🎓 إدارة الطالبات</h2>", unsafe_allow_html=True)
-    db = Database()
     students = db.get_students()
     sections = db.get_sections()
-    teachers = db.get_users()[db.get_users().role == "Teacher"]
+    teachers = db.get_users()[db.get_users().role.isin(["Teacher", "Service Manager"])]
 
-    st.dataframe(students.merge(sections[["section_id", "section_name"]], on="section_id"), use_container_width=True)
-    with st.expander("➕ إضافة طالبة"):
-        with st.form("add_student"):
-            name = st.text_input("الاسم الكامل")
-            sec = st.selectbox("القسم", sections["section_id"])
-            teacher = st.selectbox("المدرسة المسؤولة عن الافتقاد", teachers["user_id"])
+    if not students.empty:
+        display_df = students.merge(sections[["section_id","section_name"]], on="section_id", how="left")
+        st.dataframe(display_df, use_container_width=True)
+    else:
+        st.info("لا توجد طالبات مسجلة بعد.")
+
+    with st.expander("➕ إضافة طالبة جديدة"):
+        with st.form("add_student_form"):
+            col1, col2 = st.columns(2)
+            full_name = col1.text_input("الاسم الكامل")
+            section = col2.selectbox("القسم", sections["section_id"] if not sections.empty else [])
+            teacher = st.selectbox("المدرسة المسؤولة عن الافتقاد", teachers["user_id"] if not teachers.empty else [],
+                                   format_func=lambda x: teachers[teachers.user_id==x]["full_name"].values[0] if not teachers.empty else x)
             phone = st.text_input("رقم الهاتف")
             parent_phone = st.text_input("رقم ولي الأمر")
-            st.form_submit_button("إضافة", on_click=lambda: db.add_student({
-                "student_id": str(uuid.uuid4()),
-                "full_name": name,
-                "section_id": sec,
-                "teacher_id": teacher,
-                "phone": phone,
-                "parent_phone": parent_phone,
-                "birthdate": "",
-                "address": "",
-                "notes": "",
-                "status": "active"
-            }))
+            birthdate = st.date_input("تاريخ الميلاد", value=None)
+            address = st.text_area("العنوان")
+            notes = st.text_area("ملاحظات")
+            if st.form_submit_button("إضافة"):
+                if not full_name:
+                    st.error("الاسم الكامل مطلوب")
+                else:
+                    db.add_student({
+                        "student_id": str(uuid.uuid4()),
+                        "full_name": full_name,
+                        "section_id": section,
+                        "teacher_id": teacher,
+                        "phone": phone,
+                        "parent_phone": parent_phone,
+                        "birthdate": birthdate.strftime("%Y-%m-%d") if birthdate else "",
+                        "address": address,
+                        "notes": notes,
+                        "status": "active"
+                    })
+                    db.add_log(st.session_state.user["user_id"], f"إضافة طالبة {full_name}")
+                    st.success("تمت الإضافة")
+                    st.rerun()
 
-def show_attendance():
-    st.markdown("<h2 class='main-header'>📋 تسجيل الحضور</h2>", unsafe_allow_html=True)
-    db = Database()
+    # حذف أو تعديل
+    with st.expander("✏️ تعديل أو حذف طالبة"):
+        if not students.empty:
+            selected = st.selectbox("اختر طالبة", students["student_id"],
+                                    format_func=lambda x: students[students.student_id==x]["full_name"].values[0])
+            st.info("يمكنك تعديل البيانات يدوياً في Google Sheet أو استخدام واجهة التعديل (قريباً).")
+            if st.button("حذف الطالبة"):
+                db.delete_student(selected)
+                st.success("تم الحذف")
+                st.rerun()
+
+def show_teachers_sections(db: Database):
+    st.markdown("<h2 class='main-header'>👩‍🏫 المدرسات والأقسام</h2>", unsafe_allow_html=True)
+    sections = db.get_sections()
+    st.subheader("الأقسام")
+    if not sections.empty:
+        st.dataframe(sections, use_container_width=True)
+    with st.expander("➕ إضافة قسم"):
+        with st.form("add_section"):
+            name = st.text_input("اسم القسم")
+            manager = st.selectbox("مدير القسم", db.get_users()[db.get_users().role=="Service Manager"]["user_id"].tolist(),
+                                   format_func=lambda x: db.get_users()[db.get_users().user_id==x]["full_name"].values[0])
+            if st.form_submit_button("إضافة"):
+                db.add_section({"section_id": str(uuid.uuid4()), "section_name": name, "manager_user_id": manager})
+                st.success("تمت الإضافة")
+                st.rerun()
+
+    st.markdown("---")
+    st.subheader("توزيع المدرسات على الطالبات")
     students = db.get_students()
-    section = st.selectbox("القسم", db.get_sections()["section_id"])
+    teachers = db.get_users()[db.get_users().role.isin(["Teacher"])]
+    if not teachers.empty:
+        for _, teacher in teachers.iterrows():
+            t = teacher.to_dict()
+            assigned = students[students.teacher_id == t["user_id"]]
+            st.write(f"**{t['full_name']}**: {len(assigned)} طالبة")
+            if not assigned.empty:
+                st.dataframe(assigned[["full_name", "section_id"]], use_container_width=True)
+    else:
+        st.info("لا يوجد مدرسات مسجلات.")
+
+def show_attendance(db: Database):
+    st.markdown("<h2 class='main-header'>📋 تسجيل الحضور</h2>", unsafe_allow_html=True)
+    sections = db.get_sections()
+    if sections.empty:
+        st.warning("لا توجد أقسام. يرجى إضافة أقسام أولاً.")
+        return
+    section = st.selectbox("اختر القسم", sections["section_id"], format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0])
     date = st.date_input("التاريخ", datetime.now())
-    st.markdown("#### سجل الحضور للطالبات في هذا القسم")
+    students = db.get_students()
     section_students = students[students.section_id == section]
     if section_students.empty:
-        st.warning("لا توجد طالبات في هذا القسم")
+        st.info("لا توجد طالبات في هذا القسم.")
         return
+
+    # هل يوجد تسجيل سابق لنفس اليوم؟
+    existing = db.get_attendance_by_date_section(date.strftime("%Y-%m-%d"), section)
+    already_filled = not existing.empty
+    if already_filled:
+        st.warning("يوجد تسجيل حضور سابق في هذا اليوم. يمكنك تعديله أدناه.")
+
     statuses = {}
     for _, s in section_students.iterrows():
-        status = st.radio(f"{s['full_name']}", ["حاضر", "غائب", "متأخر"], key=s["student_id"])
+        prev = existing[existing.student_id == s["student_id"]] if already_filled else pd.DataFrame()
+        prev_status = prev.iloc[0]["status"] if not prev.empty else "حاضر"
+        status = st.radio(f"{s['full_name']}", ["حاضر", "غائب", "متأخر"],
+                          index=["حاضر","غائب","متأخر"].index(prev_status) if prev_status in ["حاضر","غائب","متأخر"] else 0,
+                          key=s["student_id"])
         statuses[s["student_id"]] = status
-    if st.button("حفظ الحضور"):
+
+    if st.button("حفظ الحضور", type="primary"):
         for sid, status in statuses.items():
             record = {
-                "record_id": str(uuid.uuid4()),
+                "record_id": str(uuid.uuid4()) if not already_filled else existing[existing.student_id==sid].iloc[0]["record_id"],
                 "date": date.strftime("%Y-%m-%d"),
                 "student_id": sid,
                 "status": status,
@@ -519,52 +783,78 @@ def show_attendance():
                 "section_id": section
             }
             db.add_attendance_record(record)
+        db.add_log(st.session_state.user["user_id"], f"تسجيل حضور قسم {section} ليوم {date}")
         st.success("تم تسجيل الحضور بنجاح")
+        st.rerun()
 
-def show_followup():
+def show_followup(db: Database):
     st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
-    db = Database()
+    user_role = st.session_state.user["role"]
+    user_id = st.session_state.user["user_id"]
     students = db.get_students()
-    followup = db.get_followup()
 
-    teacher_id = st.session_state.user["user_id"]
-    my_students = students[students.teacher_id == teacher_id]
-    if my_students.empty:
-        st.info("ليس لديك طالبات للمتابعة")
+    # فلترة الطالبات المسؤول عنهن المستخدم
+    if user_role == "Teacher":
+        responsible = students[students.teacher_id == user_id]
+    elif user_role == "Service Manager":
+        section_id = st.session_state.user.get("section_id", "")
+        responsible = students[students.section_id == section_id] if section_id else students
+    else:
+        responsible = students  # Admin/Father يرى الكل
+
+    if responsible.empty:
+        st.info("لا توجد طالبات مسؤولة عنك.")
         return
 
-    student = st.selectbox("اختر الطالبة", my_students["full_name"])
-    student_data = my_students[my_students.full_name == student].iloc[0].to_dict()
-    with st.form("add_followup"):
-        ftype = st.selectbox("نوع الافتقاد", ["زيارة", "اتصال", "رسالة", "لقاء شخصي"])
+    student = st.selectbox("اختر الطالبة", responsible["full_name"].tolist())
+    student_data = responsible[responsible.full_name == student].iloc[0].to_dict()
+
+    with st.form("followup_form"):
+        ftype = st.selectbox("نوع الافتقاد", ["زيارة", "اتصال هاتفي", "رسالة", "لقاء شخصي"])
         notes = st.text_area("ملاحظات")
         regularity = st.selectbox("حالة الانتظام", ["منتظم", "متقطع", "منقطع"])
-        if st.form_submit_button("حفظ"):
+        if st.form_submit_button("حفظ المتابعة"):
             db.add_followup_record({
                 "record_id": str(uuid.uuid4()),
                 "student_id": student_data["student_id"],
-                "teacher_id": teacher_id,
+                "teacher_id": user_id,
                 "followup_date": datetime.now().strftime("%Y-%m-%d"),
                 "followup_type": ftype,
                 "notes": notes,
                 "regularity_status": regularity
             })
-            st.success("تم تسجيل الافتقاد")
+            db.add_log(user_id, f"متابعة الطالبة {student}")
+            st.success("تم تسجيل الافتقاد بنجاح")
 
-def show_quizzes():
+    st.markdown("---")
+    st.subheader("سجل المتابعات السابقة")
+    followups = db.get_followup()
+    if not followups.empty:
+        student_fups = followups[followups.student_id == student_data["student_id"]]
+        if not student_fups.empty:
+            st.dataframe(student_fups[["followup_date", "followup_type", "notes", "regularity_status"]], use_container_width=True)
+        else:
+            st.info("لا توجد متابعات سابقة لهذه الطالبة.")
+
+def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
-    db = Database()
-    if st.session_state.user["role"] in ["Service Manager", "System Admin"]:
-        with st.expander("➕ إنشاء اختبار جديد"):
-            with st.form("new_quiz"):
-                title = st.text_input("عنوان الاختبار")
-                desc = st.text_area("وصف")
-                num_q = st.number_input("عدد الأسئلة", 1, 20, 5)
-                time_limit = st.number_input("الوقت بالدقائق", 1, 120, 15)
-                expiry = st.date_input("تاريخ الانتهاء", datetime.now() + timedelta(days=7))
-                if st.form_submit_button("إنشاء"):
+    user_role = st.session_state.user["role"]
+
+    if user_role in ["System Admin", "Service Manager"]:
+        st.subheader("إنشاء اختبار جديد")
+        with st.form("quiz_form"):
+            title = st.text_input("عنوان الاختبار")
+            desc = st.text_area("وصف الاختبار")
+            col1, col2 = st.columns(2)
+            num_questions = col1.number_input("عدد الأسئلة", 1, 50, 5)
+            time_limit = col2.number_input("الوقت (بالدقائق)", 1, 180, 15)
+            expiry = st.date_input("تاريخ الانتهاء", datetime.now() + timedelta(days=7))
+            if st.form_submit_button("إنشاء الاختبار"):
+                if not title:
+                    st.error("يرجى إدخال عنوان الاختبار")
+                else:
                     quiz_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-                    password = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+                    quiz_password = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
                     quiz_id = str(uuid.uuid4())
                     db.add_quiz({
                         "quiz_id": quiz_id,
@@ -572,88 +862,186 @@ def show_quizzes():
                         "description": desc,
                         "created_by": st.session_state.user["user_id"],
                         "section_id": "",
-                        "num_questions": num_q,
+                        "num_questions": num_questions,
                         "time_limit_minutes": time_limit,
-                        "total_marks": num_q,
+                        "total_marks": num_questions,
                         "expiry_date": expiry.strftime("%Y-%m-%d"),
                         "quiz_code": quiz_code,
-                        "password": password,
+                        "password": quiz_password,
                         "is_active": "True"
                     })
-                    st.success(f"تم إنشاء الاختبار. الكود: {quiz_code} - كلمة المرور: {password}")
+                    st.success(f"تم إنشاء الاختبار! الكود: **{quiz_code}** - كلمة المرور: **{quiz_password}**")
+                    st.info("احفظ الكود وكلمة المرور لتوزيعها على الطالبات.")
                     st.rerun()
 
-        # إدارة الأسئلة لاختبار موجود
+        st.markdown("---")
+        st.subheader("إدارة الأسئلة")
         quizzes = db.get_quizzes()
         if not quizzes.empty:
-            quiz_choice = st.selectbox("اختبار لإضافة أسئلة", quizzes["quiz_id"])
-            q_df = db.get_quiz_questions(quiz_choice)
-            st.dataframe(q_df)
-            with st.form("add_question"):
-                qtext = st.text_input("نص السؤال")
-                qtype = st.selectbox("نوع السؤال", ["اختيار من متعدد", "صح وخطأ", "أكمل", "إجابة قصيرة"])
-                opts = {}
-                if qtype == "اختيار من متعدد":
-                    for i in range(1,5):
-                        opts[f"option{i}"] = st.text_input(f"الخيار {i}")
-                correct = st.text_input("الإجابة الصحيحة")
-                if st.form_submit_button("إضافة سؤال"):
-                    db.add_question({
-                        "question_id": str(uuid.uuid4()),
-                        "quiz_id": quiz_choice,
-                        "question_text": qtext,
-                        "question_type": qtype,
-                        "option1": opts.get("option1", ""),
-                        "option2": opts.get("option2", ""),
-                        "option3": opts.get("option3", ""),
-                        "option4": opts.get("option4", ""),
-                        "correct_answer": correct
-                    })
-                    st.success("تمت الإضافة")
+            active_quizzes = quizzes[quizzes.is_active == "True"]
+            quiz_choice = st.selectbox("اختر اختباراً لإضافة/عرض الأسئلة", active_quizzes["quiz_id"],
+                                       format_func=lambda x: active_quizzes[active_quizzes.quiz_id==x]["title"].values[0])
+            if quiz_choice:
+                questions = db.get_quiz_questions(quiz_choice)
+                if not questions.empty:
+                    st.write(f"عدد الأسئلة الحالية: {len(questions)}")
+                    st.dataframe(questions[["question_text", "question_type", "correct_answer"]], use_container_width=True)
+                else:
+                    st.info("لا توجد أسئلة بعد.")
+
+                with st.form("add_question_form"):
+                    qtext = st.text_area("نص السؤال")
+                    qtype = st.selectbox("نوع السؤال", ["اختيار من متعدد", "صح وخطأ", "أكمل", "إجابة قصيرة"])
+                    opts = {}
+                    if qtype == "اختيار من متعدد":
+                        cols = st.columns(4)
+                        for i, col in enumerate(cols, 1):
+                            opts[f"option{i}"] = col.text_input(f"الخيار {i}")
+                    correct = st.text_input("الإجابة الصحيحة")
+                    if st.form_submit_button("إضافة سؤال"):
+                        if not qtext or not correct:
+                            st.error("نص السؤال والإجابة الصحيحة مطلوبان")
+                        else:
+                            db.add_question({
+                                "question_id": str(uuid.uuid4()),
+                                "quiz_id": quiz_choice,
+                                "question_text": qtext,
+                                "question_type": qtype,
+                                "option1": opts.get("option1", ""),
+                                "option2": opts.get("option2", ""),
+                                "option3": opts.get("option3", ""),
+                                "option4": opts.get("option4", ""),
+                                "correct_answer": correct
+                            })
+                            st.success("تمت إضافة السؤال")
+                            st.rerun()
 
     # عرض النتائج
-    st.markdown("### نتائج الاختبارات")
+    st.markdown("---")
+    st.subheader("نتائج الاختبارات")
     results = db.get_quiz_results()
     if not results.empty:
-        st.dataframe(results[["quiz_id", "student_name", "score", "total_marks", "submission_time"]])
+        # إضافة اسم الاختبار
+        quizzes_df = db.get_quizzes()
+        merged = results.merge(quizzes_df[["quiz_id","title"]], on="quiz_id", how="left")
+        st.dataframe(merged[["title", "student_name", "score", "total_marks", "submission_time"]], use_container_width=True)
+
+        # ترتيب
+        if st.button("عرض ترتيب الطالبات"):
+            top = merged.groupby("student_name")["score"].sum().reset_index().sort_values("score", ascending=False)
+            st.dataframe(top, use_container_width=True)
     else:
-        st.info("لا توجد نتائج بعد")
+        st.info("لا توجد نتائج اختبارات بعد.")
+
+def show_reports(db: Database):
+    st.markdown("<h2 class='main-header'>📊 التقارير والإحصائيات</h2>", unsafe_allow_html=True)
+    attendance = db.get_attendance()
+    if attendance.empty:
+        st.info("لا توجد بيانات حضور.")
+        return
+
+    attendance["date"] = pd.to_datetime(attendance["date"])
+    st.subheader("تقرير الغياب الشهري")
+    month = st.selectbox("الشهر", range(1,13), index=datetime.now().month-1)
+    year = st.number_input("السنة", value=datetime.now().year)
+    monthly = attendance[(attendance.date.dt.month == month) & (attendance.date.dt.year == year)]
+    if not monthly.empty:
+        summary = monthly.groupby(["student_id", "status"]).size().unstack(fill_value=0)
+        students_df = db.get_students()
+        summary = summary.merge(students_df[["student_id","full_name"]], on="student_id")
+        st.dataframe(summary)
+        # رسم بياني
+        fig = px.pie(monthly, names="status", title=f"نسب الحضور لشهر {month}")
+        st.plotly_chart(fig)
+    else:
+        st.info("لا توجد بيانات لهذا الشهر.")
+
+    st.subheader("نشاط المدرسات في الافتقاد")
+    followups = db.get_followup()
+    if not followups.empty:
+        teacher_activity = followups.groupby("teacher_id").size().reset_index(name="عدد المتابعات")
+        teachers_df = db.get_users()
+        teacher_activity = teacher_activity.merge(teachers_df[["user_id","full_name"]], left_on="teacher_id", right_on="user_id")
+        st.dataframe(teacher_activity[["full_name", "عدد المتابعات"]])
+    else:
+        st.info("لا توجد متابعات.")
+
+def show_logs(db: Database):
+    st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
+    logs = db._sheet_to_df("Logs")
+    if not logs.empty:
+        st.dataframe(logs.sort_values("timestamp", ascending=False), use_container_width=True)
+    else:
+        st.info("لا توجد سجلات.")
 
 # ===================== التطبيق الرئيسي =====================
 def main():
+    st.set_page_config(
+        page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
+        page_icon="⛪",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     inject_css()
-    st.set_page_config(page_title="نظام الغياب والافتقاد", layout="wide", initial_sidebar_state="expanded")
-    
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
+    init_session()
+
+    try:
+        creds = get_credentials()
+    except:
+        st.error("لم يتم العثور على بيانات اعتماد Google. تأكد من ملف .streamlit/secrets.toml")
+        return
+
+    db = Database(creds, SPREADSHEET_ID)
+    salt = get_salt()
+    jwt_secret = get_jwt_secret()
 
     # إذا كانت الطالبة تقدم اختباراً
-    if "student_quiz_started" in st.session_state and st.session_state.student_quiz_started:
-        show_student_quiz()
+    if st.session_state.student_quiz_started and st.session_state.student_quiz:
+        show_student_quiz(db)
         return
 
     if not st.session_state.authenticated:
-        show_login_page()
+        show_login_page(db, salt, jwt_secret)
     else:
-        if not check_authentication():
-            st.error("انتهت الجلسة، الرجاء تسجيل الدخول مجدداً")
+        # التحقق من صحة التوكن
+        if not verify_token(st.session_state.token, jwt_secret):
+            st.error("انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى.")
             st.session_state.clear()
             st.rerun()
+            return
+
         choice = sidebar_menu()
+        if choice is None:
+            return
+
+        # توجيه حسب الاختيار
         if choice == "🏠 لوحة التحكم":
-            show_dashboard()
+            show_dashboard(db)
         elif choice == "👥 إدارة المستخدمين":
-            show_admin_users()
+            if st.session_state.user["role"] == "System Admin":
+                show_admin_users(db, salt)
+            else:
+                st.error("غير مصرح لك")
         elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
-            show_students_management()
+            show_students_management(db)
+        elif choice == "👩‍🏫 المدرسات والأقسام":
+            if st.session_state.user["role"] == "System Admin":
+                show_teachers_sections(db)
+            else:
+                st.error("غير مصرح لك")
         elif choice == "📋 الحضور":
-            show_attendance()
+            show_attendance(db)
         elif choice == "💬 الافتقاد":
-            show_followup()
+            show_followup(db)
         elif choice == "📝 المسابقات والاختبارات":
-            show_quizzes()
-        elif choice == "📊 السجلات":
-            st.write("قيد التطوير")
+            show_quizzes(db)
+        elif choice == "📊 التقارير والإحصائيات":
+            show_reports(db)
+        elif choice == "📜 سجل العمليات":
+            if st.session_state.user["role"] == "System Admin":
+                show_logs(db)
+            else:
+                st.error("غير مصرح لك")
 
 if __name__ == "__main__":
     main()
