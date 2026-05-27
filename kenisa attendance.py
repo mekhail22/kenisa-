@@ -117,7 +117,7 @@ def inject_css():
             text-align: right;
         }
 
-        /* إخفاء رأس الصفحة والتذييل */
+        /* إخفاء رأس الصفحة وشريط الأدوات */
         header[data-testid="stHeader"] {
             display: none !important;
         }
@@ -128,32 +128,32 @@ def inject_css():
             visibility: hidden;
         }
 
-        /* إصلاح الشريط الجانبي عند الإغلاق في الوضع RTL */
+        /* إصلاح الشريط الجانبي ليختفي تماماً عند غلقه مع بقاء زر التحكم */
         section[data-testid="stSidebar"] {
-            transition: width 0.3s ease;
+            transition: width 0.3s ease, min-width 0.3s ease;
         }
+
+        /* حالة الإغلاق */
         section[data-testid="stSidebar"][aria-expanded="false"] {
             width: 0px !important;
             min-width: 0px !important;
             overflow: hidden;
         }
+
+        /* حالة الفتح */
         section[data-testid="stSidebar"][aria-expanded="true"] {
             width: 21rem !important;
+            min-width: 21rem !important;
         }
 
-        /* زر فتح الشريط الجانبي عندما يكون مخفياً */
+        /* زر التحكم الذي يظهر عند الإغلاق – تحسين شكله */
         button[data-testid="collapsedControl"] {
-            display: block !important;
-            position: fixed;
-            top: 10px;
-            left: 10px;
+            background-color: #667eea !important;
+            color: white !important;
+            border-radius: 50% !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             z-index: 1000;
-            background-color: #667eea;
-            color: white;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            display: block !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -552,7 +552,7 @@ def show_student_quiz(db: Database):
             st.session_state.student_quiz_started = False
             st.rerun()
 
-# ===================== القائمة الجانبية =====================
+# ===================== القائمة الجانبية (مصححة) =====================
 def sidebar_menu():
     role = st.session_state.user["role"]
     menus = {
@@ -604,6 +604,7 @@ def sidebar_menu():
     return choice
 
 # ===================== صفحات التطبيق (جميعها مفصلة) =====================
+
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
     students = db.get_students()
@@ -1070,6 +1071,7 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
+    # إذا كانت طالبة تقدم اختباراً
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
         show_student_quiz(db)
         return
