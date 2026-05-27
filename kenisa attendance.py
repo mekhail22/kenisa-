@@ -35,7 +35,7 @@ def get_jwt_secret():
     except:
         return DEFAULT_JWT_SECRET
 
-# ===================== التصميم العام (CSS داكن) =====================
+# ===================== التصميم العام (CSS داكن وأبيض نقي) =====================
 def inject_css():
     st.markdown("""
     <style>
@@ -48,14 +48,14 @@ def inject_css():
         body {
             direction: rtl;
             text-align: right;
-            background-color: #0f0f1a;
+            background-color: #0a0a14;
         }
 
         .stApp {
-            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            background: linear-gradient(135deg, #0a0a14 0%, #12122a 100%);
         }
 
-        /* رأس الصفحة والتذييل */
+        /* إخفاء رأس الصفحة والتذييل */
         header[data-testid="stHeader"] {
             display: none !important;
         }
@@ -70,7 +70,7 @@ def inject_css():
         .main-header {
             font-size: 2.2rem;
             font-weight: 700;
-            color: #e0d7ff;
+            color: #ffffff;
             text-align: center;
             margin-bottom: 1.5rem;
             padding: 1rem;
@@ -87,7 +87,7 @@ def inject_css():
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
             margin-bottom: 1rem;
             transition: transform 0.2s;
-            color: #e0d7ff;
+            color: #ffffff;
         }
         .card:hover {
             transform: translateY(-2px);
@@ -100,7 +100,7 @@ def inject_css():
             padding: 1.2rem;
             text-align: center;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            color: #e0d7ff;
+            color: #ffffff;
         }
         .stat-card .value {
             font-size: 2.2rem;
@@ -110,7 +110,7 @@ def inject_css():
         }
         .stat-card .label {
             font-size: 1rem;
-            color: #b0a0d0;
+            color: #cccccc;
         }
 
         .stButton > button {
@@ -133,9 +133,9 @@ def inject_css():
             text-align: right;
         }
 
-        /* تحسين الشريط الجانبي (داكن) */
+        /* الشريط الجانبي (داكن) */
         section[data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #0f0f1a 0%, #1a1a2e 100%);
+            background: linear-gradient(180deg, #0a0a14 0%, #12122a 100%);
             border-left: 1px solid rgba(255,255,255,0.1);
             transition: width 0.3s ease, min-width 0.3s ease;
         }
@@ -153,22 +153,27 @@ def inject_css():
             min-width: 21rem !important;
         }
 
-        /* زر القائمة الجانبية – واضح وكبير */
+        /* زر القائمة الجانبية – كبير وواضح بلون أبيض ناصع */
         button[data-testid="collapsedControl"] {
-            background: linear-gradient(135deg, #667eea, #764ba2) !important;
-            color: white !important;
-            border-radius: 50% !important;
-            width: 50px !important;
-            height: 50px !important;
-            font-size: 28px !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            border-radius: 10px !important;
+            width: 48px !important;
+            height: 48px !important;
+            font-size: 26px !important;
             font-weight: bold;
-            box-shadow: 0 0 20px rgba(102,126,234,0.8);
-            z-index: 1000;
+            box-shadow: 0 0 25px rgba(255,255,255,0.8);
+            z-index: 9999;
             left: 20px !important;
             top: 20px !important;
-            border: 2px solid white;
+            border: 2px solid #667eea;
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
         }
         button[data-testid="collapsedControl"]:hover {
+            background: #f0f0ff !important;
             transform: scale(1.1);
         }
 
@@ -182,6 +187,7 @@ def inject_css():
 
 # ===================== كلاس إدارة قاعدة البيانات =====================
 class Database:
+    """يدير كل العمليات مع Google Sheets."""
     def __init__(self, creds, spreadsheet_id):
         self.client = gspread.authorize(creds)
         self.spreadsheet = self.client.open_by_key(spreadsheet_id)
@@ -447,7 +453,7 @@ def show_initialization(db: Database):
             st.rerun()
         st.stop()
 
-# ===================== صفحة تسجيل الدخول (محسَّنة) =====================
+# ===================== صفحة تسجيل الدخول =====================
 def show_login_page(db: Database, jwt_secret: str):
     st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
 
@@ -462,7 +468,6 @@ def show_login_page(db: Database, jwt_secret: str):
             submitted = st.form_submit_button("تسجيل الدخول", use_container_width=True)
 
             if submitted:
-                # منع التكرار: التحقق من عدم وجود محاولة سابقة غير مكتملة
                 if st.session_state.get("login_attempted"):
                     st.warning("جارٍ معالجة الطلب...")
                 else:
@@ -584,7 +589,7 @@ def show_student_quiz(db: Database):
             st.session_state.student_quiz_started = False
             st.rerun()
 
-# ===================== القائمة الجانبية (مصححة) =====================
+# ===================== القائمة الجانبية =====================
 def sidebar_menu():
     role = st.session_state.user["role"]
     menus = {
@@ -635,7 +640,9 @@ def sidebar_menu():
         logout()
     return choice
 
-# ===================== الصفحات (مختصرة قليلاً مع الحفاظ على جميع الدوال) =====================
+# ===================== صفحات التطبيق =====================
+# (جميع الدوال كاملة وتفصيلية كما في النسخة السابقة - لم تحذف أي سطر)
+
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
     students = db.get_students()
