@@ -166,13 +166,15 @@ def inject_css():
         .custom-sidebar {
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
             border-radius: 15px;
-            padding: 1rem;
+            padding: 1.2rem;
             box-shadow: 0 4px 20px rgba(0,0,0,0.1);
             border: 1px solid rgba(0,0,0,0.08);
             height: calc(100vh - 2rem);
             overflow-y: auto;
             position: sticky;
             top: 1rem;
+            display: flex;
+            flex-direction: column;
         }
         .custom-sidebar h3 {
             color: #667eea;
@@ -199,15 +201,15 @@ def inject_css():
             font-weight: 600;
         }
 
-        /* زرار البرجر */
+        /* زرار البرجر الكبير */
         .burger-btn button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
-            border-radius: 10px !important;
+            border-radius: 12px !important;
             width: 100% !important;
-            height: 45px !important;
-            font-size: 20px !important;
+            height: 55px !important;
+            font-size: 22px !important;
             font-weight: bold !important;
             box-shadow: 0 4px 15px rgba(102,126,234,0.4) !important;
             transition: all 0.2s !important;
@@ -218,7 +220,7 @@ def inject_css():
             box-shadow: 0 6px 20px rgba(118,75,162,0.5) !important;
         }
 
-        /* زرار القائمة العائم (لما الشريط مخفي) */
+        /* زرار القائمة العائم الكبير */
         .floating-burger {
             position: fixed;
             top: 20px;
@@ -229,10 +231,10 @@ def inject_css():
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
-            border-radius: 12px !important;
-            width: 55px !important;
-            height: 55px !important;
-            font-size: 24px !important;
+            border-radius: 14px !important;
+            width: 65px !important;
+            height: 65px !important;
+            font-size: 28px !important;
             font-weight: bold !important;
             box-shadow: 0 4px 20px rgba(102,126,234,0.5) !important;
             transition: all 0.2s !important;
@@ -242,25 +244,39 @@ def inject_css():
             box-shadow: 0 8px 25px rgba(118,75,162,0.6) !important;
         }
 
-        /* تنسيق radio buttons في الشريط الجانبي */
-        .custom-sidebar .stRadio > div > div > label {
+        /* تنسيق radio buttons داخل الشريط الجانبي */
+        .custom-sidebar [data-testid="stRadio"] {
+            width: 100%;
+        }
+        .custom-sidebar [data-testid="stRadio"] > div[role="radiogroup"] {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .custom-sidebar [data-testid="stRadio"] > div[role="radiogroup"] > div {
             background: rgba(102,126,234,0.08);
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin: 6px 0;
+            border-radius: 10px;
+            padding: 12px 14px;
             border: 1px solid rgba(102,126,234,0.15);
             transition: all 0.2s;
-            font-weight: 600;
-            color: #1a1a2e;
+            cursor: pointer;
         }
-        .custom-sidebar .stRadio > div > div > label:hover {
+        .custom-sidebar [data-testid="stRadio"] > div[role="radiogroup"] > div:hover {
             background: rgba(102,126,234,0.18);
             border-color: rgba(102,126,234,0.3);
         }
-        .custom-sidebar .stRadio > div > div > label[data-baseweb="radio"] {
+        .custom-sidebar [data-testid="stRadio"] > div[role="radiogroup"] > div label {
+            font-weight: 600;
+            color: #1a1a2e;
+            font-size: 0.95rem;
+        }
+        .custom-sidebar [data-testid="stRadio"] > div[role="radiogroup"] > div:has(input:checked) {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important;
             border-color: #667eea !important;
+            color: white !important;
+        }
+        .custom-sidebar [data-testid="stRadio"] > div[role="radiogroup"] > div:has(input:checked) label {
+            color: white !important;
         }
 
         /* تنسيق الجداول */
@@ -927,6 +943,7 @@ def custom_sidebar(db: Database):
         st.warning("صلاحية غير معروفة")
         return None
 
+    # بداية الـ div المخصص
     st.markdown("<div class='custom-sidebar'>", unsafe_allow_html=True)
 
     # زرار إخفاء القائمة
@@ -964,6 +981,7 @@ def custom_sidebar(db: Database):
     if st.button("🚪 تسجيل الخروج", key="logout_btn", use_container_width=True, type="secondary"):
         logout()
 
+    # نهاية الـ div المخصص
     st.markdown("</div>", unsafe_allow_html=True)
     return choice
 
