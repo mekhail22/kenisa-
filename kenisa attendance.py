@@ -31,7 +31,8 @@ def get_credentials():
         )
         return creds
     except Exception as e:
-        st.error(f"❌ خطأ في بيانات اعتماد Google. تأكد من .streamlit/secrets.toml\n{e}")
+        st.error(f"❌ خطأ في بيانات اعتماد Google. تأكد من .streamlit/secrets.toml
+{e}")
         st.stop()
 
 def get_spreadsheet_id():
@@ -717,7 +718,9 @@ def show_initialization(db: Database):
             }
             db.add_user(admin_data)
             st.success("✅ تم إنشاء مدير النظام بنجاح!")
-            st.info("**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`")
+            st.info("**اسم المستخدم:** `admin`
+
+**كلمة المرور:** `admin123`")
             st.markdown("---")
             st.markdown("**التالي:** انتظر التحديث التلقائي...")
             time.sleep(2)
@@ -1415,7 +1418,10 @@ def show_quizzes(db: Database):
                         "password": quiz_password,
                         "is_active": "True"
                     })
-                    st.success(f"✅ تم إنشاء الاختبار!\n\n**الكود:** `{quiz_code}`\n**كلمة المرور:** `{quiz_password}`")
+                    st.success(f"✅ تم إنشاء الاختبار!
+
+**الكود:** `{quiz_code}`
+**كلمة المرور:** `{quiz_password}`")
                     db.add_log(st.session_state.user["user_id"], f"إنشاء اختبار {title}")
                     time.sleep(2)
                     st.rerun()
@@ -1715,3 +1721,12 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# =============================================================================
+# END OF APPLICATION
+# =============================================================================
+# This Streamlit application was developed for St. Demiana Church, Assiut
+# Version: 2.1.0
+# Features: Attendance tracking, Follow-up management, Quiz system, Reports
+# =============================================================================
