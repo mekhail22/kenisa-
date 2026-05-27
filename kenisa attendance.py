@@ -35,7 +35,7 @@ def get_jwt_secret():
     except:
         return DEFAULT_JWT_SECRET
 
-# ===================== التصميم العام (CSS) =====================
+# ===================== التصميم العام (CSS داكن) =====================
 def inject_css():
     st.markdown("""
     <style>
@@ -48,53 +48,69 @@ def inject_css():
         body {
             direction: rtl;
             text-align: right;
+            background-color: #0f0f1a;
         }
 
         .stApp {
-            background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%);
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
         }
 
+        /* رأس الصفحة والتذييل */
+        header[data-testid="stHeader"] {
+            display: none !important;
+        }
+        #MainMenu {
+            visibility: hidden;
+        }
+        footer {
+            visibility: hidden;
+        }
+
+        /* العناوين الرئيسية */
         .main-header {
             font-size: 2.2rem;
             font-weight: 700;
-            color: #2c3e50;
+            color: #e0d7ff;
             text-align: center;
             margin-bottom: 1.5rem;
             padding: 1rem;
-            background: white;
+            background: rgba(255,255,255,0.05);
             border-radius: 15px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            backdrop-filter: blur(5px);
         }
 
         .card {
-            background: white;
+            background: rgba(255,255,255,0.07);
             border-radius: 15px;
             padding: 1.5rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
             margin-bottom: 1rem;
             transition: transform 0.2s;
+            color: #e0d7ff;
         }
         .card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
         }
 
         .stat-card {
-            background: white;
+            background: rgba(255,255,255,0.07);
             border-radius: 15px;
             padding: 1.2rem;
             text-align: center;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            color: #e0d7ff;
         }
         .stat-card .value {
             font-size: 2.2rem;
             font-weight: 700;
-            color: #2c3e50;
+            color: #ffffff;
             margin: 0.5rem 0;
         }
         .stat-card .label {
             font-size: 1rem;
-            color: #7f8c8d;
+            color: #b0a0d0;
         }
 
         .stButton > button {
@@ -117,19 +133,10 @@ def inject_css():
             text-align: right;
         }
 
-        /* إخفاء رأس الصفحة وشريط الأدوات */
-        header[data-testid="stHeader"] {
-            display: none !important;
-        }
-        #MainMenu {
-            visibility: hidden;
-        }
-        footer {
-            visibility: hidden;
-        }
-
-        /* إصلاح الشريط الجانبي ليختفي تماماً عند غلقه مع بقاء زر التحكم */
+        /* تحسين الشريط الجانبي (داكن) */
         section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #0f0f1a 0%, #1a1a2e 100%);
+            border-left: 1px solid rgba(255,255,255,0.1);
             transition: width 0.3s ease, min-width 0.3s ease;
         }
 
@@ -146,14 +153,29 @@ def inject_css():
             min-width: 21rem !important;
         }
 
-        /* زر التحكم الذي يظهر عند الإغلاق – تحسين شكله */
+        /* زر القائمة الجانبية – واضح وكبير */
         button[data-testid="collapsedControl"] {
-            background-color: #667eea !important;
+            background: linear-gradient(135deg, #667eea, #764ba2) !important;
             color: white !important;
             border-radius: 50% !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            width: 50px !important;
+            height: 50px !important;
+            font-size: 28px !important;
+            font-weight: bold;
+            box-shadow: 0 0 20px rgba(102,126,234,0.8);
             z-index: 1000;
-            display: block !important;
+            left: 20px !important;
+            top: 20px !important;
+            border: 2px solid white;
+        }
+        button[data-testid="collapsedControl"]:hover {
+            transform: scale(1.1);
+        }
+
+        /* تنسيق النصوص في الشريط الجانبي */
+        section[data-testid="stSidebar"] .stMarkdown,
+        section[data-testid="stSidebar"] label {
+            color: #e0d7ff !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -385,7 +407,8 @@ def init_session():
         "user": None,
         "token": None,
         "student_quiz": None,
-        "student_quiz_started": False
+        "student_quiz_started": False,
+        "login_attempted": False
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -424,7 +447,7 @@ def show_initialization(db: Database):
             st.rerun()
         st.stop()
 
-# ===================== صفحة تسجيل الدخول =====================
+# ===================== صفحة تسجيل الدخول (محسَّنة) =====================
 def show_login_page(db: Database, jwt_secret: str):
     st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
 
@@ -439,26 +462,35 @@ def show_login_page(db: Database, jwt_secret: str):
             submitted = st.form_submit_button("تسجيل الدخول", use_container_width=True)
 
             if submitted:
-                if not username or not password:
-                    st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
+                # منع التكرار: التحقق من عدم وجود محاولة سابقة غير مكتملة
+                if st.session_state.get("login_attempted"):
+                    st.warning("جارٍ معالجة الطلب...")
                 else:
-                    users = db.get_users()
-                    user_row = users[users.username == username]
-                    if user_row.empty:
-                        st.error("اسم المستخدم غير موجود")
+                    st.session_state.login_attempted = True
+                    if not username or not password:
+                        st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
+                        st.session_state.login_attempted = False
                     else:
-                        user = user_row.iloc[0].to_dict()
-                        if password == user.get("password", ""):
-                            token = generate_token(user, jwt_secret)
-                            st.session_state.token = token
-                            st.session_state.user = user
-                            st.session_state.authenticated = True
-                            db.add_log(user["user_id"], "تسجيل الدخول")
-                            st.success("تم تسجيل الدخول بنجاح!")
-                            time.sleep(1)
-                            st.rerun()
+                        users = db.get_users()
+                        user_row = users[users.username == username]
+                        if user_row.empty:
+                            st.error("اسم المستخدم غير موجود")
+                            st.session_state.login_attempted = False
                         else:
-                            st.error("كلمة المرور غير صحيحة")
+                            user = user_row.iloc[0].to_dict()
+                            if password == user.get("password", ""):
+                                token = generate_token(user, jwt_secret)
+                                st.session_state.token = token
+                                st.session_state.user = user
+                                st.session_state.authenticated = True
+                                db.add_log(user["user_id"], "تسجيل الدخول")
+                                st.success("تم تسجيل الدخول بنجاح!")
+                                st.session_state.login_attempted = False
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("كلمة المرور غير صحيحة")
+                                st.session_state.login_attempted = False
 
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
@@ -603,8 +635,7 @@ def sidebar_menu():
         logout()
     return choice
 
-# ===================== صفحات التطبيق (جميعها مفصلة) =====================
-
+# ===================== الصفحات (مختصرة قليلاً مع الحفاظ على جميع الدوال) =====================
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
     students = db.get_students()
@@ -1071,7 +1102,6 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
-    # إذا كانت طالبة تقدم اختباراً
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
         show_student_quiz(db)
         return
