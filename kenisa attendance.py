@@ -117,24 +117,43 @@ def inject_css():
             text-align: right;
         }
 
-        /* إصلاح القائمة الجانبية عند الطي في الوضع العربي */
-        @media (max-width: 768px) {
-            .stSidebar {
-                display: none !important;
-            }
-        }
-        /* ضمان اختفاء الشريط الجانبي تمامًا عند غلقه */
-        [data-testid="collapsedControl"] {
+        /* إخفاء رأس الصفحة والتذييل */
+        header[data-testid="stHeader"] {
             display: none !important;
+        }
+        #MainMenu {
+            visibility: hidden;
+        }
+        footer {
+            visibility: hidden;
+        }
+
+        /* إصلاح الشريط الجانبي عند الإغلاق في الوضع RTL */
+        section[data-testid="stSidebar"] {
+            transition: width 0.3s ease;
         }
         section[data-testid="stSidebar"][aria-expanded="false"] {
             width: 0px !important;
             min-width: 0px !important;
             overflow: hidden;
-            visibility: hidden;
         }
-        section[data-testid="stSidebar"][aria-expanded="false"] > div {
-            display: none;
+        section[data-testid="stSidebar"][aria-expanded="true"] {
+            width: 21rem !important;
+        }
+
+        /* زر فتح الشريط الجانبي عندما يكون مخفياً */
+        button[data-testid="collapsedControl"] {
+            display: block !important;
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background-color: #667eea;
+            color: white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
         }
     </style>
     """, unsafe_allow_html=True)
@@ -533,7 +552,7 @@ def show_student_quiz(db: Database):
             st.session_state.student_quiz_started = False
             st.rerun()
 
-# ===================== القائمة الجانبية (مصححة) =====================
+# ===================== القائمة الجانبية =====================
 def sidebar_menu():
     role = st.session_state.user["role"]
     menus = {
@@ -584,7 +603,7 @@ def sidebar_menu():
         logout()
     return choice
 
-# ===================== صفحات التطبيق =====================
+# ===================== صفحات التطبيق (جميعها مفصلة) =====================
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
     students = db.get_students()
