@@ -81,8 +81,16 @@ def inject_css():
             visibility: hidden;
         }
 
-        /* إخفاء زر التصغير الافتراضي للشريط الجانبي */
+        /* إخفاء زر التصغير الافتراضي للشريط الجانبي (الهامبرجر) */
         button[data-testid="collapsedControl"] {
+            display: none !important;
+        }
+
+        /* إخفاء زر طي الشريط الجانبي الافتراضي (السهم) */
+        button[data-testid="stSidebarCollapseButton"] {
+            display: none !important;
+        }
+        button[aria-label="Close sidebar"] {
             display: none !important;
         }
 
@@ -580,7 +588,7 @@ def init_session():
         "quiz_answers": {},
         "quiz_submitted": False,
         "menu_choice": "🏠 لوحة التحكم",
-        "show_sidebar": True  # التحكم في إظهار/إخفاء الشريط الجانبي
+        "show_sidebar": True
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -686,7 +694,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
-                                st.session_state.show_sidebar = True  # يظهر الشريط بعد الدخول
+                                st.session_state.show_sidebar = True
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
@@ -835,7 +843,7 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_submitted = False
             st.rerun()
 
-# ===================== القائمة الجانبية (مع إمكانية الإخفاء الكامل) =====================
+# ===================== القائمة الجانبية =====================
 def show_sidebar(db: Database):
     """عرض القائمة الجانبية داخل st.sidebar مع زر لإخفائها"""
     with st.sidebar:
@@ -1553,7 +1561,6 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
-    # وضع الاختبار للطالبات
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
         show_student_quiz(db)
         return
@@ -1561,7 +1568,6 @@ def main():
     if not st.session_state.authenticated:
         show_login_page(db, jwt_secret)
     else:
-        # التحقق من صلاحية الجلسة
         token_data = verify_token(st.session_state.token, jwt_secret)
         if not token_data:
             st.error("⏰ انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى.")
@@ -1570,11 +1576,10 @@ def main():
             st.rerun()
             return
 
-        # التحكم في إظهار/إخفاء الشريط الجانبي
         if st.session_state.show_sidebar:
             choice = show_sidebar(db)
         else:
-            # إخفاء الشريط بالكامل عبر CSS (لن يتم إنشاء st.sidebar، لكننا نخفي أي بقايا)
+            # إخفاء الشريط بالكامل
             st.markdown("""
                 <style>
                     section[data-testid="stSidebar"] {
@@ -1588,10 +1593,8 @@ def main():
                 st.session_state.show_sidebar = True
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
-            # استعادة الاختيار الحالي
             choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
 
-        # عرض المحتوى حسب الاختيار
         st.markdown("<div class='content-area'>", unsafe_allow_html=True)
 
         if choice == "🏠 لوحة التحكم":
