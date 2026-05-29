@@ -17,10 +17,10 @@ DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 APP_VERSION = "2.1.0"
 
 st.set_page_config(
-    page_title="نظام كنيسة الشهيدة دميانة",
+    page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
-    initial_sidebar_state="expanded"  # إظهار الشريط الجانبي افتراضياً
+    initial_sidebar_state="collapsed"
 )
 
 def get_credentials():
@@ -31,16 +31,14 @@ def get_credentials():
         )
         return creds
     except Exception as e:
-        err_msg = "❌ خطأ في بيانات اعتماد Google. تأكد من .streamlit/secrets.toml\n" + str(e)
-        st.error(err_msg)
+        st.error(f"❌ خطأ في بيانات اعتماد Google. تأكد من .streamlit/secrets.toml\n{e}")
         st.stop()
 
 def get_spreadsheet_id():
     try:
         return st.secrets["sheets"]["spreadsheet_id"]
     except Exception as e:
-        err_msg = "❌ لم يتم العثور على spreadsheet_id في secrets.toml: " + str(e)
-        st.error(err_msg)
+        st.error(f"❌ لم يتم العثور على spreadsheet_id في secrets.toml: {e}")
         st.stop()
 
 def get_jwt_secret():
@@ -49,7 +47,7 @@ def get_jwt_secret():
     except:
         return DEFAULT_JWT_SECRET
 
-# ===================== التصميم العام =====================
+# ===================== التصميم العام (فاتح وواضح) =====================
 def inject_css():
     st.markdown("""
     <style>
@@ -70,6 +68,14 @@ def inject_css():
             background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
         }
 
+        /* إخفاء الشريط الجانبي الأصلي تماماً */
+        section[data-testid="stSidebar"] {
+            display: none !important;
+        }
+        button[data-testid="collapsedControl"] {
+            display: none !important;
+        }
+
         /* إخفاء رأس الصفحة والتذييل */
         header[data-testid="stHeader"] {
             display: none !important;
@@ -79,19 +85,6 @@ def inject_css():
         }
         footer {
             visibility: hidden;
-        }
-
-        /* إخفاء زر التصغير الافتراضي للشريط الجانبي (الهامبرجر) */
-        button[data-testid="collapsedControl"] {
-            display: none !important;
-        }
-
-        /* إخفاء زر طي الشريط الجانبي الافتراضي (السهم) */
-        button[data-testid="stSidebarCollapseButton"] {
-            display: none !important;
-        }
-        button[aria-label="Close sidebar"] {
-            display: none !important;
         }
 
         /* العناوين الرئيسية */
@@ -169,52 +162,113 @@ def inject_css():
             text-align: right;
         }
 
-        /* تنسيق الشريط الجانبي */
-        section[data-testid="stSidebar"] {
+        /* ========== الشريط الجانبي المخصص ========== */
+        .custom-sidebar {
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
-            border-left: 1px solid rgba(0,0,0,0.08);
-            padding-top: 1rem;
+            border-radius: 15px;
+            padding: 1.2rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            border: 1px solid rgba(0,0,0,0.08);
+            height: calc(100vh - 2rem);
+            overflow-y: auto;
+            position: sticky;
+            top: 1rem;
+            display: flex;
+            flex-direction: column;
         }
-        section[data-testid="stSidebar"] .stRadio > div {
-            direction: rtl;
-        }
-        section[data-testid="stSidebar"] .stRadio label {
-            font-weight: 600;
-            color: #1a1a2e;
-            font-size: 1rem;
-        }
-
-        /* زر الإخفاء داخل الشريط */
-        .hide-sidebar-btn button {
-            background: #667eea !important;
-            color: white !important;
-            font-weight: bold;
-            border-radius: 8px;
+        .custom-sidebar h3 {
+            color: #667eea;
+            text-align: center;
             margin-bottom: 1rem;
+            font-weight: 700;
+        }
+        .custom-sidebar .user-info {
+            background: rgba(102,126,234,0.1);
+            border-radius: 10px;
+            padding: 0.8rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            border: 1px solid rgba(102,126,234,0.2);
+        }
+        .custom-sidebar .user-info .name {
+            font-weight: 700;
+            color: #1a1a2e;
+            font-size: 1.1rem;
+        }
+        .custom-sidebar .user-info .role {
+            color: #667eea;
+            font-size: 0.9rem;
+            font-weight: 600;
         }
 
-        /* زر الإظهار العائم */
-        .floating-show-btn {
+        /* زرار البرجر الكبير */
+        .burger-btn button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 12px !important;
+            width: 100% !important;
+            height: 55px !important;
+            font-size: 22px !important;
+            font-weight: bold !important;
+            box-shadow: 0 4px 15px rgba(102,126,234,0.4) !important;
+            transition: all 0.2s !important;
+            margin-bottom: 1rem !important;
+        }
+        .burger-btn button:hover {
+            transform: scale(1.05) !important;
+            box-shadow: 0 6px 20px rgba(118,75,162,0.5) !important;
+        }
+
+        /* زرار القائمة العائم الكبير */
+        .floating-burger {
             position: fixed;
             top: 20px;
             left: 20px;
             z-index: 99999;
         }
-        .floating-show-btn button {
+        .floating-burger button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
             border-radius: 14px !important;
-            width: 65px !important;
-            height: 65px !important;
-            font-size: 28px !important;
+            width: 80px !important;      /* تكبير الزر */
+            height: 80px !important;
+            font-size: 32px !important;  /* خط أكبر */
             font-weight: bold !important;
             box-shadow: 0 4px 20px rgba(102,126,234,0.5) !important;
             transition: all 0.2s !important;
         }
-        .floating-show-btn button:hover {
+        .floating-burger button:hover {
             transform: scale(1.1) !important;
             box-shadow: 0 8px 25px rgba(118,75,162,0.6) !important;
+        }
+
+        /* تنسيق أزرار القائمة داخل الشريط الجانبي */
+        .sidebar-menu-btn button {
+            background: rgba(102,126,234,0.08) !important;
+            border: 1px solid rgba(102,126,234,0.15) !important;
+            color: #1a1a2e !important;
+            border-radius: 10px !important;
+            padding: 12px 14px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            width: 100% !important;
+            text-align: right !important;
+            transition: all 0.2s !important;
+            margin-bottom: 5px !important;
+            box-shadow: none !important;
+            background: rgba(102,126,234,0.08) !important;
+        }
+        .sidebar-menu-btn button:hover {
+            background: rgba(102,126,234,0.18) !important;
+            border-color: rgba(102,126,234,0.3) !important;
+        }
+        /* تنسيق الزر النشط */
+        .sidebar-menu-btn.active button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border-color: #667eea !important;
         }
 
         /* تنسيق الجداول */
@@ -587,8 +641,8 @@ def init_session():
         "login_attempted": False,
         "quiz_answers": {},
         "quiz_submitted": False,
-        "menu_choice": "🏠 لوحة التحكم",
-        "show_sidebar": True
+        "show_sidebar": True,
+        "menu_choice": "🏠 لوحة التحكم"
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -655,8 +709,7 @@ def show_initialization(db: Database):
             }
             db.add_user(admin_data)
             st.success("✅ تم إنشاء مدير النظام بنجاح!")
-            info_text = "**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`"
-            st.info(info_text)
+            st.info("**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`")
             st.markdown("---")
             st.markdown("**التالي:** انتظر التحديث التلقائي...")
             time.sleep(2)
@@ -665,7 +718,7 @@ def show_initialization(db: Database):
 
 # ===================== صفحة تسجيل الدخول =====================
 def show_login_page(db: Database, jwt_secret: str):
-    st.markdown("<h1 class='main-header'>⛪<br>كنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
 
     show_initialization(db)
 
@@ -694,7 +747,6 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
-                                st.session_state.show_sidebar = True
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
@@ -734,8 +786,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                     st.session_state.quiz_submitted = False
                                     st.rerun()
                             except Exception as e:
-                                err_msg = "خطأ في التحقق من الاختبار: " + str(e)
-                                st.error(err_msg)
+                                st.error(f"خطأ في التحقق من الاختبار: {e}")
 
 # ===================== واجهة الطالبة لحل الاختبار =====================
 def show_student_quiz(db: Database):
@@ -747,8 +798,7 @@ def show_student_quiz(db: Database):
         st.session_state.quiz_submitted = False
 
     st.title(f"📝 {quiz['title']}")
-    quiz_info = f"**الوقت المحدد:** {quiz['time_limit_minutes']} دقيقة | **عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** {quiz['total_marks']}"
-    st.markdown(quiz_info)
+    st.markdown(f"**الوقت المحدد:** {quiz['time_limit_minutes']} دقيقة | **عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** {quiz['total_marks']}")
     st.markdown("---")
 
     questions = db.get_quiz_questions(quiz["quiz_id"])
@@ -833,8 +883,7 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_submitted = True
 
         st.balloons()
-        result_msg = f"تم تسليم الاختبار بنجاح! نتيجتك: {score}/{total}"
-        st.success(result_msg)
+        st.success(f"تم تسليم الاختبار بنجاح! نتيجتك: {score}/{total}")
 
         if st.button("إنهاء والعودة", use_container_width=True):
             st.session_state.student_quiz = None
@@ -843,91 +892,103 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_submitted = False
             st.rerun()
 
-# ===================== القائمة الجانبية =====================
-def show_sidebar(db: Database):
-    """عرض القائمة الجانبية داخل st.sidebar مع زر لإخفائها"""
-    with st.sidebar:
-        # زر إخفاء الشريط
-        st.markdown('<div class="hide-sidebar-btn">', unsafe_allow_html=True)
-        if st.button("◀ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
-            st.session_state.show_sidebar = False
+# ===================== القائمة الجانبية المخصصة (معدلة بأزرار) =====================
+def custom_sidebar(db: Database):
+    role = st.session_state.user["role"]
+    menus = {
+        "System Admin": [
+            "🏠 لوحة التحكم",
+            "👥 إدارة المستخدمين",
+            "👩‍🎓 الطالبات",
+            "👩‍🏫 المدرسات والأقسام",
+            "📋 الحضور",
+            "💬 الافتقاد",
+            "📝 المسابقات والاختبارات",
+            "📊 التقارير والإحصائيات",
+            "📜 سجل العمليات",
+            "🔒 تغيير كلمة المرور"
+        ],
+        "Father Account": [
+            "🏠 لوحة التحكم",
+            "📊 التقارير والإحصائيات",
+            "🔒 تغيير كلمة المرور"
+        ],
+        "Service Manager": [
+            "🏠 لوحة التحكم",
+            "👩‍🎓 طالباتي",
+            "📋 الحضور",
+            "💬 الافتقاد",
+            "📝 المسابقات والاختبارات",
+            "📊 التقارير والإحصائيات",
+            "🔒 تغيير كلمة المرور"
+        ],
+        "Teacher": [
+            "🏠 لوحة التحكم",
+            "👩‍🎓 طالباتي",
+            "📋 الحضور",
+            "💬 الافتقاد",
+            "🔒 تغيير كلمة المرور"
+        ]
+    }
+    menu = menus.get(role, [])
+    if not menu:
+        st.warning("صلاحية غير معروفة")
+        return None
+
+    # بداية الـ div المخصص
+    st.markdown("<div class='custom-sidebar'>", unsafe_allow_html=True)
+
+    # زرار إخفاء القائمة
+    st.markdown("<div class='burger-btn'>", unsafe_allow_html=True)
+    if st.button("☰ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
+        st.session_state.show_sidebar = False
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # معلومات المستخدم
+    st.markdown(f"""
+    <div class='user-info'>
+        <div class='name'>👤 {st.session_state.user['full_name']}</div>
+        <div class='role'>{role}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<hr style='margin: 1rem 0; border-color: rgba(102,126,234,0.2);'>", unsafe_allow_html=True)
+
+    # قائمة التنقل باستخدام أزرار بدلاً من radio buttons
+    current_choice = st.session_state.get("menu_choice", menu[0])
+    for item in menu:
+        # تحديد إذا كان الزر نشطًا (مختارًا حاليًا)
+        is_active = (item == current_choice)
+        btn_class = "sidebar-menu-btn active" if is_active else "sidebar-menu-btn"
+        st.markdown(f"<div class='{btn_class}'>", unsafe_allow_html=True)
+        if st.button(item, key=f"menu_{item}", use_container_width=True):
+            st.session_state.menu_choice = item
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("## ⛪ كنيسة الشهيدة دميانة")
-        user = st.session_state.user
-        st.markdown(f"**👤 {user['full_name']}**")
-        st.caption(f"الصلاحية: {user['role']}")
+    st.markdown("<hr style='margin: 1rem 0; border-color: rgba(102,126,234,0.2);'>", unsafe_allow_html=True)
 
-        st.divider()
+    # زرار تسجيل الخروج
+    st.markdown("<div class='sidebar-menu-btn'>", unsafe_allow_html=True)
+    if st.button("🚪 تسجيل الخروج", key="logout_btn", use_container_width=True, type="secondary"):
+        logout()
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        # تعريف القوائم حسب الصلاحية
-        role = user["role"]
-        menus = {
-            "System Admin": [
-                "🏠 لوحة التحكم",
-                "👥 إدارة المستخدمين",
-                "👩‍🎓 الطالبات",
-                "👩‍🏫 المدرسات والأقسام",
-                "📋 الحضور",
-                "💬 الافتقاد",
-                "📝 المسابقات والاختبارات",
-                "📊 التقارير والإحصائيات",
-                "📜 سجل العمليات",
-                "🔒 تغيير كلمة المرور"
-            ],
-            "Father Account": [
-                "🏠 لوحة التحكم",
-                "📊 التقارير والإحصائيات",
-                "🔒 تغيير كلمة المرور"
-            ],
-            "Service Manager": [
-                "🏠 لوحة التحكم",
-                "👩‍🎓 طالباتي",
-                "📋 الحضور",
-                "💬 الافتقاد",
-                "📝 المسابقات والاختبارات",
-                "📊 التقارير والإحصائيات",
-                "🔒 تغيير كلمة المرور"
-            ],
-            "Teacher": [
-                "🏠 لوحة التحكم",
-                "👩‍🎓 طالباتي",
-                "📋 الحضور",
-                "💬 الافتقاد",
-                "🔒 تغيير كلمة المرور"
-            ]
-        }
+    # نهاية الـ div المخصص
+    st.markdown("</div>", unsafe_allow_html=True)
+    return current_choice  # لا حاجة لقيمة الإرجاع الآن، لكن سنبقيها للتوافق
 
-        menu_items = menus.get(role, [])
-        if not menu_items:
-            st.warning("صلاحية غير معروفة")
-            return None
-
-        current_choice = st.session_state.get("menu_choice", menu_items[0])
-        if current_choice not in menu_items:
-            current_choice = menu_items[0]
-
-        choice = st.radio(
-            "القائمة الرئيسية",
-            menu_items,
-            index=menu_items.index(current_choice),
-            key="nav_radio",
-            label_visibility="collapsed"
-        )
-
-        if choice != current_choice:
-            st.session_state.menu_choice = choice
-            st.rerun()
-
-        st.divider()
-
-        if st.button("🚪 تسجيل الخروج", use_container_width=True):
-            logout()
-
-        return choice
+def floating_burger_button():
+    """زرار برجر عائم أكبر لما القائمة تكون مخفية"""
+    st.markdown("<div class='floating-burger'>", unsafe_allow_html=True)
+    if st.button("☰", key="show_sidebar_btn"):
+        st.session_state.show_sidebar = True
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ===================== صفحات التطبيق =====================
+# (باقي الدوال show_dashboard, show_admin_users, ... تبقى كما هي بدون تغيير)
 
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
@@ -1034,10 +1095,8 @@ def show_admin_users(db: Database):
                                             format_func=lambda x: f"{users[users.user_id==x]['full_name'].values[0]} ({users[users.user_id==x]['username'].values[0]})")
             user_data = users[users.user_id == selected_user_id].iloc[0].to_dict()
 
-            roles_list = ["System Admin", "Father Account", "Service Manager", "Teacher"]
-            current_role = user_data.get("role", "Teacher")
-            role_index = roles_list.index(current_role) if current_role in roles_list else 3
-            new_role = st.selectbox("الصلاحية الجديدة", roles_list, index=role_index)
+            new_role = st.selectbox("الصلاحية الجديدة", ["System Admin", "Father Account", "Service Manager", "Teacher"], 
+                                   index=["System Admin", "Father Account", "Service Manager", "Teacher"].index(user_data.get("role", "Teacher")) if user_data.get("role") in ["System Admin", "Father Account", "Service Manager", "Teacher"] else 3)
 
             col1, col2 = st.columns(2)
             if col1.button("تحديث الصلاحية", use_container_width=True):
@@ -1124,19 +1183,14 @@ def show_students_management(db: Database):
             student_row = students[students.student_id == selected_student].iloc[0].to_dict()
 
             new_full_name = st.text_input("الاسم الكامل", value=student_row.get("full_name", ""))
-            teacher_ids = teachers["user_id"].tolist() if not teachers.empty else []
-            current_teacher = student_row.get("teacher_id", "")
-            teacher_index = teacher_ids.index(current_teacher) if current_teacher in teacher_ids else 0
             new_teacher = st.selectbox("المدرسة المسؤولة", teachers["user_id"] if not teachers.empty else [],
                                        format_func=lambda x: teachers[teachers.user_id==x]["full_name"].values[0] if not teachers.empty else x,
-                                       index=teacher_index)
+                                       index=list(teachers["user_id"]).index(student_row["teacher_id"]) if student_row.get("teacher_id") in teachers["user_id"].values else 0)
             new_phone = st.text_input("رقم الهاتف", value=student_row.get("phone", ""))
             new_parent = st.text_input("رقم ولي الأمر", value=student_row.get("parent_phone", ""))
             new_notes = st.text_area("ملاحظات", value=student_row.get("notes", ""))
-            status_list = ["active", "inactive"]
-            current_status = student_row.get("status", "active")
-            status_index = 0 if current_status == "active" else 1
-            new_status = st.selectbox("الحالة", status_list, index=status_index)
+            new_status = st.selectbox("الحالة", ["active", "inactive"], 
+                                     index=0 if student_row.get("status") == "active" else 1)
 
             if st.button("حفظ التعديلات", use_container_width=True):
                 db.update_student(selected_student, {
@@ -1239,10 +1293,8 @@ def show_attendance(db: Database):
 
         cols = st.columns([3, 2, 2])
         cols[0].write(f"**{sname}**")
-        status_list = ["حاضر", "غائب", "متأخر"]
-        status_index = status_list.index(prev_status) if prev_status in status_list else 0
-        status = cols[1].radio("الحالة", status_list,
-                              index=status_index,
+        status = cols[1].radio("الحالة", ["حاضر", "غائب", "متأخر"],
+                              index=["حاضر","غائب","متأخر"].index(prev_status) if prev_status in ["حاضر","غائب","متأخر"] else 0,
                               key=f"att_{sid}", horizontal=True)
         notes = cols[2].text_input("ملاحظة", value=prev_notes, key=f"note_{sid}", label_visibility="collapsed")
 
@@ -1358,8 +1410,7 @@ def show_quizzes(db: Database):
                         "password": quiz_password,
                         "is_active": "True"
                     })
-                    success_msg = f"✅ تم إنشاء الاختبار!\n\n**الكود:** `{quiz_code}`\n**كلمة المرور:** `{quiz_password}`"
-                    st.success(success_msg)
+                    st.success(f"✅ تم إنشاء الاختبار!\n\n**الكود:** `{quiz_code}`\n**كلمة المرور:** `{quiz_password}`")
                     db.add_log(st.session_state.user["user_id"], f"إنشاء اختبار {title}")
                     time.sleep(2)
                     st.rerun()
@@ -1576,58 +1627,81 @@ def main():
             st.rerun()
             return
 
+        # ====== نظام الشريط الجانبي المخصص ======
         if st.session_state.show_sidebar:
-            choice = show_sidebar(db)
+            sidebar_col, content_col = st.columns([1.2, 4])
+            with sidebar_col:
+                custom_sidebar(db)  # تعيد None، لكن menu_choice يُحدث داخلياً
+            with content_col:
+                st.markdown("<div class='content-area'>", unsafe_allow_html=True)
+                choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+                # عرض الصفحة المناسبة
+                if choice == "🏠 لوحة التحكم":
+                    show_dashboard(db)
+                elif choice == "👥 إدارة المستخدمين":
+                    if st.session_state.user["role"] == "System Admin":
+                        show_admin_users(db)
+                    else:
+                        st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+                elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
+                    show_students_management(db)
+                elif choice == "👩‍🏫 المدرسات والأقسام":
+                    if st.session_state.user["role"] == "System Admin":
+                        show_teachers_sections(db)
+                    else:
+                        st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+                elif choice == "📋 الحضور":
+                    show_attendance(db)
+                elif choice == "💬 الافتقاد":
+                    show_followup(db)
+                elif choice == "📝 المسابقات والاختبارات":
+                    show_quizzes(db)
+                elif choice == "📊 التقارير والإحصائيات":
+                    show_reports(db)
+                elif choice == "📜 سجل العمليات":
+                    if st.session_state.user["role"] == "System Admin":
+                        show_logs(db)
+                    else:
+                        st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+                elif choice == "🔒 تغيير كلمة المرور":
+                    change_password(db)
+                st.markdown("</div>", unsafe_allow_html=True)
         else:
-            # إخفاء الشريط بالكامل
-            st.markdown("""
-                <style>
-                    section[data-testid="stSidebar"] {
-                        display: none !important;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
-            # زر عائم لفتح الشريط
-            st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
-            if st.button("☰", key="show_sidebar_btn"):
-                st.session_state.show_sidebar = True
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            # الشريط مخفي - زرار عائم + محتوى بعرض كامل
+            floating_burger_button()
+            st.markdown("<div class='content-area' style='padding-top: 3rem;'>", unsafe_allow_html=True)
             choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
-
-        st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-
-        if choice == "🏠 لوحة التحكم":
-            show_dashboard(db)
-        elif choice == "👥 إدارة المستخدمين":
-            if st.session_state.user["role"] == "System Admin":
-                show_admin_users(db)
-            else:
-                st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
-        elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
-            show_students_management(db)
-        elif choice == "👩‍🏫 المدرسات والأقسام":
-            if st.session_state.user["role"] == "System Admin":
-                show_teachers_sections(db)
-            else:
-                st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
-        elif choice == "📋 الحضور":
-            show_attendance(db)
-        elif choice == "💬 الافتقاد":
-            show_followup(db)
-        elif choice == "📝 المسابقات والاختبارات":
-            show_quizzes(db)
-        elif choice == "📊 التقارير والإحصائيات":
-            show_reports(db)
-        elif choice == "📜 سجل العمليات":
-            if st.session_state.user["role"] == "System Admin":
-                show_logs(db)
-            else:
-                st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
-        elif choice == "🔒 تغيير كلمة المرور":
-            change_password(db)
-
-        st.markdown("</div>", unsafe_allow_html=True)
+            # نفس عرض الصفحات
+            if choice == "🏠 لوحة التحكم":
+                show_dashboard(db)
+            elif choice == "👥 إدارة المستخدمين":
+                if st.session_state.user["role"] == "System Admin":
+                    show_admin_users(db)
+                else:
+                    st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+            elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
+                show_students_management(db)
+            elif choice == "👩‍🏫 المدرسات والأقسام":
+                if st.session_state.user["role"] == "System Admin":
+                    show_teachers_sections(db)
+                else:
+                    st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+            elif choice == "📋 الحضور":
+                show_attendance(db)
+            elif choice == "💬 الافتقاد":
+                show_followup(db)
+            elif choice == "📝 المسابقات والاختبارات":
+                show_quizzes(db)
+            elif choice == "📊 التقارير والإحصائيات":
+                show_reports(db)
+            elif choice == "📜 سجل العمليات":
+                if st.session_state.user["role"] == "System Admin":
+                    show_logs(db)
+                else:
+                    st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+            elif choice == "🔒 تغيير كلمة المرور":
+                change_password(db)
+            st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
