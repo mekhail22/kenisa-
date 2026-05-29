@@ -17,7 +17,7 @@ DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 APP_VERSION = "2.1.0"
 
 st.set_page_config(
-    page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
+    page_title="نظام كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
     initial_sidebar_state="expanded"  # إظهار الشريط الجانبي افتراضياً
