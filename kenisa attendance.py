@@ -49,7 +49,7 @@ def get_jwt_secret():
     except:
         return DEFAULT_JWT_SECRET
 
-# ===================== التصميم العام (بدون إخفاء الشريط الجانبي) =====================
+# ===================== التصميم العام =====================
 def inject_css():
     st.markdown("""
     <style>
@@ -70,7 +70,7 @@ def inject_css():
             background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
         }
 
-        /* إخفاء رأس الصفحة والتذييل فقط */
+        /* إخفاء رأس الصفحة والتذييل */
         header[data-testid="stHeader"] {
             display: none !important;
         }
@@ -79,6 +79,11 @@ def inject_css():
         }
         footer {
             visibility: hidden;
+        }
+
+        /* إخفاء زر التصغير الافتراضي للشريط الجانبي */
+        button[data-testid="collapsedControl"] {
+            display: none !important;
         }
 
         /* العناوين الرئيسية */
@@ -156,7 +161,7 @@ def inject_css():
             text-align: right;
         }
 
-        /* تنسيق الشريط الجانبي الافتراضي */
+        /* تنسيق الشريط الجانبي */
         section[data-testid="stSidebar"] {
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
             border-left: 1px solid rgba(0,0,0,0.08);
@@ -169,6 +174,39 @@ def inject_css():
             font-weight: 600;
             color: #1a1a2e;
             font-size: 1rem;
+        }
+
+        /* زر الإخفاء داخل الشريط */
+        .hide-sidebar-btn button {
+            background: #667eea !important;
+            color: white !important;
+            font-weight: bold;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        /* زر الإظهار العائم */
+        .floating-show-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 99999;
+        }
+        .floating-show-btn button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 14px !important;
+            width: 65px !important;
+            height: 65px !important;
+            font-size: 28px !important;
+            font-weight: bold !important;
+            box-shadow: 0 4px 20px rgba(102,126,234,0.5) !important;
+            transition: all 0.2s !important;
+        }
+        .floating-show-btn button:hover {
+            transform: scale(1.1) !important;
+            box-shadow: 0 8px 25px rgba(118,75,162,0.6) !important;
         }
 
         /* تنسيق الجداول */
@@ -541,7 +579,8 @@ def init_session():
         "login_attempted": False,
         "quiz_answers": {},
         "quiz_submitted": False,
-        "menu_choice": "🏠 لوحة التحكم"
+        "menu_choice": "🏠 لوحة التحكم",
+        "show_sidebar": True  # التحكم في إظهار/إخفاء الشريط الجانبي
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -647,6 +686,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
+                                st.session_state.show_sidebar = True  # يظهر الشريط بعد الدخول
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
@@ -795,12 +835,18 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_submitted = False
             st.rerun()
 
-# ===================== القائمة الجانبية (باستخدام st.sidebar) =====================
+# ===================== القائمة الجانبية (مع إمكانية الإخفاء الكامل) =====================
 def show_sidebar(db: Database):
-    """عرض القائمة الجانبية باستخدام الشريط الجانبي الافتراضي"""
+    """عرض القائمة الجانبية داخل st.sidebar مع زر لإخفائها"""
     with st.sidebar:
-        st.markdown("## ⛪ كنيسة الشهيدة دميانة")
+        # زر إخفاء الشريط
+        st.markdown('<div class="hide-sidebar-btn">', unsafe_allow_html=True)
+        if st.button("◀ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
+            st.session_state.show_sidebar = False
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
+        st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
         st.markdown(f"**👤 {user['full_name']}**")
         st.caption(f"الصلاحية: {user['role']}")
@@ -1507,7 +1553,7 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
-    # إذا كان وضع الاختبار للطالبات نشطاً
+    # وضع الاختبار للطالبات
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
         show_student_quiz(db)
         return
@@ -1524,8 +1570,26 @@ def main():
             st.rerun()
             return
 
-        # عرض الشريط الجانبي
-        choice = show_sidebar(db)  # دالة بسيطة تستخدم st.sidebar
+        # التحكم في إظهار/إخفاء الشريط الجانبي
+        if st.session_state.show_sidebar:
+            choice = show_sidebar(db)
+        else:
+            # إخفاء الشريط بالكامل عبر CSS (لن يتم إنشاء st.sidebar، لكننا نخفي أي بقايا)
+            st.markdown("""
+                <style>
+                    section[data-testid="stSidebar"] {
+                        display: none !important;
+                    }
+                </style>
+            """, unsafe_allow_html=True)
+            # زر عائم لفتح الشريط
+            st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
+            if st.button("☰", key="show_sidebar_btn"):
+                st.session_state.show_sidebar = True
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+            # استعادة الاختيار الحالي
+            choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
 
         # عرض المحتوى حسب الاختيار
         st.markdown("<div class='content-area'>", unsafe_allow_html=True)
