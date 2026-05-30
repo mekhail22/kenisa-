@@ -12,7 +12,7 @@ import string
 import jwt
 import time
 
-# ===================== الإعدادات العامة =====================
+# ===================== الإعدادات العام ة =====================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 APP_VERSION = "2.4.0"
 
