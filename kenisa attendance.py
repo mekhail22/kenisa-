@@ -14,7 +14,7 @@ import time
 
 # ===================== الإعدادات العامة =====================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.0"
 
 st.set_page_config(
     page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
@@ -22,12 +22,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# محاولة استيراد مكتبة التحديث التلقائي
-try:
-    from streamlit_autorefresh import st_autorefresh
-except ImportError:
-    st_autorefresh = None
 
 def get_credentials():
     try:
@@ -87,14 +81,13 @@ def inject_css():
             visibility: hidden;
         }
 
-        /* إخفاء أزرار الشريط الجانبي الافتراضية */
-        button[data-testid="collapsedControl"] {
-            display: none !important;
-        }
-        button[data-testid="stSidebarCollapseButton"] {
-            display: none !important;
-        }
-        button[aria-label="Close sidebar"] {
+        /* إخفاء جميع أزرار الشريط الجانبي الافتراضية نهائياً */
+        button[data-testid="collapsedControl"],
+        button[data-testid="stSidebarCollapseButton"],
+        button[aria-label="Close sidebar"],
+        [data-testid="stSidebar"] > button,
+        [data-testid="stSidebar"] > div:first-child > button,
+        [data-testid="stSidebarResizer"] {
             display: none !important;
         }
 
@@ -341,7 +334,7 @@ class Database:
         try:
             ws = self.spreadsheet.worksheet(name)
         except gspread.WorksheetNotFound:
-            ws = self.spreadsheet.add_worksheet(title=name, rows=5000, cols=max(len(columns), 1))
+            ws = self.spreadsheet.add_worksheet(title=name, rows=100000, cols=max(len(columns), 1))
             if columns:
                 ws.append_row(columns)
         return ws
@@ -610,6 +603,7 @@ def init_session():
         "quiz_end_time": None,
         "quiz_answers": {},
         "quiz_submitted": False,
+        "last_score": 0,
         "login_attempted": False,
         "menu_choice": "🏠 لوحة التحكم",
         "show_sidebar": True
@@ -746,7 +740,6 @@ def show_login_page(db: Database, jwt_secret: str):
                                 elif quiz.get("is_active", "True") == "False":
                                     st.error("هذا الاختبار غير نشط حالياً")
                                 else:
-                                    # تحضير بيانات الاختبار للطالبة
                                     st.session_state.student_quiz = quiz
                                     st.session_state.student_quiz_started = True
                                     st.session_state.quiz_phase = "enter_name"
@@ -773,14 +766,12 @@ def show_student_quiz(db: Database):
             if not name.strip():
                 st.error("الرجاء إدخال الاسم")
                 return
-
             # التحقق من عدم وجود محاولة سابقة بنفس الاسم
             existing_results = db.get_quiz_results(quiz["quiz_id"])
             if not existing_results.empty:
                 if name.strip().lower() in existing_results["student_name"].str.lower().values:
                     st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك تكرار المحاولة.")
                     return
-
             # تسجيل الاسم وبدء الوقت
             st.session_state.student_name = name.strip()
             st.session_state.quiz_start_time = datetime.now()
@@ -793,11 +784,9 @@ def show_student_quiz(db: Database):
     # --- المرحلة: إنهاء الاختبار (تم تسليمه أو انتهى الوقت) ---
     if st.session_state.quiz_submitted or st.session_state.quiz_phase == "finished":
         st.success("تم تسليم الاختبار بنجاح!")
-        # عرض النتيجة إن وجدت
         if "last_score" in st.session_state:
             st.info(f"نتيجتك: {st.session_state.last_score}/20")
         if st.button("إنهاء والعودة إلى الرئيسية", use_container_width=True):
-            # تنظيف الحالة
             for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
                         "quiz_start_time", "quiz_end_time", "quiz_answers", "quiz_submitted", "last_score"]:
                 if key in st.session_state:
@@ -806,29 +795,37 @@ def show_student_quiz(db: Database):
         return
 
     # --- المرحلة: أثناء حل الاختبار ---
-    # تفعيل التحديث التلقائي للعداد (إن كانت المكتبة متاحة)
-    if st_autorefresh is not None:
-        st_autorefresh(interval=1000, key="quiz_timer")
-    else:
-        st.caption("⚠️ يرجى تحديث الصفحة يدوياً لمتابعة الوقت (لا توجد مكتبة autorefresh).")
-
-    # حساب الوقت المتبقي
-    now = datetime.now()
-    remaining = (st.session_state.quiz_end_time - now).total_seconds()
-    if remaining <= 0:
-        # انتهى الوقت تلقائياً
-        remaining = 0
-        auto_submit_quiz(db, quiz)
-        st.session_state.quiz_phase = "finished"
-        st.rerun()
-
-    # عرض المؤقت
-    mins, secs = divmod(int(remaining), 60)
-    timer_text = f"{mins:02d}:{secs:02d}"
+    # عرض المؤقت بواسطة JavaScript (عد تنازلي حي)
+    end_time_str = st.session_state.quiz_end_time.isoformat()
     st.markdown(f"""
     <div class="timer-container">
-        <div class="timer-box">⏳ الوقت المتبقي: {timer_text}</div>
+        <div class="timer-box" id="quiz-timer">⏳ الوقت المتبقي: --:--</div>
     </div>
+    <input type="hidden" id="end-time-data" value="{end_time_str}">
+    <script>
+        (function() {{
+            const endTime = new Date(document.getElementById('end-time-data').value);
+            const timerDiv = document.getElementById('quiz-timer');
+            const timeoutBtn = document.getElementById('timeout-submit-btn');
+
+            function updateTimer() {{
+                const now = new Date();
+                const diff = endTime - now;
+                if (diff <= 0) {{
+                    timerDiv.innerHTML = '⏳ الوقت المتبقي: 00:00';
+                    if (timeoutBtn) {{
+                        timeoutBtn.click();
+                    }}
+                    return;
+                }}
+                const mins = Math.floor(diff / 60000);
+                const secs = Math.floor((diff % 60000) / 1000);
+                timerDiv.innerHTML = `⏳ الوقت المتبقي: ${{mins.toString().padStart(2,'0')}}:${{secs.toString().padStart(2,'0')}}`;
+                setTimeout(updateTimer, 1000);
+            }}
+            updateTimer();
+        }})();
+    </script>
     """, unsafe_allow_html=True)
 
     st.title(f"📝 {quiz['title']}")
@@ -872,6 +869,12 @@ def show_student_quiz(db: Database):
         auto_submit_quiz(db, quiz)
         st.session_state.quiz_phase = "finished"
         st.rerun()
+
+    # زر مخفي للاستدعاء عند انتهاء الوقت (سيتم النقر عليه بواسطة JavaScript)
+    st.markdown('<div style="display:none">', unsafe_allow_html=True)
+    if st.button("", key="timeout_submit_btn", on_click=lambda: auto_submit_quiz(db, quiz), use_container_width=False):
+        pass  # لن يصل هنا لأن الزر مخفي، لكنه يستدعي الدالة
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def auto_submit_quiz(db, quiz):
     """حساب النتيجة وتخزينها (الدرجة من 20)"""
@@ -987,7 +990,9 @@ def show_sidebar(db: Database):
 
         return choice
 
-# ===================== صفحات التطبيق =====================
+# ===================== صفحات التطبيق (دون تغيير كبير) =====================
+# (باقي دوال الصفحات كما هي مع زيادة عدد الصفوف فقط، المدرجة كاملة للسهولة)
+
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
 
@@ -1391,7 +1396,7 @@ def show_quizzes(db: Database):
             title = st.text_input("عنوان الاختبار*")
             desc = st.text_area("وصف الاختبار")
             col1, col2 = st.columns(2)
-            num_questions = col1.selectbox("عدد الأسئلة", [10, 20, 30], index=1)  # 20 افتراضي
+            num_questions = col1.selectbox("عدد الأسئلة", [10, 20, 30], index=1)
             time_limit = col2.number_input("الوقت (بالدقائق)", 1, 180, 15)
             expiry = st.date_input("تاريخ الانتهاء", datetime.now() + timedelta(days=7))
 
@@ -1410,7 +1415,7 @@ def show_quizzes(db: Database):
                         "section_id": "",
                         "num_questions": num_questions,
                         "time_limit_minutes": time_limit,
-                        "total_marks": 20,          # ثابت 20
+                        "total_marks": 20,
                         "expiry_date": expiry.strftime("%Y-%m-%d"),
                         "quiz_code": quiz_code,
                         "password": quiz_password,
