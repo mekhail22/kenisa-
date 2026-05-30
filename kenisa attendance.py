@@ -14,7 +14,7 @@ import time
 
 # ===================== الإعدادات العامة =====================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.4.0"
 
 st.set_page_config(
     page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
@@ -87,7 +87,8 @@ def inject_css():
         button[aria-label="Close sidebar"],
         [data-testid="stSidebar"] > button,
         [data-testid="stSidebar"] > div:first-child > button,
-        [data-testid="stSidebarResizer"] {
+        [data-testid="stSidebarResizer"],
+        [data-testid="stSidebarNavToggle"] {
             display: none !important;
         }
 
@@ -597,7 +598,7 @@ def init_session():
         "token": None,
         "student_quiz": None,
         "student_quiz_started": False,
-        "quiz_phase": "enter_name",   # enter_name, taking_quiz, finished
+        "quiz_phase": "enter_name",
         "student_name": "",
         "quiz_start_time": None,
         "quiz_end_time": None,
@@ -624,16 +625,6 @@ def logout():
     st.rerun()
 
 # ===================== دوال مساعدة =====================
-def show_toast(message, type_="info"):
-    if type_ == "success":
-        st.success(message)
-    elif type_ == "error":
-        st.error(message)
-    elif type_ == "warning":
-        st.warning(message)
-    else:
-        st.info(message)
-
 def search_students(df, query):
     if df.empty or not query:
         return df
@@ -806,15 +797,16 @@ def show_student_quiz(db: Database):
         (function() {{
             const endTime = new Date(document.getElementById('end-time-data').value);
             const timerDiv = document.getElementById('quiz-timer');
-            const timeoutBtn = document.getElementById('timeout-submit-btn');
 
             function updateTimer() {{
                 const now = new Date();
                 const diff = endTime - now;
                 if (diff <= 0) {{
                     timerDiv.innerHTML = '⏳ الوقت المتبقي: 00:00';
-                    if (timeoutBtn) {{
-                        timeoutBtn.click();
+                    // النقر على زر التسليم المخفي
+                    const btn = document.getElementById('timeout-submit-btn');
+                    if (btn) {{
+                        btn.click();
                     }}
                     return;
                 }}
@@ -870,10 +862,13 @@ def show_student_quiz(db: Database):
         st.session_state.quiz_phase = "finished"
         st.rerun()
 
-    # زر مخفي للاستدعاء عند انتهاء الوقت (سيتم النقر عليه بواسطة JavaScript)
-    st.markdown('<div style="display:none">', unsafe_allow_html=True)
-    if st.button("", key="timeout_submit_btn", on_click=lambda: auto_submit_quiz(db, quiz), use_container_width=False):
-        pass  # لن يصل هنا لأن الزر مخفي، لكنه يستدعي الدالة
+    # زر مخفي للإرسال التلقائي عند انتهاء الوقت
+    st.markdown('<div id="timeout-btn-container" style="display:none;">', unsafe_allow_html=True)
+    if st.button("إرسال تلقائي", key="timeout_submit_btn"):
+        if not st.session_state.quiz_submitted:
+            auto_submit_quiz(db, quiz)
+            st.session_state.quiz_phase = "finished"
+            st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
 def auto_submit_quiz(db, quiz):
@@ -990,8 +985,7 @@ def show_sidebar(db: Database):
 
         return choice
 
-# ===================== صفحات التطبيق (دون تغيير كبير) =====================
-# (باقي دوال الصفحات كما هي مع زيادة عدد الصفوف فقط، المدرجة كاملة للسهولة)
+# ===================== صفحات التطبيق (مكتملة) =====================
 
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
@@ -1620,7 +1614,6 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
-    # اختبار الطالبات
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
         show_student_quiz(db)
         return
