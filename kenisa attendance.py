@@ -17,7 +17,7 @@ DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 APP_VERSION = "3.0.0"
 
 st.set_page_config(
-    page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
+    page_title="نظام كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -667,7 +667,7 @@ def show_initialization(db: Database):
 
 # ===================== صفحة تسجيل الدخول =====================
 def show_login_page(db: Database, jwt_secret: str):
-    st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>كنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
 
     show_initialization(db)
 
@@ -675,8 +675,8 @@ def show_login_page(db: Database, jwt_secret: str):
 
     with tab1:
         with st.form("login_form"):
-            username = st.text_input("اسم المستخدم", placeholder="admin")
-            password = st.text_input("كلمة المرور", type="password", placeholder="admin123")
+            username = st.text_input("اسم المستخدم")
+            password = st.text_input("كلمة المرور", type="password")
             submitted = st.form_submit_button("تسجيل الدخول", use_container_width=True)
 
             if submitted:
