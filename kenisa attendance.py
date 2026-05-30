@@ -667,7 +667,7 @@ def show_initialization(db: Database):
 
 # ===================== صفحة تسجيل الدخول =====================
 def show_login_page(db: Database, jwt_secret: str):
-    st.markdown("<h1 class='main-header'>⛪ نظام<br>كنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+    st.markdown(<br>⛪ نظام كنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
 
     show_initialization(db)
 
