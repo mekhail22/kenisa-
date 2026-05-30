@@ -14,14 +14,20 @@ import time
 
 # ===================== الإعدادات العامة =====================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 
 st.set_page_config(
     page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
-    initial_sidebar_state="expanded"  # إظهار الشريط الجانبي افتراضياً
+    initial_sidebar_state="expanded"
 )
+
+# محاولة استيراد مكتبة التحديث التلقائي
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    st_autorefresh = None
 
 def get_credentials():
     try:
@@ -81,12 +87,10 @@ def inject_css():
             visibility: hidden;
         }
 
-        /* إخفاء زر التصغير الافتراضي للشريط الجانبي (الهامبرجر) */
+        /* إخفاء أزرار الشريط الجانبي الافتراضية */
         button[data-testid="collapsedControl"] {
             display: none !important;
         }
-
-        /* إخفاء زر طي الشريط الجانبي الافتراضي (السهم) */
         button[data-testid="stSidebarCollapseButton"] {
             display: none !important;
         }
@@ -215,6 +219,22 @@ def inject_css():
         .floating-show-btn button:hover {
             transform: scale(1.1) !important;
             box-shadow: 0 8px 25px rgba(118,75,162,0.6) !important;
+        }
+
+        /* مؤقت الاختبار */
+        .timer-container {
+            text-align: center;
+            margin: 1rem 0;
+        }
+        .timer-box {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 0.8rem 2rem;
+            border-radius: 15px;
+            font-size: 1.8rem;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
 
         /* تنسيق الجداول */
@@ -584,9 +604,13 @@ def init_session():
         "token": None,
         "student_quiz": None,
         "student_quiz_started": False,
-        "login_attempted": False,
+        "quiz_phase": "enter_name",   # enter_name, taking_quiz, finished
+        "student_name": "",
+        "quiz_start_time": None,
+        "quiz_end_time": None,
         "quiz_answers": {},
         "quiz_submitted": False,
+        "login_attempted": False,
         "menu_choice": "🏠 لوحة التحكم",
         "show_sidebar": True
     }
@@ -607,7 +631,6 @@ def logout():
 
 # ===================== دوال مساعدة =====================
 def show_toast(message, type_="info"):
-    """عرض إشعار سريع"""
     if type_ == "success":
         st.success(message)
     elif type_ == "error":
@@ -618,7 +641,6 @@ def show_toast(message, type_="info"):
         st.info(message)
 
 def search_students(df, query):
-    """البحث السريع في بيانات الطالبات"""
     if df.empty or not query:
         return df
     query = str(query).lower()
@@ -631,7 +653,6 @@ def search_students(df, query):
     return df[mask]
 
 def export_to_csv(df, filename):
-    """تصدير DataFrame إلى CSV"""
     if df.empty:
         return None
     return df.to_csv(index=False).encode("utf-8-sig")
@@ -655,10 +676,7 @@ def show_initialization(db: Database):
             }
             db.add_user(admin_data)
             st.success("✅ تم إنشاء مدير النظام بنجاح!")
-            info_text = "**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`"
-            st.info(info_text)
-            st.markdown("---")
-            st.markdown("**التالي:** انتظر التحديث التلقائي...")
+            st.info("**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`")
             time.sleep(2)
             st.rerun()
         st.stop()
@@ -728,53 +746,100 @@ def show_login_page(db: Database, jwt_secret: str):
                                 elif quiz.get("is_active", "True") == "False":
                                     st.error("هذا الاختبار غير نشط حالياً")
                                 else:
+                                    # تحضير بيانات الاختبار للطالبة
                                     st.session_state.student_quiz = quiz
                                     st.session_state.student_quiz_started = True
+                                    st.session_state.quiz_phase = "enter_name"
+                                    st.session_state.student_name = ""
+                                    st.session_state.quiz_start_time = None
+                                    st.session_state.quiz_end_time = None
                                     st.session_state.quiz_answers = {}
                                     st.session_state.quiz_submitted = False
                                     st.rerun()
                             except Exception as e:
-                                err_msg = "خطأ في التحقق من الاختبار: " + str(e)
-                                st.error(err_msg)
+                                st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # ===================== واجهة الطالبة لحل الاختبار =====================
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
 
-    if "quiz_answers" not in st.session_state:
-        st.session_state.quiz_answers = {}
-    if "quiz_submitted" not in st.session_state:
-        st.session_state.quiz_submitted = False
+    # --- المرحلة: إدخال الاسم ---
+    if st.session_state.quiz_phase == "enter_name":
+        st.title(f"📝 {quiz['title']}")
+        st.markdown(f"**عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** 20 | **الوقت:** {quiz['time_limit_minutes']} دقيقة")
+        st.markdown("---")
+        name = st.text_input("الاسم الثلاثي الكامل للطالبة*", placeholder="أدخل اسمك بالكامل")
+        if st.button("بدء الاختبار", use_container_width=True, type="primary"):
+            if not name.strip():
+                st.error("الرجاء إدخال الاسم")
+                return
+
+            # التحقق من عدم وجود محاولة سابقة بنفس الاسم
+            existing_results = db.get_quiz_results(quiz["quiz_id"])
+            if not existing_results.empty:
+                if name.strip().lower() in existing_results["student_name"].str.lower().values:
+                    st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك تكرار المحاولة.")
+                    return
+
+            # تسجيل الاسم وبدء الوقت
+            st.session_state.student_name = name.strip()
+            st.session_state.quiz_start_time = datetime.now()
+            time_limit_seconds = int(quiz["time_limit_minutes"]) * 60
+            st.session_state.quiz_end_time = st.session_state.quiz_start_time + timedelta(seconds=time_limit_seconds)
+            st.session_state.quiz_phase = "taking_quiz"
+            st.rerun()
+        return
+
+    # --- المرحلة: إنهاء الاختبار (تم تسليمه أو انتهى الوقت) ---
+    if st.session_state.quiz_submitted or st.session_state.quiz_phase == "finished":
+        st.success("تم تسليم الاختبار بنجاح!")
+        # عرض النتيجة إن وجدت
+        if "last_score" in st.session_state:
+            st.info(f"نتيجتك: {st.session_state.last_score}/20")
+        if st.button("إنهاء والعودة إلى الرئيسية", use_container_width=True):
+            # تنظيف الحالة
+            for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
+                        "quiz_start_time", "quiz_end_time", "quiz_answers", "quiz_submitted", "last_score"]:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+        return
+
+    # --- المرحلة: أثناء حل الاختبار ---
+    # تفعيل التحديث التلقائي للعداد (إن كانت المكتبة متاحة)
+    if st_autorefresh is not None:
+        st_autorefresh(interval=1000, key="quiz_timer")
+    else:
+        st.caption("⚠️ يرجى تحديث الصفحة يدوياً لمتابعة الوقت (لا توجد مكتبة autorefresh).")
+
+    # حساب الوقت المتبقي
+    now = datetime.now()
+    remaining = (st.session_state.quiz_end_time - now).total_seconds()
+    if remaining <= 0:
+        # انتهى الوقت تلقائياً
+        remaining = 0
+        auto_submit_quiz(db, quiz)
+        st.session_state.quiz_phase = "finished"
+        st.rerun()
+
+    # عرض المؤقت
+    mins, secs = divmod(int(remaining), 60)
+    timer_text = f"{mins:02d}:{secs:02d}"
+    st.markdown(f"""
+    <div class="timer-container">
+        <div class="timer-box">⏳ الوقت المتبقي: {timer_text}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.title(f"📝 {quiz['title']}")
-    quiz_info = f"**الوقت المحدد:** {quiz['time_limit_minutes']} دقيقة | **عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** {quiz['total_marks']}"
-    st.markdown(quiz_info)
+    st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
     st.markdown("---")
 
+    # عرض الأسئلة
     questions = db.get_quiz_questions(quiz["quiz_id"])
     if questions.empty:
         st.warning("لا توجد أسئلة في هذا الاختبار بعد.")
-        if st.button("العودة للرئيسية", use_container_width=True):
-            st.session_state.student_quiz = None
-            st.session_state.student_quiz_started = False
-            st.session_state.quiz_answers = {}
-            st.rerun()
         return
-
-    if st.session_state.quiz_submitted:
-        st.success("لقد قمت بتسليم هذا الاختبار مسبقاً في هذه الجلسة.")
-        if st.button("إنهاء والعودة", use_container_width=True):
-            st.session_state.student_quiz = None
-            st.session_state.student_quiz_started = False
-            st.session_state.quiz_answers = {}
-            st.session_state.quiz_submitted = False
-            st.rerun()
-        return
-
-    student_name = st.text_input("الاسم الثلاثي للطالبة", placeholder="أدخل اسمك الكامل", key="student_name_input")
-    if not student_name.strip():
-        st.info("الرجاء إدخال الاسم قبل البدء.")
-        st.stop()
 
     for idx, row in questions.iterrows():
         q = row.to_dict()
@@ -802,52 +867,48 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_answers[q_id] = ans
         st.markdown("---")
 
-    if st.button("تسليم الاختبار", type="primary", use_container_width=True, disabled=not student_name.strip()):
-        if not student_name.strip():
-            st.error("الرجاء إدخال الاسم أولاً")
-            return
+    # زر التسليم اليدوي
+    if st.button("تسليم الاختبار", type="primary", use_container_width=True):
+        auto_submit_quiz(db, quiz)
+        st.session_state.quiz_phase = "finished"
+        st.rerun()
 
-        with st.spinner("جاري تصحيح الاختبار..."):
-            score = 0
-            total = len(questions)
-            answers_dict = dict(st.session_state.quiz_answers)
+def auto_submit_quiz(db, quiz):
+    """حساب النتيجة وتخزينها (الدرجة من 20)"""
+    questions = db.get_quiz_questions(quiz["quiz_id"])
+    if questions.empty:
+        return
 
-            for _, q_row in questions.iterrows():
-                q = q_row.to_dict()
-                correct = str(q["correct_answer"]).strip().lower()
-                user_ans = str(answers_dict.get(q["question_id"], "")).strip().lower()
-                if correct == user_ans:
-                    score += 1
+    correct_count = 0
+    answers_dict = dict(st.session_state.quiz_answers)
 
-            result = {
-                "result_id": str(uuid.uuid4()),
-                "quiz_id": quiz["quiz_id"],
-                "student_id": "external",
-                "student_name": student_name.strip(),
-                "score": score,
-                "total_marks": total,
-                "submission_time": datetime.now().isoformat(),
-                "answers": json.dumps(answers_dict, ensure_ascii=False)
-            }
-            db.save_quiz_result(result)
-            st.session_state.quiz_submitted = True
+    for _, q_row in questions.iterrows():
+        q = q_row.to_dict()
+        correct = str(q["correct_answer"]).strip().lower()
+        user_ans = str(answers_dict.get(q["question_id"], "")).strip().lower()
+        if correct == user_ans:
+            correct_count += 1
 
-        st.balloons()
-        result_msg = f"تم تسليم الاختبار بنجاح! نتيجتك: {score}/{total}"
-        st.success(result_msg)
+    num_q = len(questions)
+    score = round((correct_count / num_q) * 20, 1) if num_q > 0 else 0
 
-        if st.button("إنهاء والعودة", use_container_width=True):
-            st.session_state.student_quiz = None
-            st.session_state.student_quiz_started = False
-            st.session_state.quiz_answers = {}
-            st.session_state.quiz_submitted = False
-            st.rerun()
+    result = {
+        "result_id": str(uuid.uuid4()),
+        "quiz_id": quiz["quiz_id"],
+        "student_id": "external",
+        "student_name": st.session_state.student_name,
+        "score": score,
+        "total_marks": 20,
+        "submission_time": datetime.now().isoformat(),
+        "answers": json.dumps(answers_dict, ensure_ascii=False)
+    }
+    db.save_quiz_result(result)
+    st.session_state.quiz_submitted = True
+    st.session_state.last_score = score
 
 # ===================== القائمة الجانبية =====================
 def show_sidebar(db: Database):
-    """عرض القائمة الجانبية داخل st.sidebar مع زر لإخفائها"""
     with st.sidebar:
-        # زر إخفاء الشريط
         st.markdown('<div class="hide-sidebar-btn">', unsafe_allow_html=True)
         if st.button("◀ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
             st.session_state.show_sidebar = False
@@ -861,7 +922,6 @@ def show_sidebar(db: Database):
 
         st.divider()
 
-        # تعريف القوائم حسب الصلاحية
         role = user["role"]
         menus = {
             "System Admin": [
@@ -928,7 +988,6 @@ def show_sidebar(db: Database):
         return choice
 
 # ===================== صفحات التطبيق =====================
-
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
 
@@ -954,7 +1013,7 @@ def show_dashboard(db: Database):
         last_week = datetime.now() - timedelta(days=7)
         recent = attendance[attendance.date >= last_week]
         if not recent.empty:
-            fig = px.histogram(recent, x="date", color="status", barmode="group", 
+            fig = px.histogram(recent, x="date", color="status", barmode="group",
                               title="الحضور اليومي", color_discrete_sequence=["#667eea", "#764ba2", "#f093fb"])
             fig.update_layout(
                 plot_bgcolor='rgba(0,0,0,0)',
@@ -1063,7 +1122,6 @@ def show_students_management(db: Database):
     all_users = db.get_users()
     teachers = all_users[all_users.role.isin(["Teacher", "Service Manager"])] if not all_users.empty else pd.DataFrame()
 
-    # البحث السريع
     st.markdown("<div class='search-box'>", unsafe_allow_html=True)
     search_query = st.text_input("🔍 البحث السريع (اسم، تليفون، عنوان...)", placeholder="اكتب للبحث...")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -1328,12 +1386,12 @@ def show_quizzes(db: Database):
     user_role = st.session_state.user["role"]
 
     if user_role in ["System Admin", "Service Manager"]:
-        st.subheader("➕ إنشاء اختبار جديد")
+        st.subheader("➕ إنشاء اختبار جديد (الدرجة الكلية ثابتة 20)")
         with st.form("quiz_form"):
             title = st.text_input("عنوان الاختبار*")
             desc = st.text_area("وصف الاختبار")
             col1, col2 = st.columns(2)
-            num_questions = col1.number_input("عدد الأسئلة", 1, 50, 5)
+            num_questions = col1.selectbox("عدد الأسئلة", [10, 20, 30], index=1)  # 20 افتراضي
             time_limit = col2.number_input("الوقت (بالدقائق)", 1, 180, 15)
             expiry = st.date_input("تاريخ الانتهاء", datetime.now() + timedelta(days=7))
 
@@ -1352,14 +1410,13 @@ def show_quizzes(db: Database):
                         "section_id": "",
                         "num_questions": num_questions,
                         "time_limit_minutes": time_limit,
-                        "total_marks": num_questions,
+                        "total_marks": 20,          # ثابت 20
                         "expiry_date": expiry.strftime("%Y-%m-%d"),
                         "quiz_code": quiz_code,
                         "password": quiz_password,
                         "is_active": "True"
                     })
-                    success_msg = f"✅ تم إنشاء الاختبار!\n\n**الكود:** `{quiz_code}`\n**كلمة المرور:** `{quiz_password}`"
-                    st.success(success_msg)
+                    st.success(f"✅ تم إنشاء الاختبار!\n\n**الكود:** `{quiz_code}`\n**كلمة المرور:** `{quiz_password}`")
                     db.add_log(st.session_state.user["user_id"], f"إنشاء اختبار {title}")
                     time.sleep(2)
                     st.rerun()
@@ -1434,7 +1491,7 @@ def show_quizzes(db: Database):
         quizzes_df = db.get_quizzes()
         if not quizzes_df.empty:
             merged = results.merge(quizzes_df[["quiz_id","title"]], on="quiz_id", how="left")
-            st.dataframe(merged[["title", "student_name", "score", "total_marks", "submission_time"]].sort_values("submission_time", ascending=False), 
+            st.dataframe(merged[["title", "student_name", "score", "total_marks", "submission_time"]].sort_values("submission_time", ascending=False),
                         use_container_width=True)
         else:
             st.dataframe(results[["quiz_id", "student_name", "score", "total_marks", "submission_time"]], use_container_width=True)
@@ -1444,7 +1501,6 @@ def show_quizzes(db: Database):
             top.columns = ["اسم الطالبة", "المجموع"]
             st.dataframe(top, use_container_width=True)
 
-        # تصدير النتائج
         csv = export_to_csv(results, "quiz_results.csv")
         if csv:
             st.download_button("📥 تصدير النتائج إلى CSV", csv, "quiz_results.csv", "text/csv", use_container_width=True)
@@ -1488,7 +1544,6 @@ def show_reports(db: Database):
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # تصدير التقرير
         csv = export_to_csv(monthly, "attendance_report.csv")
         if csv:
             st.download_button("📥 تصدير التقرير إلى CSV", csv, "attendance_report.csv", "text/csv", use_container_width=True)
@@ -1515,7 +1570,6 @@ def show_logs(db: Database):
         logs["timestamp"] = pd.to_datetime(logs["timestamp"], errors="coerce")
         st.dataframe(logs.sort_values("timestamp", ascending=False), use_container_width=True)
 
-        # تصدير السجلات
         csv = export_to_csv(logs, "logs.csv")
         if csv:
             st.download_button("📥 تصدير السجلات", csv, "logs.csv", "text/csv", use_container_width=True)
@@ -1561,6 +1615,7 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
+    # اختبار الطالبات
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
         show_student_quiz(db)
         return
@@ -1579,7 +1634,6 @@ def main():
         if st.session_state.show_sidebar:
             choice = show_sidebar(db)
         else:
-            # إخفاء الشريط بالكامل
             st.markdown("""
                 <style>
                     section[data-testid="stSidebar"] {
@@ -1587,7 +1641,6 @@ def main():
                     }
                 </style>
             """, unsafe_allow_html=True)
-            # زر عائم لفتح الشريط
             st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
             if st.button("☰", key="show_sidebar_btn"):
                 st.session_state.show_sidebar = True
