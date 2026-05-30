@@ -14,10 +14,10 @@ import time
 
 # ===================== الإعدادات العامة =====================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.1.0"
 
 st.set_page_config(
-    page_title="نظام كنيسة الشهيدة دميانة",
+    page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -371,7 +371,7 @@ class Database:
         df = df[df.user_id != user_id]
         self._df_to_sheet("Users", df, df.columns.tolist())
 
-    # ==================== الفصول (Sections) ====================
+    # ==================== الفصول ====================
     def get_sections(self):
         return self._sheet_to_df("Sections")
 
@@ -667,15 +667,16 @@ def show_initialization(db: Database):
 
 # ===================== صفحة تسجيل الدخول =====================
 def show_login_page(db: Database, jwt_secret: str):
-    st.markdown("<h1>⛪ نظام كنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+
     show_initialization(db)
 
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
 
     with tab1:
         with st.form("login_form"):
-            username = st.text_input("اسم المستخدم")
-            password = st.text_input("كلمة المرور", type="password")
+            username = st.text_input("اسم المستخدم", placeholder="admin")
+            password = st.text_input("كلمة المرور", type="password", placeholder="admin123")
             submitted = st.form_submit_button("تسجيل الدخول", use_container_width=True)
 
             if submitted:
@@ -746,7 +747,6 @@ def show_login_page(db: Database, jwt_secret: str):
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
 
-    # --- مرحلة اختيار الاسم ---
     if st.session_state.quiz_phase == "enter_name":
         st.title(f"📝 {quiz['title']}")
         st.markdown(f"**عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** 20 | **الوقت:** {quiz['time_limit_minutes']} دقيقة")
@@ -759,25 +759,16 @@ def show_student_quiz(db: Database):
             st.warning("لا توجد طالبات مسجلات حالياً. يرجى التواصل مع المسؤول.")
             st.stop()
 
-        student_options = active_students[["student_id", "full_name"]].copy()
-        options_dict = dict(zip(student_options["student_id"], student_options["full_name"]))
-
-        selected_id = st.selectbox(
-            "اختر اسمك من القائمة",
-            options=list(options_dict.keys()),
-            format_func=lambda x: options_dict[x],
-            index=None,
-            placeholder="اختر اسمك..."
-        )
-
+        options_dict = dict(zip(active_students["student_id"], active_students["full_name"]))
+        selected_id = st.selectbox("اختر اسمك من القائمة", options=list(options_dict.keys()),
+                                   format_func=lambda x: options_dict[x], index=None, placeholder="اختر اسمك...")
         st.markdown("---")
         st.info("إذا لم تجد اسمك في القائمة، يرجى التواصل مع مشرف الخدمة لإضافتك.")
 
         if selected_id is not None:
             existing_results = db.get_quiz_results(quiz["quiz_id"])
             if not existing_results.empty and "student_id" in existing_results.columns:
-                already_submitted = existing_results[existing_results["student_id"] == selected_id]
-                if not already_submitted.empty:
+                if not existing_results[existing_results["student_id"] == selected_id].empty:
                     st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك تكرار المحاولة.")
                     st.stop()
 
@@ -792,7 +783,6 @@ def show_student_quiz(db: Database):
             st.rerun()
         return
 
-    # --- مرحلة انتهاء الاختبار ---
     if st.session_state.quiz_submitted or st.session_state.quiz_phase == "finished":
         st.success("تم تسليم الاختبار بنجاح!")
         if "last_score" in st.session_state:
@@ -805,13 +795,10 @@ def show_student_quiz(db: Database):
             st.rerun()
         return
 
-    # --- مرحلة حل الاختبار مع المؤقت ---
     end_timestamp = st.session_state.quiz_end_time.timestamp() * 1000
     timer_html = f"""
     <div class="timer-container">
-        <span id="quiz-timer" class="timer-box" data-end="{end_timestamp}">
-            ⏳ الوقت المتبقي: --:--
-        </span>
+        <span id="quiz-timer" class="timer-box" data-end="{end_timestamp}">⏳ الوقت المتبقي: --:--</span>
     </div>
     <script>
         (function() {{
@@ -819,7 +806,6 @@ def show_student_quiz(db: Database):
             if (!timerSpan) return;
             const endMillis = parseInt(timerSpan.dataset.end, 10);
             if (isNaN(endMillis)) return;
-
             function updateTimer() {{
                 const now = Date.now();
                 const diff = endMillis - now;
@@ -839,23 +825,19 @@ def show_student_quiz(db: Database):
     </script>
     """
     st.markdown(timer_html, unsafe_allow_html=True)
-
     st.title(f"📝 {quiz['title']}")
     st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
     st.markdown("---")
-
     questions = db.get_quiz_questions(quiz["quiz_id"])
     if questions.empty:
         st.warning("لا توجد أسئلة في هذا الاختبار بعد.")
         return
-
     for idx, row in questions.iterrows():
         q = row.to_dict()
         q_id = q["question_id"]
         st.markdown(f"**سؤال {idx+1}:** {q['question_text']}")
         q_type = q["question_type"]
         prev_answer = st.session_state.quiz_answers.get(q_id, "")
-
         if q_type in ["اختيار من متعدد", "صح وخطأ"]:
             options = [q["option1"], q["option2"], q["option3"], q["option4"]] if q_type == "اختيار من متعدد" else ["صح", "خطأ"]
             options = [opt for opt in options if opt and str(opt).strip()]
@@ -867,13 +849,10 @@ def show_student_quiz(db: Database):
             ans = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
             st.session_state.quiz_answers[q_id] = ans
         st.markdown("---")
-
     if st.button("تسليم الاختبار", type="primary", use_container_width=True):
         auto_submit_quiz(db, quiz)
         st.session_state.quiz_phase = "finished"
         st.rerun()
-
-    # زر مخفي للإرسال التلقائي عند انتهاء الوقت
     st.markdown('<div style="display:none">', unsafe_allow_html=True)
     if st.button("", key="timeout_submit_btn"):
         if not st.session_state.quiz_submitted:
@@ -886,7 +865,6 @@ def auto_submit_quiz(db, quiz):
     questions = db.get_quiz_questions(quiz["quiz_id"])
     if questions.empty:
         return
-
     correct_count = 0
     answers_dict = dict(st.session_state.quiz_answers)
     for _, q_row in questions.iterrows():
@@ -895,17 +873,12 @@ def auto_submit_quiz(db, quiz):
         user_ans = str(answers_dict.get(q["question_id"], "")).strip().lower()
         if correct == user_ans:
             correct_count += 1
-
     num_q = len(questions)
     score = round((correct_count / num_q) * 20, 1) if num_q > 0 else 0
-
     result = {
-        "result_id": str(uuid.uuid4()),
-        "quiz_id": quiz["quiz_id"],
-        "student_id": st.session_state.student_id,
-        "student_name": st.session_state.student_name,
-        "score": score,
-        "total_marks": 20,
+        "result_id": str(uuid.uuid4()), "quiz_id": quiz["quiz_id"],
+        "student_id": st.session_state.student_id, "student_name": st.session_state.student_name,
+        "score": score, "total_marks": 20,
         "submission_time": datetime.now().isoformat(),
         "answers": json.dumps(answers_dict, ensure_ascii=False)
     }
@@ -921,14 +894,11 @@ def show_sidebar(db: Database):
             st.session_state.show_sidebar = False
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-
         st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
         st.markdown(f"**👤 {user['full_name']}**")
         st.caption(f"الصلاحية: {user['role']}")
-
         st.divider()
-
         role = user["role"]
         menus = {
             "System Admin": [
@@ -949,29 +919,22 @@ def show_sidebar(db: Database):
                 "🔒 تغيير كلمة المرور"
             ]
         }
-
         menu_items = menus.get(role, [])
         if not menu_items:
             st.warning("صلاحية غير معروفة")
             return None
-
         current_choice = st.session_state.get("menu_choice", menu_items[0])
         if current_choice not in menu_items:
             current_choice = menu_items[0]
-
         choice = st.radio("القائمة الرئيسية", menu_items,
                           index=menu_items.index(current_choice),
                           key="nav_radio", label_visibility="collapsed")
-
         if choice != current_choice:
             st.session_state.menu_choice = choice
             st.rerun()
-
         st.divider()
-
         if st.button("🚪 تسجيل الخروج", use_container_width=True):
             logout()
-
         return choice
 
 # ===================== صفحات التطبيق =====================
@@ -1019,13 +982,90 @@ def show_dashboard(db: Database):
         else:
             st.info("لا توجد بنات منقطعات حالياً.")
 
+def show_admin_users(db: Database):
+    st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
+    users = db.get_users()
+    if not users.empty:
+        st.dataframe(users, use_container_width=True)
+    else:
+        st.info("لا يوجد مستخدمون مسجلون.")
+
+    with st.expander("➕ إضافة مستخدم جديد"):
+        with st.form("add_user_form"):
+            col1, col2 = st.columns(2)
+            username = col1.text_input("اسم المستخدم*")
+            full_name = col2.text_input("الاسم الكامل*")
+            password = col1.text_input("كلمة المرور*", type="password")
+            role = col2.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"])
+            sections = db.get_sections()
+            section = None
+            if role in ["Service Manager", "Teacher"]:
+                section_options = ["None"] + (sections["section_id"].tolist() if not sections.empty else [])
+                section = st.selectbox("الفصل", section_options)
+            phone = st.text_input("رقم الهاتف (اختياري)")
+            email = st.text_input("البريد الإلكتروني (اختياري)")
+
+            if st.form_submit_button("إضافة", use_container_width=True):
+                if not username or not password or not full_name:
+                    st.error("اسم المستخدم وكلمة المرور والاسم الكامل مطلوبان")
+                else:
+                    existing = users[users.username == username]
+                    if not existing.empty:
+                        st.error("اسم المستخدم موجود مسبقاً!")
+                    else:
+                        user_data = {
+                            "user_id": str(uuid.uuid4()), "username": username, "password": password,
+                            "role": role, "full_name": full_name,
+                            "section_id": section if section and section != "None" else "",
+                            "phone": phone, "email": email
+                        }
+                        db.add_user(user_data)
+                        db.add_log(st.session_state.user["user_id"], f"إضافة مستخدم {username}")
+                        st.success("تم إضافة المستخدم بنجاح")
+                        time.sleep(1)
+                        st.rerun()
+
+    with st.expander("✏️ تعديل / حذف مستخدم"):
+        if not users.empty:
+            selected_user_id = st.selectbox("اختر المستخدم", users["user_id"],
+                                            format_func=lambda x: f"{users[users.user_id==x]['full_name'].values[0]} ({users[users.user_id==x]['username'].values[0]})")
+            user_data = users[users.user_id == selected_user_id].iloc[0].to_dict()
+            roles_list = ["System Admin", "Father Account", "Service Manager", "Teacher"]
+            current_role = user_data.get("role", "Teacher")
+            role_index = roles_list.index(current_role) if current_role in roles_list else 3
+            new_role = st.selectbox("الصلاحية الجديدة", roles_list, index=role_index)
+            col1, col2 = st.columns(2)
+            if col1.button("تحديث الصلاحية", use_container_width=True):
+                db.update_user(selected_user_id, {"role": new_role})
+                db.add_log(st.session_state.user["user_id"], f"تعديل صلاحية المستخدم {selected_user_id}")
+                st.success("تم التحديث")
+                time.sleep(1)
+                st.rerun()
+            if col2.button("حذف المستخدم", use_container_width=True, type="secondary"):
+                if selected_user_id == st.session_state.user["user_id"]:
+                    st.error("لا يمكنك حذف حسابك الحالي!")
+                else:
+                    db.delete_user(selected_user_id)
+                    db.add_log(st.session_state.user["user_id"], f"حذف المستخدم {selected_user_id}")
+                    st.success("تم الحذف")
+                    time.sleep(1)
+                    st.rerun()
+
 def show_teachers_management(db: Database):
     st.markdown("<h2 class='main-header'>👩‍🏫 إدارة المدرسات</h2>", unsafe_allow_html=True)
     users = db.get_users()
     teachers = users[users.role == "Teacher"] if not users.empty else pd.DataFrame()
     st.subheader("قائمة المدرسات")
     if not teachers.empty:
-        st.dataframe(teachers[["user_id", "username", "full_name", "section_id", "phone", "email"]], use_container_width=True)
+        # دمج معلومات الفصل لعرضها
+        sections = db.get_sections()
+        if not sections.empty:
+            teachers_display = teachers.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
+            teachers_display = teachers_display.rename(columns={"section_name": "الفصل"})
+        else:
+            teachers_display = teachers
+            teachers_display["الفصل"] = ""
+        st.dataframe(teachers_display[["user_id", "username", "full_name", "الفصل", "phone", "email"]], use_container_width=True)
     else:
         st.info("لا توجد مدرسات مسجلات.")
 
@@ -1066,12 +1106,32 @@ def show_teachers_management(db: Database):
             selected_teacher = st.selectbox("اختر المدرسة", teachers["user_id"],
                                             format_func=lambda x: teachers[teachers.user_id==x]["full_name"].values[0])
             teacher_data = teachers[teachers.user_id == selected_teacher].iloc[0].to_dict()
+            # بيانات أساسية
             new_full_name = st.text_input("الاسم الكامل", value=teacher_data.get("full_name", ""))
             new_phone = st.text_input("رقم الهاتف", value=teacher_data.get("phone", ""))
             new_email = st.text_input("البريد الإلكتروني", value=teacher_data.get("email", ""))
+
+            # اختيار الفصل
+            sections = db.get_sections()
+            section_options = ["None"] + (sections["section_id"].tolist() if not sections.empty else [])
+            current_section = teacher_data.get("section_id", "")
+            if current_section not in section_options:
+                current_section_index = 0
+            else:
+                current_section_index = section_options.index(current_section)
+            new_section = st.selectbox("الفصل المسؤولة عنه", section_options,
+                                       format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0] if x != "None" and not sections.empty else "لا يوجد",
+                                       index=current_section_index)
+
             col1, col2 = st.columns(2)
             if col1.button("تحديث البيانات", use_container_width=True):
-                db.update_user(selected_teacher, {"full_name": new_full_name, "phone": new_phone, "email": new_email})
+                update_data = {
+                    "full_name": new_full_name,
+                    "phone": new_phone,
+                    "email": new_email,
+                    "section_id": new_section if new_section != "None" else ""
+                }
+                db.update_user(selected_teacher, update_data)
                 db.add_log(st.session_state.user["user_id"], f"تعديل بيانات المدرسة {selected_teacher}")
                 st.success("تم التحديث")
                 time.sleep(1)
