@@ -14,7 +14,7 @@ import time
 
 # ===================== الإعدادات العامة =====================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "2.7.0"
+APP_VERSION = "2.8.0"
 
 st.set_page_config(
     page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
@@ -326,13 +326,11 @@ class Database:
         return ws
 
     def _sheet_to_df(self, sheet_name):
-        """تحويل الورقة إلى DataFrame"""
         ws = self._get_or_create_worksheet(sheet_name, [])
         data = ws.get_all_records()
         return pd.DataFrame(data) if data else pd.DataFrame()
 
     def _df_to_sheet(self, sheet_name, df, columns):
-        """كتابة DataFrame إلى الورقة"""
         ws = self._get_or_create_worksheet(sheet_name, columns)
         ws.clear()
         if not df.empty:
@@ -556,6 +554,7 @@ def init_session():
         "student_quiz_started": False,
         "quiz_phase": "enter_name",
         "student_name": "",
+        "student_id": "",
         "quiz_start_time": None,
         "quiz_end_time": None,
         "quiz_answers": {},
@@ -691,6 +690,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                     st.session_state.student_quiz_started = True
                                     st.session_state.quiz_phase = "enter_name"
                                     st.session_state.student_name = ""
+                                    st.session_state.student_id = ""
                                     st.session_state.quiz_start_time = None
                                     st.session_state.quiz_end_time = None
                                     st.session_state.quiz_answers = {}
@@ -699,25 +699,54 @@ def show_login_page(db: Database, jwt_secret: str):
                             except Exception as e:
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
-# ===================== واجهة الطالبة (مع المؤقت المُصلح) =====================
+# ===================== واجهة الطالبة (اختيار الاسم من القائمة) =====================
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
 
+    # --- مرحلة اختيار الاسم ---
     if st.session_state.quiz_phase == "enter_name":
         st.title(f"📝 {quiz['title']}")
         st.markdown(f"**عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** 20 | **الوقت:** {quiz['time_limit_minutes']} دقيقة")
         st.markdown("---")
-        name = st.text_input("الاسم الثلاثي الكامل للطالبة*", placeholder="أدخل اسمك بالكامل")
-        if st.button("بدء الاختبار", use_container_width=True, type="primary"):
-            if not name.strip():
-                st.error("الرجاء إدخال الاسم")
-                return
+
+        # جلب جميع الطالبات النشطات
+        students_df = db.get_students()
+        active_students = students_df[students_df["status"] == "active"] if not students_df.empty else pd.DataFrame()
+
+        if active_students.empty:
+            st.warning("لا توجد طالبات مسجلات حالياً. يرجى التواصل مع المسؤول.")
+            st.stop()
+
+        # تحضير قائمة الأسماء للاختيار
+        student_options = active_students[["student_id", "full_name"]].copy()
+        student_options["label"] = student_options["full_name"]
+        options_dict = dict(zip(student_options["student_id"], student_options["full_name"]))
+
+        selected_id = st.selectbox(
+            "اختر اسمك من القائمة",
+            options=list(options_dict.keys()),
+            format_func=lambda x: options_dict[x],
+            index=None,
+            placeholder="اختر اسمك..."
+        )
+
+        st.markdown("---")
+        st.info("إذا لم تجد اسمك في القائمة، يرجى التواصل مع مشرف الخدمة لإضافتك.")
+
+        # التحقق من عدم تسليم الاختبار مسبقاً
+        if selected_id is not None:
             existing_results = db.get_quiz_results(quiz["quiz_id"])
-            if not existing_results.empty:
-                if name.strip().lower() in existing_results["student_name"].str.lower().values:
+            if not existing_results.empty and "student_id" in existing_results.columns:
+                already_submitted = existing_results[existing_results["student_id"] == selected_id]
+                if not already_submitted.empty:
                     st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك تكرار المحاولة.")
-                    return
-            st.session_state.student_name = name.strip()
+                    st.stop()
+
+        # زر البدء
+        if st.button("بدء الاختبار", use_container_width=True, type="primary", disabled=(selected_id is None)):
+            selected_student = active_students[active_students["student_id"] == selected_id].iloc[0].to_dict()
+            st.session_state.student_name = selected_student["full_name"]
+            st.session_state.student_id = selected_id
             st.session_state.quiz_start_time = datetime.now()
             time_limit_seconds = int(quiz["time_limit_minutes"]) * 60
             st.session_state.quiz_end_time = st.session_state.quiz_start_time + timedelta(seconds=time_limit_seconds)
@@ -725,20 +754,21 @@ def show_student_quiz(db: Database):
             st.rerun()
         return
 
+    # --- مرحلة انتهاء الاختبار ---
     if st.session_state.quiz_submitted or st.session_state.quiz_phase == "finished":
         st.success("تم تسليم الاختبار بنجاح!")
         if "last_score" in st.session_state:
             st.info(f"نتيجتك: {st.session_state.last_score}/20")
         if st.button("إنهاء والعودة إلى الرئيسية", use_container_width=True):
             for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
-                        "quiz_start_time", "quiz_end_time", "quiz_answers", "quiz_submitted", "last_score"]:
+                        "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers", "quiz_submitted", "last_score"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
         return
 
-    # أثناء حل الاختبار: مؤقت يعتمد على الطابع الزمني (timestamp)
-    end_timestamp = st.session_state.quiz_end_time.timestamp() * 1000  # بالمللي ثانية
+    # --- مرحلة حل الاختبار مع المؤقت ---
+    end_timestamp = st.session_state.quiz_end_time.timestamp() * 1000  # مللي ثانية
     timer_html = f"""
     <div class="timer-container">
         <span id="quiz-timer" class="timer-box" data-end="{end_timestamp}">
@@ -834,7 +864,7 @@ def auto_submit_quiz(db, quiz):
     result = {
         "result_id": str(uuid.uuid4()),
         "quiz_id": quiz["quiz_id"],
-        "student_id": "external",
+        "student_id": st.session_state.student_id,
         "student_name": st.session_state.student_name,
         "score": score,
         "total_marks": 20,
