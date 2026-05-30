@@ -14,7 +14,7 @@ import time
 
 # ===================== الإعدادات العامة =====================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "2.8.0"
+APP_VERSION = "2.9.0"
 
 st.set_page_config(
     page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
@@ -443,6 +443,11 @@ class Database:
             return pd.DataFrame()
         return df[(df.date == date_str) & (df.section_id == section_id)]
 
+    def delete_attendance_record(self, record_id):
+        df = self.get_attendance()
+        df = df[df.record_id != record_id]
+        self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+
     # --- الافتقاد ---
     def get_followup(self):
         return self._sheet_to_df("FollowUp")
@@ -453,6 +458,12 @@ class Database:
             df = pd.DataFrame(columns=["record_id", "student_id", "teacher_id", "followup_date",
                                        "followup_type", "notes", "regularity_status"])
         df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
+        self._df_to_sheet("FollowUp", df, ["record_id", "student_id", "teacher_id", "followup_date",
+                                           "followup_type", "notes", "regularity_status"])
+
+    def delete_followup_record(self, record_id):
+        df = self.get_followup()
+        df = df[df.record_id != record_id]
         self._df_to_sheet("FollowUp", df, ["record_id", "student_id", "teacher_id", "followup_date",
                                            "followup_type", "notes", "regularity_status"])
 
@@ -479,6 +490,24 @@ class Database:
                 df.at[idx[0], k] = v
             self._df_to_sheet("Quizzes", df, df.columns.tolist())
 
+    def delete_quiz(self, quiz_id):
+        # حذف الاختبار
+        df = self.get_quizzes()
+        df = df[df.quiz_id != quiz_id]
+        self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id",
+                                          "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
+                                          "quiz_code", "password", "is_active"])
+        # حذف الأسئلة المرتبطة
+        qdf = self._sheet_to_df("QuizQuestions")
+        qdf = qdf[qdf.quiz_id != quiz_id]
+        self._df_to_sheet("QuizQuestions", qdf, ["question_id", "quiz_id", "question_text", "question_type",
+                                                 "option1", "option2", "option3", "option4", "correct_answer"])
+        # حذف النتائج المرتبطة
+        rdf = self._sheet_to_df("QuizResults")
+        rdf = rdf[rdf.quiz_id != quiz_id]
+        self._df_to_sheet("QuizResults", rdf, ["result_id", "quiz_id", "student_id", "student_name",
+                                               "score", "total_marks", "submission_time", "answers"])
+
     def get_quiz_questions(self, quiz_id):
         df = self._sheet_to_df("QuizQuestions")
         if df.empty:
@@ -497,7 +526,8 @@ class Database:
     def delete_question(self, question_id):
         df = self._sheet_to_df("QuizQuestions")
         df = df[df.question_id != question_id]
-        self._df_to_sheet("QuizQuestions", df, df.columns.tolist())
+        self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type",
+                                                "option1", "option2", "option3", "option4", "correct_answer"])
 
     # --- نتائج الاختبارات ---
     def get_quiz_results(self, quiz_id=None):
@@ -517,6 +547,12 @@ class Database:
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
                                               "score", "total_marks", "submission_time", "answers"])
 
+    def delete_quiz_result(self, result_id):
+        df = self._sheet_to_df("QuizResults")
+        df = df[df.result_id != result_id]
+        self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
+                                              "score", "total_marks", "submission_time", "answers"])
+
     # --- السجلات ---
     def add_log(self, user_id, action, details=""):
         df = self._sheet_to_df("Logs")
@@ -525,6 +561,14 @@ class Database:
         log = {"log_id": str(uuid.uuid4()), "timestamp": datetime.now().isoformat(),
                "user_id": user_id, "action": action, "details": details}
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
+        self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
+
+    def get_logs(self):
+        return self._sheet_to_df("Logs")
+
+    def delete_log(self, log_id):
+        df = self._sheet_to_df("Logs")
+        df = df[df.log_id != log_id]
         self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
 
 # ===================== JWT =====================
@@ -709,7 +753,6 @@ def show_student_quiz(db: Database):
         st.markdown(f"**عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** 20 | **الوقت:** {quiz['time_limit_minutes']} دقيقة")
         st.markdown("---")
 
-        # جلب جميع الطالبات النشطات
         students_df = db.get_students()
         active_students = students_df[students_df["status"] == "active"] if not students_df.empty else pd.DataFrame()
 
@@ -717,9 +760,7 @@ def show_student_quiz(db: Database):
             st.warning("لا توجد طالبات مسجلات حالياً. يرجى التواصل مع المسؤول.")
             st.stop()
 
-        # تحضير قائمة الأسماء للاختيار
         student_options = active_students[["student_id", "full_name"]].copy()
-        student_options["label"] = student_options["full_name"]
         options_dict = dict(zip(student_options["student_id"], student_options["full_name"]))
 
         selected_id = st.selectbox(
@@ -733,7 +774,6 @@ def show_student_quiz(db: Database):
         st.markdown("---")
         st.info("إذا لم تجد اسمك في القائمة، يرجى التواصل مع مشرف الخدمة لإضافتك.")
 
-        # التحقق من عدم تسليم الاختبار مسبقاً
         if selected_id is not None:
             existing_results = db.get_quiz_results(quiz["quiz_id"])
             if not existing_results.empty and "student_id" in existing_results.columns:
@@ -742,7 +782,6 @@ def show_student_quiz(db: Database):
                     st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك تكرار المحاولة.")
                     st.stop()
 
-        # زر البدء
         if st.button("بدء الاختبار", use_container_width=True, type="primary", disabled=(selected_id is None)):
             selected_student = active_students[active_students["student_id"] == selected_id].iloc[0].to_dict()
             st.session_state.student_name = selected_student["full_name"]
@@ -1134,6 +1173,19 @@ def show_students_management(db: Database):
                 time.sleep(1)
                 st.rerun()
 
+    # حذف طالبة
+    with st.expander("🗑️ حذف طالبة"):
+        if not students.empty:
+            delete_id = st.selectbox("اختر طالبة للحذف", students["student_id"],
+                                     format_func=lambda x: f"{students[students.student_id==x]['full_name'].values[0]}",
+                                     key="delete_student_select")
+            if st.button("تأكيد حذف الطالبة", key="delete_student_btn"):
+                db.delete_student(delete_id)
+                db.add_log(st.session_state.user["user_id"], f"حذف الطالبة {delete_id}")
+                st.success("تم حذف الطالبة بنجاح")
+                time.sleep(1)
+                st.rerun()
+
 def show_teachers_sections(db: Database):
     st.markdown("<h2 class='main-header'>👩‍🏫 المدرسات والأقسام</h2>", unsafe_allow_html=True)
     sections = db.get_sections()
@@ -1161,6 +1213,17 @@ def show_teachers_sections(db: Database):
                     st.success("تمت الإضافة")
                     time.sleep(1)
                     st.rerun()
+
+    with st.expander("🗑️ حذف قسم"):
+        if not sections.empty:
+            delete_sec = st.selectbox("اختر قسم للحذف", sections["section_id"],
+                                      format_func=lambda x: f"{sections[sections.section_id==x]['section_name'].values[0]}")
+            if st.button("تأكيد حذف القسم", key="delete_section_btn"):
+                db.delete_section(delete_sec)
+                db.add_log(st.session_state.user["user_id"], f"حذف القسم {delete_sec}")
+                st.success("تم حذف القسم بنجاح")
+                time.sleep(1)
+                st.rerun()
 
     st.markdown("---")
     st.subheader("👩‍🏫 المدرسات وطالباتهن")
@@ -1243,6 +1306,26 @@ def show_attendance(db: Database):
         time.sleep(1)
         st.rerun()
 
+    # عرض سجل الحضور مع إمكانية الحذف
+    if not existing.empty:
+        st.markdown("---")
+        st.subheader("🗑️ إدارة سجلات الحضور السابقة")
+        records_to_show = existing.copy()
+        records_to_show["student_name"] = records_to_show["student_id"].apply(
+            lambda sid: section_students[section_students.student_id == sid]["full_name"].values[0] if sid in section_students["student_id"].values else sid
+        )
+        records_to_show = records_to_show[["record_id", "student_name", "status", "notes"]]
+        st.dataframe(records_to_show, use_container_width=True)
+
+        delete_record_id = st.selectbox("اختر سجل حضور لحذفه", records_to_show["record_id"].tolist(),
+                                        format_func=lambda rid: f"{records_to_show[records_to_show.record_id==rid]['student_name'].values[0]} - {records_to_show[records_to_show.record_id==rid]['status'].values[0]}")
+        if st.button("حذف سجل الحضور المحدد"):
+            db.delete_attendance_record(delete_record_id)
+            db.add_log(st.session_state.user["user_id"], f"حذف سجل حضور {delete_record_id}")
+            st.success("تم حذف السجل بنجاح")
+            time.sleep(1)
+            st.rerun()
+
 def show_followup(db: Database):
     st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
     user_role = st.session_state.user["role"]
@@ -1284,8 +1367,16 @@ def show_followup(db: Database):
     if not followups.empty:
         student_fups = followups[followups.student_id == student_data["student_id"]]
         if not student_fups.empty:
-            st.dataframe(student_fups[["followup_date", "followup_type", "notes", "regularity_status"]].sort_values("followup_date", ascending=False),
+            st.dataframe(student_fups[["record_id", "followup_date", "followup_type", "notes", "regularity_status"]].sort_values("followup_date", ascending=False),
                          use_container_width=True)
+            delete_fup_id = st.selectbox("اختر متابعة لحذفها", student_fups["record_id"].tolist(),
+                                         format_func=lambda rid: f"{student_fups[student_fups.record_id==rid]['followup_date'].values[0]} - {student_fups[student_fups.record_id==rid]['followup_type'].values[0]}")
+            if st.button("حذف المتابعة المحددة"):
+                db.delete_followup_record(delete_fup_id)
+                db.add_log(user_id, f"حذف متابعة {delete_fup_id}")
+                st.success("تم حذف المتابعة بنجاح")
+                time.sleep(1)
+                st.rerun()
         else:
             st.info("لا توجد متابعات سابقة لهذه الطالبة.")
     else:
@@ -1330,13 +1421,13 @@ def show_quizzes(db: Database):
         if not quizzes.empty:
             active_quizzes = quizzes[quizzes.is_active == "True"] if "is_active" in quizzes.columns else quizzes
             if not active_quizzes.empty:
-                quiz_choice = st.selectbox("اختر اختباراً", active_quizzes["quiz_id"],
+                quiz_choice = st.selectbox("اختر اختباراً لإضافة أسئلة", active_quizzes["quiz_id"],
                                            format_func=lambda x: active_quizzes[active_quizzes.quiz_id==x]["title"].values[0])
                 if quiz_choice:
                     questions = db.get_quiz_questions(quiz_choice)
                     st.markdown(f"**عدد الأسئلة الحالية:** {len(questions)}")
                     if not questions.empty:
-                        st.dataframe(questions[["question_text", "question_type", "correct_answer"]], use_container_width=True)
+                        st.dataframe(questions[["question_id", "question_text", "question_type", "correct_answer"]], use_container_width=True)
 
                     with st.form("add_question_form"):
                         qtext = st.text_area("نص السؤال*")
@@ -1374,10 +1465,38 @@ def show_quizzes(db: Database):
                                 st.success("✅ تمت إضافة السؤال")
                                 time.sleep(1)
                                 st.rerun()
+
+                    # حذف سؤال
+                    if not questions.empty:
+                        del_q_id = st.selectbox("اختر سؤالاً لحذفه", questions["question_id"],
+                                                format_func=lambda qid: f"{questions[questions.question_id==qid]['question_text'].values[0]}")
+                        if st.button("حذف السؤال المحدد"):
+                            db.delete_question(del_q_id)
+                            db.add_log(st.session_state.user["user_id"], f"حذف سؤال {del_q_id}")
+                            st.success("تم حذف السؤال بنجاح")
+                            time.sleep(1)
+                            st.rerun()
             else:
                 st.info("لا توجد اختبارات نشطة.")
         else:
             st.info("لا توجد اختبارات مسجلة.")
+
+        # --- حذف اختبار بالكامل ---
+        st.markdown("---")
+        st.subheader("🗑️ حذف اختبار وكل ما يتعلق به")
+        all_quizzes = db.get_quizzes()
+        if not all_quizzes.empty:
+            quiz_to_delete = st.selectbox("اختر اختباراً للحذف (سيتم حذف الأسئلة والنتائج أيضاً)", all_quizzes["quiz_id"],
+                                          format_func=lambda x: all_quizzes[all_quizzes.quiz_id==x]["title"].values[0])
+            if st.button("❌ حذف الاختبار نهائياً", key="delete_quiz_btn"):
+                with st.spinner("جاري الحذف..."):
+                    db.delete_quiz(quiz_to_delete)
+                    db.add_log(st.session_state.user["user_id"], f"حذف الاختبار {quiz_to_delete}")
+                st.success("تم حذف الاختبار وكل ما يتعلق به بنجاح")
+                time.sleep(1)
+                st.rerun()
+        else:
+            st.info("لا توجد اختبارات للحذف.")
 
     st.markdown("---")
     st.subheader("📊 نتائج الاختبارات")
@@ -1386,10 +1505,20 @@ def show_quizzes(db: Database):
         quizzes_df = db.get_quizzes()
         if not quizzes_df.empty:
             merged = results.merge(quizzes_df[["quiz_id","title"]], on="quiz_id", how="left")
-            st.dataframe(merged[["title", "student_name", "score", "total_marks", "submission_time"]].sort_values("submission_time", ascending=False),
-                        use_container_width=True)
+            display_results = merged[["result_id", "title", "student_name", "score", "total_marks", "submission_time"]].sort_values("submission_time", ascending=False)
         else:
-            st.dataframe(results[["quiz_id", "student_name", "score", "total_marks", "submission_time"]], use_container_width=True)
+            display_results = results[["result_id", "quiz_id", "student_name", "score", "total_marks", "submission_time"]]
+        st.dataframe(display_results, use_container_width=True)
+
+        # حذف نتيجة
+        delete_result_id = st.selectbox("اختر نتيجة لحذفها", display_results["result_id"].tolist(),
+                                        format_func=lambda rid: f"{display_results[display_results.result_id==rid]['student_name'].values[0]} - {display_results[display_results.result_id==rid]['score'].values[0]}")
+        if st.button("حذف النتيجة المحددة"):
+            db.delete_quiz_result(delete_result_id)
+            db.add_log(st.session_state.user["user_id"], f"حذف نتيجة {delete_result_id}")
+            st.success("تم حذف النتيجة بنجاح")
+            time.sleep(1)
+            st.rerun()
 
         if st.button("🏆 ترتيب الطالبات", use_container_width=True):
             top = results.groupby("student_name")["score"].sum().reset_index().sort_values("score", ascending=False)
@@ -1457,14 +1586,24 @@ def show_reports(db: Database):
 
 def show_logs(db: Database):
     st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
-    logs = db._sheet_to_df("Logs")
+    logs = db.get_logs()
     if not logs.empty:
         logs["timestamp"] = pd.to_datetime(logs["timestamp"], errors="coerce")
         st.dataframe(logs.sort_values("timestamp", ascending=False), use_container_width=True)
 
+        # حذف سجل
+        delete_log_id = st.selectbox("اختر سجلاً لحذفه", logs["log_id"].tolist(),
+                                     format_func=lambda lid: f"{logs[logs.log_id==lid]['timestamp'].values[0]} - {logs[logs.log_id==lid]['action'].values[0]}")
+        if st.button("حذف السجل المحدد"):
+            db.delete_log(delete_log_id)
+            db.add_log(st.session_state.user["user_id"], f"حذف سجل {delete_log_id}")
+            st.success("تم حذف السجل بنجاح")
+            time.sleep(1)
+            st.rerun()
+
         csv = export_to_csv(logs, "logs.csv")
         if csv:
-            st.download_button("📥 تصدير السجلات", csv, "logs.csv", "text/csv", use_container_width=True)
+            st.download_button("📥 تصدير السجلات إلى CSV", csv, "logs.csv", "text/csv", use_container_width=True)
     else:
         st.info("لا توجد سجلات.")
 
