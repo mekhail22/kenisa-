@@ -218,26 +218,24 @@ def inject_css():
             padding: 10px 20px !important;
         }
 
-        /* زر مركز المساعدة العائم (للطالبات وصفحة تسجيل الدخول) */
-        .help-float-container {
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            z-index: 99998;
+        /* تنسيق خاص لمركز المساعدة في الشريط الجانبي */
+        .help-center-sidebar .stForm {
+            background: #fafafa;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
         }
-        .help-float-container button {
-            background: #25D366 !important;
+        .help-center-sidebar .stButton > button {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
             color: white !important;
+            font-weight: 700 !important;
             border: none !important;
-            border-radius: 50% !important;
-            width: 60px !important;
-            height: 60px !important;
-            font-size: 28px !important;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
-            cursor: pointer;
+            border-radius: 8px !important;
+            box-shadow: 0 2px 8px rgba(243,156,18,0.3) !important;
         }
-        .help-float-container button:hover {
-            transform: scale(1.1) !important;
+        .help-center-sidebar .stButton > button:hover {
+            transform: scale(1.02) !important;
+            box-shadow: 0 4px 12px rgba(243,156,18,0.4) !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -550,8 +548,7 @@ def init_session():
         "quiz_start_time": None, "quiz_end_time": None,
         "quiz_answers": {}, "quiz_submitted": False, "last_score": 0,
         "login_attempted": False,
-        "menu_choice": "🏠 لوحة التحكم", "show_sidebar": True,
-        "show_help_center": False
+        "menu_choice": "🏠 لوحة التحكم", "show_sidebar": True
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -604,74 +601,72 @@ def send_telegram_message(message: str) -> bool:
         return False
 
 # =============================================================================
-# مركز المساعدة (واجهة الاستقبال والإرسال)
+# مركز المساعدة (في أعلى الشريط الجانبي - لجميع الصفحات)
 # =============================================================================
 
-def show_help_center_widget():
+def show_help_center_sidebar():
     """
-    عرض زر مركز المساعدة في كل الصفحات:
-    - للمستخدمين المسجلين: زر في أسفل الشريط الجانبي.
-    - للطالبات/صفحة تسجيل الدخول: زر في أسفل يسار الشاشة.
-    عند الضغط يظهر نموذج لإرسال رسالة عبر Telegram.
+    عرض مركز المساعدة في أعلى الشريط الجانبي.
+    يظهر في كل الصفحات: تسجيل الدخول، لوحة التحكم، الاختبارات، إلخ.
     """
-    if "show_help_center" not in st.session_state:
-        st.session_state.show_help_center = False
-
-    # --- زر التفعيل ---
-    if st.session_state.get("authenticated", False) and st.session_state.get("show_sidebar", True):
-        with st.sidebar:
-            st.divider()
-            if st.button("💬 مركز المساعدة", use_container_width=True, key="help_center_toggle"):
-                st.session_state.show_help_center = True
-    else:
-        # للطالبات أو صفحة تسجيل الدخول: نضع الزر في أسفل يسار الشاشة
-        c1, c2, c3 = st.columns([6, 2, 2])
-        with c3:
-            if st.button("💬", key="help_center_float", help="مركز المساعدة"):
-                st.session_state.show_help_center = True
-
-    # --- نموذج الإرسال ---
-    if st.session_state.show_help_center:
-        with st.container():
-            st.markdown("---")
-            st.markdown("<h3 style='text-align:center; color:#667eea;'>💬 مركز المساعدة</h3>", unsafe_allow_html=True)
-            st.markdown("<p style='text-align:center;'>واجهت مشكلة أو خطأ؟ أرسل لنا التفاصيل وسنتواصل معك.</p>", unsafe_allow_html=True)
-
-            with st.form("help_center_form"):
-                msg = st.text_area("وصف المشكلة", placeholder="اكتب تفاصيل المشكلة أو الخطأ هنا...", height=100)
-                c1, c2 = st.columns(2)
-                submit = c1.form_submit_button("📨 إرسال", use_container_width=True)
-                cancel = c2.form_submit_button("❌ إغلاق", use_container_width=True)
-
-                if submit:
-                    if msg.strip():
-                        user_info = "زائر"
+    with st.sidebar:
+        # نضعها في أعلى Sidebar قبل أي شيء آخر
+        st.markdown('<div class="help-center-sidebar">', unsafe_allow_html=True)
+        
+        with st.expander("💬 مركز المساعدة", expanded=False):
+            st.markdown("<h3 style='text-align:center; margin-bottom:10px;'>📬 أرسل لنا رسالة</h3>", unsafe_allow_html=True)
+            
+            with st.form("help_center_sidebar_form", clear_on_submit=True):
+                # الاسم
+                default_name = ""
+                if st.session_state.authenticated and st.session_state.user:
+                    default_name = st.session_state.user.get("full_name", "")
+                
+                name = st.text_input("الاسم *", value=default_name, placeholder="اكتب اسمك")
+                phone = st.text_input("رقم الهاتف *", placeholder="مثال: 010xxxxxxxx")
+                inquiry_type = st.selectbox(
+                    "نوع الاستفسار *",
+                    ["مشكلة تقنية", "سؤال عام", "اقتراح تحسين", "بلاغ خطأ", "أخرى"]
+                )
+                message = st.text_area("الرسالة *", height=100, placeholder="اكتب تفاصيل المشكلة أو الاستفسار هنا...")
+                
+                submitted = st.form_submit_button("📨 إرسال الرسالة", use_container_width=True)
+                
+                if submitted:
+                    if not name.strip() or not phone.strip() or not message.strip():
+                        st.error("⚠️ الرجاء ملء جميع الحقول المطلوبة (الاسم، الهاتف، الرسالة)")
+                    else:
+                        # تجميع بيانات المستخدم
+                        user_info = "زائر غير مسجل"
+                        current_page = "غير معروف"
+                        
                         if st.session_state.authenticated and st.session_state.user:
                             user_info = f"{st.session_state.user['full_name']} ({st.session_state.user['role']})"
-                        current_page = st.session_state.get("menu_choice", "غير معروف")
-                        if st.session_state.get("student_quiz_started"):
-                            current_page = "واجهة الاختبار"
-
+                            current_page = st.session_state.get("menu_choice", "لوحة التحكم")
+                        elif st.session_state.get("student_quiz_started"):
+                            user_info = f"طالبة: {st.session_state.get('student_name', 'غير معروفة')}"
+                            current_page = "واجهة الاختبار الإلكتروني"
+                        else:
+                            current_page = "صفحة تسجيل الدخول"
+                        
                         full_msg = (
-                            f"🆘 <b>رسالة من مركز المساعدة</b>\n\n"
-                            f"👤 <b>المستخدم:</b> {user_info}\n"
+                            f"🆘 <b>رسالة جديدة من مركز المساعدة</b>\n\n"
+                            f"👤 <b>الاسم:</b> {name}\n"
+                            f"📞 <b>رقم الهاتف:</b> {phone}\n"
+                            f"📌 <b>نوع الاستفسار:</b> {inquiry_type}\n"
                             f"📄 <b>الصفحة الحالية:</b> {current_page}\n"
+                            f"👤 <b>بيانات المستخدم:</b> {user_info}\n"
                             f"⏰ <b>الوقت:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                            f"📝 <b>الرسالة:</b>\n{msg}"
+                            f"📝 <b>الرسالة:</b>\n{message}"
                         )
+                        
                         if send_telegram_message(full_msg):
                             st.success("✅ تم إرسال رسالتك بنجاح! سنتواصل معك قريباً.")
-                            st.session_state.show_help_center = False
-                            time.sleep(1)
-                            st.rerun()
                         else:
-                            st.error("❌ فشل في إرسال الرسالة. تأكد من إعدادات Telegram في secrets.toml (قسم [telegram]).")
-                    else:
-                        st.warning("⚠️ الرسالة فارغة! يرجى كتابة تفاصيل المشكلة.")
-
-                if cancel:
-                    st.session_state.show_help_center = False
-                    st.rerun()
+                            st.error("❌ فشل في إرسال الرسالة. تأكد من إعدادات Telegram في secrets.toml.")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.divider()
 
 # =============================================================================
 # التهيئة الأولية للنظام
@@ -1700,16 +1695,19 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
+    # =============================================================================
+    # مركز المساعدة - يظهر في أعلى الشريط الجانبي لجميع الصفحات
+    # =============================================================================
+    show_help_center_sidebar()
+
     # التعامل مع وضع الاختبار للطالبات
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
         show_student_quiz(db)
-        show_help_center_widget()
         return
 
     # تسجيل الدخول أو لوحة التحكم
     if not st.session_state.authenticated:
         show_login_page(db, jwt_secret)
-        show_help_center_widget()
     else:
         token_data = verify_token(st.session_state.token, jwt_secret)
         if not token_data:
@@ -1758,9 +1756,6 @@ def main():
         elif choice == "🔒 تغيير كلمة المرور":
             change_password(db)
         st.markdown("</div>", unsafe_allow_html=True)
-
-        # مركز المساعدة في الأسفل
-        show_help_center_widget()
 
 if __name__ == "__main__":
     main()
