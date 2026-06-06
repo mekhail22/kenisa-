@@ -18,7 +18,7 @@ import traceback
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "4.6.2"
+APP_VERSION = "4.7.0"
 
 # تكوين الصفحة الأساسي
 st.set_page_config(
@@ -268,7 +268,6 @@ class Database:
     """
     def __init__(self, creds, spreadsheet_id):
         self.client = gspread.authorize(creds)
-        # سيتم معالجة الخطأ في المتصل (main) إذا كان المعرف غير صالح أو بدون صلاحية
         self.spreadsheet = self.client.open_by_key(spreadsheet_id)
 
     def _get_or_create_worksheet(self, name, columns):
@@ -295,9 +294,12 @@ class Database:
             for col in columns:
                 if col not in df.columns:
                     df[col] = ""
-            # استبدال أي قيم NaN بسلسلة فارغة لتجنب أخطاء gspread
-            df = df[columns].fillna("")
-            ws.update([columns] + df.values.tolist())
+            # استبدال أي قيم NaN أو غير قابلة للتحويل إلى JSON بسلسلة فارغة
+            df = df[columns].fillna("").applymap(lambda x: str(x) if not isinstance(x, (str, int, float, bool)) else x)
+            try:
+                ws.update([columns] + df.values.tolist())
+            except Exception as e:
+                raise Exception(f"خطأ أثناء تحديث ورقة {sheet_name}: {str(e)}")
         else:
             ws.update([columns])
 
@@ -335,21 +337,13 @@ class Database:
         return self._sheet_to_df("Sections")
 
     def add_section(self, sec_data: dict):
-        """
-        إضافة فصل جديد مع معالجة الأخطاء وضمان سلامة الهيكل.
-        """
         try:
-            # التحقق من وجود الحقول المطلوبة
             if "section_id" not in sec_data or "section_name" not in sec_data:
                 raise ValueError("يجب توفير section_id و section_name")
-
-            # التأكد من وجود الورقة بالأعمدة الصحيحة
             self._get_or_create_worksheet("Sections", ["section_id", "section_name", "manager_user_id"])
-
             df = self.get_sections()
             if df.empty:
                 df = pd.DataFrame(columns=["section_id", "section_name", "manager_user_id"])
-
             new_row = {
                 "section_id": sec_data["section_id"],
                 "section_name": sec_data["section_name"],
@@ -358,7 +352,6 @@ class Database:
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             self._df_to_sheet("Sections", df, ["section_id", "section_name", "manager_user_id"])
         except Exception as e:
-            # إعادة الخطأ لالتقاطه في واجهة المستخدم
             raise Exception(f"فشل في إضافة الفصل: {str(e)}")
 
     def update_section(self, section_id, updates):
@@ -471,7 +464,6 @@ class Database:
             self._df_to_sheet("Quizzes", df, df.columns.tolist())
 
     def delete_quiz(self, quiz_id):
-        """حذف الاختبار مع أسئلته ونتائجه"""
         df = self.get_quizzes()
         df = df[df.quiz_id != quiz_id]
         self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id",
@@ -697,7 +689,6 @@ def show_help_dialog():
                 f"📝 <b>وصف المشكلة:</b>\n{issue_desc}\n\n"
             )
 
-            # إضافة تفاصيل الخطأ تلقائياً إن وجدت
             error_details = st.session_state.get("last_error_details", "")
             if error_details:
                 telegram_message += f"💥 <b>تفاصيل الخطأ (مُضافة تلقائياً):</b>\n<pre>{error_details}</pre>"
@@ -811,7 +802,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# واجهة الطالبة للاختبار (نفس الكود السابق بدون تغيير)
+# واجهة الطالبة للاختبار
 # =============================================================================
 
 def show_student_quiz(db: Database):
@@ -960,7 +951,7 @@ def auto_submit_quiz(db, quiz):
     st.session_state.last_score = score
 
 # =============================================================================
-# القائمة الجانبية (نفس الكود بدون تغيير)
+# القائمة الجانبية
 # =============================================================================
 
 def show_sidebar(db: Database):
@@ -1017,8 +1008,7 @@ def show_sidebar(db: Database):
         return choice
 
 # =============================================================================
-# باقي الصفحات (لوحة التحكم، إدارة المستخدمين، الحضور، الافتقاد، الاختبارات، التقارير، السجلات، تغيير كلمة المرور)
-# نفس الكود السابق بالضبط، لم يتم تعديلها، وسيتم إدراجها هنا كاملة لضمان 1900 سطر
+# الصفحات المختلفة
 # =============================================================================
 
 def show_dashboard(db: Database):
@@ -1372,7 +1362,6 @@ def show_user_management(db: Database):
         with st.expander("➕ إضافة فصل جديد"):
             with st.form("add_section_form"):
                 name = st.text_input("اسم الفصل*")
-                # تحذير إذا كان الاسم موجود مسبقاً (اختياري)
                 if name and not sections.empty:
                     if any(sections["section_name"].str.strip() == name.strip()):
                         st.warning("⚠️ يوجد فصل بنفس الاسم بالفعل، ولكن سيتم إضافته بمعرف فريد.")
@@ -1381,9 +1370,7 @@ def show_user_management(db: Database):
                         st.error("اسم الفصل مطلوب")
                     else:
                         try:
-                            # استدعاء دالة إضافة الفصل مع معالجة الأخطاء
                             db.add_section({"section_id": str(uuid.uuid4()), "section_name": name.strip()})
-                            # تسجيل العملية في السجل
                             db.add_log(
                                 st.session_state.user["user_id"],
                                 "إضافة فصل",
@@ -1707,14 +1694,12 @@ def main():
     inject_css()
     init_session()
 
-    # تحميل الاعتمادات
     try:
         creds = get_credentials()
     except Exception as e:
         st.error(f"❌ خطأ في الاعتمادات: {e}")
         st.stop()
 
-    # إنشاء كائن قاعدة البيانات مع معالجة أخطاء الاتصال
     try:
         db = Database(creds, get_spreadsheet_id())
     except Exception as e:
