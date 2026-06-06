@@ -593,65 +593,68 @@ def send_telegram_message(message: str) -> bool:
         return False
 
 # =============================================================================
-# مركز المساعدة والدعم الفني (Modal في نص الشاشة)
+# زر مركز المساعدة العائم (الموجود في جميع الصفحات)
 # =============================================================================
 
-def show_help_center():
+def render_floating_help_button():
     """
-    عرض نافذة مركز المساعدة كـ Dialog Modal في وسط الشاشة.
-    تفتح لما تدوس على زر المساعدة العائم.
+    عرض زر مساعدة عائم في أسفل يسار الشاشة.
+    يفتح نافذة صغيرة (popover) تحتوي على نموذج إرسال استفسار إلى تليجرام.
     """
-    with st.dialog("مركز المساعدة والدعم الفني 🆘", width="large"):
-        st.markdown("### 📮 الإبلاغ عن مشكلة أو خطأ")
-        st.markdown("املأ البيانات التالية وسنتواصل معك في أقرب وقت")
-        
-        with st.form("help_center_dialog_form", clear_on_submit=True):
-            # الاسم (يمكن تعبئته مسبقًا إن كان المستخدم مسجلاً)
-            default_name = ""
-            if st.session_state.get("authenticated") and st.session_state.get("user"):
-                default_name = st.session_state.user.get("full_name", "")
-            
-            name = st.text_input("الاسم *", value=default_name, placeholder="أدخل اسمك الكامل")
-            phone = st.text_input("رقم الواتساب *", placeholder="مثال: 010xxxxxxxx")
-            problem = st.text_area("وصف المشكلة *", height=100, placeholder="اشرح المشكلة التي تواجهها...")
-            error_msg = st.text_area("رسالة الخطأ (إن وجدت)", height=80, placeholder="سيظهر هنا تفاصيل الخطأ تلقائياً...")
-            
-            submitted = st.form_submit_button("📨 إرسال البلاغ", use_container_width=True)
-            
-            if submitted:
-                if not name.strip() or not phone.strip() or not problem.strip():
-                    st.error("⚠️ الرجاء ملء جميع الحقول المطلوبة")
-                else:
-                    # تجميع بيانات المستخدم
-                    user_info = "زائر غير مسجل"
-                    current_page = "غير معروف"
-                    
-                    if st.session_state.get("authenticated") and st.session_state.get("user"):
-                        user_info = f"{st.session_state.user['full_name']} ({st.session_state.user['role']})"
-                        current_page = st.session_state.get("menu_choice", "لوحة التحكم")
-                    elif st.session_state.get("student_quiz_started"):
-                        user_info = f"طالبة: {st.session_state.get('student_name', 'غير معروفة')}"
-                        current_page = "واجهة الاختبار الإلكتروني"
+    # غلاف الزر العائم
+    with st.container():
+        st.markdown('<div class="floating-help-btn">', unsafe_allow_html=True)
+        # استخدم popover بدلاً من فتح صفحة منفصلة
+        with st.popover("❓ مركز المساعدة"):
+            st.markdown("### 📬 أرسل لنا استفسارك")
+            with st.form("floating_help_form", clear_on_submit=True):
+                # الاسم (يمكن تعبئته مسبقًا إن كان المستخدم مسجلاً)
+                default_name = ""
+                if st.session_state.get("authenticated") and st.session_state.get("user"):
+                    default_name = st.session_state.user.get("full_name", "")
+                name = st.text_input("الاسم *", value=default_name, placeholder="اكتب اسمك")
+                phone = st.text_input("رقم الهاتف *", placeholder="مثال: 010xxxxxxxx")
+                inquiry_type = st.selectbox(
+                    "نوع الاستفسار *",
+                    ["مشكلة تقنية", "سؤال عام", "اقتراح تحسين", "بلاغ خطأ", "أخرى"]
+                )
+                message = st.text_area("الرسالة *", height=100, placeholder="اكتب تفاصيل المشكلة أو الاستفسار هنا...")
+                
+                submitted = st.form_submit_button("📨 إرسال", use_container_width=True)
+                
+                if submitted:
+                    if not name.strip() or not phone.strip() or not message.strip():
+                        st.error("⚠️ الرجاء ملء جميع الحقول المطلوبة")
                     else:
-                        current_page = "صفحة تسجيل الدخول"
-                    
-                    full_msg = (
-                        f"🆘 <b>بلاغ جديد من مركز المساعدة</b>\n\n"
-                        f"👤 <b>الاسم:</b> {name}\n"
-                        f"📱 <b>رقم الواتساب:</b> {phone}\n"
-                        f"📄 <b>الصفحة الحالية:</b> {current_page}\n"
-                        f"👤 <b>بيانات المستخدم:</b> {user_info}\n"
-                        f"⏰ <b>الوقت:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                        f"📝 <b>وصف المشكلة:</b>\n{problem}\n\n"
-                        f"💻 <b>رسالة الخطأ:</b>\n{error_msg if error_msg else 'لا يوجد'}"
-                    )
-                    
-                    if send_telegram_message(full_msg):
-                        st.success("✅ تم إرسال البلاغ بنجاح! سنتواصل معك قريباً.")
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.error("❌ فشل في إرسال البلاغ. تأكد من إعدادات Telegram في secrets.toml.")
+                        # تجميع بيانات المستخدم
+                        user_info = "زائر غير مسجل"
+                        current_page = "غير معروف"
+                        
+                        if st.session_state.get("authenticated") and st.session_state.get("user"):
+                            user_info = f"{st.session_state.user['full_name']} ({st.session_state.user['role']})"
+                            current_page = st.session_state.get("menu_choice", "لوحة التحكم")
+                        elif st.session_state.get("student_quiz_started"):
+                            user_info = f"طالبة: {st.session_state.get('student_name', 'غير معروفة')}"
+                            current_page = "واجهة الاختبار الإلكتروني"
+                        else:
+                            current_page = "صفحة تسجيل الدخول"
+                        
+                        full_msg = (
+                            f"🆘 <b>رسالة جديدة من مركز المساعدة</b>\n\n"
+                            f"👤 <b>الاسم:</b> {name}\n"
+                            f"📞 <b>رقم الهاتف:</b> {phone}\n"
+                            f"📌 <b>نوع الاستفسار:</b> {inquiry_type}\n"
+                            f"📄 <b>الصفحة الحالية:</b> {current_page}\n"
+                            f"👤 <b>بيانات المستخدم:</b> {user_info}\n"
+                            f"⏰ <b>الوقت:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                            f"📝 <b>الرسالة:</b>\n{message}"
+                        )
+                        
+                        if send_telegram_message(full_msg):
+                            st.success("✅ تم إرسال رسالتك بنجاح! سنتواصل معك قريباً.")
+                        else:
+                            st.error("❌ فشل في إرسال الرسالة. تأكد من إعدادات Telegram في secrets.toml.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # =============================================================================
 # التهيئة الأولية للنظام
@@ -1680,38 +1683,8 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
-    # =============================================================================
-    # زر مركز المساعدة العائم (يظهر في جميع الصفحات)
-    # =============================================================================
-    st.markdown("""
-    <style>
-        /* تثبيت زر المساعدة في أسفل يسار الشاشة */
-        div[data-testid="element-container"]:has(> div[data-testid="stButton"] > button[id="help_center_trigger"]) {
-            position: fixed !important;
-            bottom: 20px !important;
-            left: 20px !important;
-            z-index: 9998 !important;
-        }
-        button[id="help_center_trigger"] {
-            width: 65px !important;
-            height: 65px !important;
-            border-radius: 50% !important;
-            background: linear-gradient(135deg, #f39c12, #e67e22) !important;
-            color: white !important;
-            border: none !important;
-            font-size: 28px !important;
-            font-weight: bold !important;
-            box-shadow: 0 4px 20px rgba(243,156,18,0.5) !important;
-            transition: transform 0.2s !important;
-        }
-        button[id="help_center_trigger"]:hover {
-            transform: scale(1.1) !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-    if st.button("🆘", key="help_center_trigger", help="مركز المساعدة"):
-        show_help_center()
+    # زر المساعدة العائم يظهر في جميع الصفحات
+    render_floating_help_button()
 
     # التعامل مع وضع الاختبار للطالبات
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
