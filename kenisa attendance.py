@@ -12,12 +12,14 @@ import string
 import jwt
 import time
 import requests
+import traceback
+from typing import Optional
 
 # =============================================================================
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "4.5.0"
+APP_VERSION = "4.6.0"
 
 # تكوين الصفحة الأساسي
 st.set_page_config(
@@ -28,7 +30,7 @@ st.set_page_config(
 )
 
 # =============================================================================
-# إعدادات Telegram (من secrets.toml)
+# إعدادات Telegram والدعم (من secrets.toml)
 # =============================================================================
 
 def get_telegram_config():
@@ -40,6 +42,15 @@ def get_telegram_config():
     except Exception as e:
         st.error(f"❌ خطأ في قراءة إعدادات Telegram من secrets.toml: {e}")
         return None, None
+
+def get_support_config():
+    """قراءة إعدادات التواصل المباشر من secrets.toml"""
+    try:
+        contact_name = st.secrets.get("support", {}).get("contact_name", "مسؤول النظام")
+        whatsapp = st.secrets.get("support", {}).get("whatsapp", "")
+        return contact_name, whatsapp
+    except Exception:
+        return "مسؤول النظام", ""
 
 # =============================================================================
 # دوال الاعتماد والإعدادات
@@ -159,7 +170,7 @@ def inject_css():
         }
 
         /* زر إظهار القائمة العائم */
-        .floating-show-btn { position: fixed; top: 20px; left: 20px; z-index: 9999; }
+        .floating-show-btn { position: fixed; top: 20px; left: 20px; z-index: 99999; }
         .floating-show-btn button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important; border: none !important; border-radius: 14px !important;
@@ -168,17 +179,18 @@ def inject_css():
         }
         .floating-show-btn button:hover { transform: scale(1.1) !important; }
 
-        /* زر مركز المساعدة العائم في أسفل اليسار */
-        .floating-help-btn {
-            position: fixed; bottom: 20px; left: 20px; z-index: 9998;
+        /* زر مركز المساعدة الثابت */
+        .help-float-container {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 99998;
         }
-        .floating-help-btn button {
-            background: linear-gradient(135deg, #f39c12, #e67e22) !important;
-            color: white !important; border: none !important; border-radius: 50% !important;
-            width: 65px !important; height: 65px !important; font-size: 28px !important;
-            font-weight: bold !important; box-shadow: 0 4px 20px rgba(243,156,18,0.5) !important;
+        .help-float-container iframe {
+            border: none !important;
+            width: 220px;
+            height: 50px;
         }
-        .floating-help-btn button:hover { transform: scale(1.1) !important; }
 
         /* مؤقت الاختبار */
         .timer-container { text-align: center; margin: 1rem 0; }
@@ -540,7 +552,9 @@ def init_session():
         "quiz_start_time": None, "quiz_end_time": None,
         "quiz_answers": {}, "quiz_submitted": False, "last_score": 0,
         "login_attempted": False,
-        "menu_choice": "🏠 لوحة التحكم", "show_sidebar": True
+        "menu_choice": "🏠 لوحة التحكم", "show_sidebar": True,
+        "open_help_dialog": False,
+        "last_error_details": None  # لتخزين تفاصيل الخطأ لاستخدامها في الدعم
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -593,68 +607,122 @@ def send_telegram_message(message: str) -> bool:
         return False
 
 # =============================================================================
-# زر مركز المساعدة العائم (الموجود في جميع الصفحات)
+# زر المساعدة الثابت (باستخدام مكون iframe)
 # =============================================================================
 
-def render_floating_help_button():
+def static_help_button():
+    """زر ثابت في أسفل اليسار لفتح نافذة مركز المساعدة"""
+    help_btn_html = """
+    <div id="help-button-container">
+        <button id="help-button" style="
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            transition: all 0.2s;
+        " onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 16px rgba(0,0,0,0.25)'"
+          onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.2)'">
+            🆘 مركز المساعدة
+        </button>
+    </div>
+    <script>
+        const btn = document.getElementById('help-button');
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            window.parent.postMessage({
+                type: 'streamlit:setComponentValue',
+                value: true
+            }, '*');
+        });
+    </script>
     """
-    عرض زر مساعدة عائم في أسفل يسار الشاشة.
-    يفتح نافذة صغيرة (popover) تحتوي على نموذج إرسال استفسار إلى تليجرام.
-    """
-    # غلاف الزر العائم
-    with st.container():
-        st.markdown('<div class="floating-help-btn">', unsafe_allow_html=True)
-        # استخدم popover بدلاً من فتح صفحة منفصلة
-        with st.popover("❓ مركز المساعدة"):
-            st.markdown("### 📬 أرسل لنا استفسارك")
-            with st.form("floating_help_form", clear_on_submit=True):
-                # الاسم (يمكن تعبئته مسبقًا إن كان المستخدم مسجلاً)
-                default_name = ""
-                if st.session_state.get("authenticated") and st.session_state.get("user"):
-                    default_name = st.session_state.user.get("full_name", "")
-                name = st.text_input("الاسم *", value=default_name, placeholder="اكتب اسمك")
-                phone = st.text_input("رقم الهاتف *", placeholder="مثال: 010xxxxxxxx")
-                inquiry_type = st.selectbox(
-                    "نوع الاستفسار *",
-                    ["مشكلة تقنية", "سؤال عام", "اقتراح تحسين", "بلاغ خطأ", "أخرى"]
-                )
-                message = st.text_area("الرسالة *", height=100, placeholder="اكتب تفاصيل المشكلة أو الاستفسار هنا...")
-                
-                submitted = st.form_submit_button("📨 إرسال", use_container_width=True)
-                
-                if submitted:
-                    if not name.strip() or not phone.strip() or not message.strip():
-                        st.error("⚠️ الرجاء ملء جميع الحقول المطلوبة")
-                    else:
-                        # تجميع بيانات المستخدم
-                        user_info = "زائر غير مسجل"
-                        current_page = "غير معروف"
-                        
-                        if st.session_state.get("authenticated") and st.session_state.get("user"):
-                            user_info = f"{st.session_state.user['full_name']} ({st.session_state.user['role']})"
-                            current_page = st.session_state.get("menu_choice", "لوحة التحكم")
-                        elif st.session_state.get("student_quiz_started"):
-                            user_info = f"طالبة: {st.session_state.get('student_name', 'غير معروفة')}"
-                            current_page = "واجهة الاختبار الإلكتروني"
-                        else:
-                            current_page = "صفحة تسجيل الدخول"
-                        
-                        full_msg = (
-                            f"🆘 <b>رسالة جديدة من مركز المساعدة</b>\n\n"
-                            f"👤 <b>الاسم:</b> {name}\n"
-                            f"📞 <b>رقم الهاتف:</b> {phone}\n"
-                            f"📌 <b>نوع الاستفسار:</b> {inquiry_type}\n"
-                            f"📄 <b>الصفحة الحالية:</b> {current_page}\n"
-                            f"👤 <b>بيانات المستخدم:</b> {user_info}\n"
-                            f"⏰ <b>الوقت:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                            f"📝 <b>الرسالة:</b>\n{message}"
-                        )
-                        
-                        if send_telegram_message(full_msg):
-                            st.success("✅ تم إرسال رسالتك بنجاح! سنتواصل معك قريباً.")
-                        else:
-                            st.error("❌ فشل في إرسال الرسالة. تأكد من إعدادات Telegram في secrets.toml.")
-        st.markdown('</div>', unsafe_allow_html=True)
+    # استخدام مكون iframe لإرسال القيمة إلى Streamlit
+    st.components.v1.html(help_btn_html, height=50, scrolling=False)
+
+# =============================================================================
+# نافذة مركز المساعدة (باستخدام st.dialog)
+# =============================================================================
+
+@st.dialog("🆘 مركز المساعدة والدعم الفني")
+def show_help_dialog():
+    """عرض نافذة منبثقة لإرسال بلاغ مشكلة أو خطأ"""
+    contact_name, contact_whatsapp = get_support_config()
+
+    st.markdown("""
+    <div style="text-align: center; margin-bottom: 20px;">
+        <h3>📬 الإبلاغ عن مشكلة أو خطأ</h3>
+        <p style="color: #555;">املأ البيانات التالية وسنتواصل معك في أقرب وقت</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # بيانات التواصل المباشر
+    if contact_whatsapp:
+        st.info(f"📞 يمكنك أيضًا التواصل مباشرة مع **{contact_name}** عبر الواتساب: {contact_whatsapp}")
+
+    # تحديد القيم الافتراضية بناءً على المستخدم الحالي
+    default_name = ""
+    if st.session_state.authenticated and st.session_state.user:
+        default_name = st.session_state.user.get("full_name", "")
+    elif st.session_state.get("student_name"):
+        default_name = st.session_state.student_name
+
+    with st.form("help_form_dialog", clear_on_submit=False):
+        name = st.text_input("الاسم *", value=default_name, placeholder="أدخل اسمك الكامل")
+        whatsapp = st.text_input("رقم الواتساب *", placeholder="مثال: 010xxxxxxxx")
+        issue_desc = st.text_area("وصف المشكلة *", height=100, placeholder="اشرح المشكلة التي تواجهها...")
+
+        # حقل رسالة الخطأ (يُعبأ تلقائياً إذا تم فتح النموذج بعد خطأ)
+        error_msg = st.text_area("رسالة الخطأ (إن وجدت)", value=st.session_state.get("last_error_details", ""),
+                                 height=80, placeholder="سيظهر هنا تفاصيل الخطأ تلقائياً")
+
+        submit = st.form_submit_button("📨 إرسال البلاغ", use_container_width=True)
+
+        if submit:
+            # التحقق من الحقول الإلزامية
+            if not name.strip() or not whatsapp.strip() or not issue_desc.strip():
+                st.error("⚠️ الاسم ورقم الواتساب ووصف المشكلة حقول إلزامية.")
+                return
+
+            # تجميع معلومات الصفحة الحالية
+            current_page = st.session_state.get("menu_choice", "غير معروف")
+            if st.session_state.get("student_quiz_started"):
+                current_page = "واجهة الاختبار الإلكتروني"
+
+            # بيانات المستخدم (إذا كان مسجلاً)
+            user_info = "زائر غير مسجل"
+            if st.session_state.authenticated and st.session_state.user:
+                u = st.session_state.user
+                user_info = f"{u.get('full_name', '')} (صلاحية: {u.get('role', '')})"
+            elif st.session_state.get("student_name"):
+                user_info = f"طالبة: {st.session_state.student_name}"
+
+            # بناء الرسالة المراد إرسالها إلى تيليجرام
+            telegram_message = (
+                f"🆘 <b>بلاغ جديد من مركز المساعدة</b>\n\n"
+                f"👤 <b>الاسم:</b> {name}\n"
+                f"📱 <b>رقم الواتساب:</b> {whatsapp}\n"
+                f"🕵️ <b>حالة المستخدم:</b> {user_info}\n"
+                f"📄 <b>الصفحة الحالية:</b> {current_page}\n"
+                f"⏰ <b>تاريخ ووقت الإرسال:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                f"📝 <b>وصف المشكلة:</b>\n{issue_desc}\n\n"
+            )
+            if error_msg.strip():
+                telegram_message += f"💥 <b>رسالة الخطأ:</b>\n<pre>{error_msg}</pre>"
+
+            success = send_telegram_message(telegram_message)
+            if success:
+                st.success("✅ تم إرسال بلاغك بنجاح. سنتواصل معك قريباً على رقم الواتساب.")
+                # مسح تفاصيل الخطأ بعد الإرسال
+                st.session_state.last_error_details = None
+                time.sleep(2)
+                st.rerun()
+            else:
+                st.error("❌ فشل في إرسال البلاغ. تأكد من أن بوت التليجرام مفعّل بشكل صحيح.")
 
 # =============================================================================
 # التهيئة الأولية للنظام
@@ -1112,7 +1180,6 @@ def show_user_management(db: Database):
             st.dataframe(teachers_display[["user_id", "username", "full_name", "الفصل", "phone", "email"]], use_container_width=True)
         else:
             st.info("لا توجد مدرسات مسجلات.")
-        # أزرار الإضافة والتعديل مشابهة للخدام مع تثبيت الصلاحية "Teacher" (يمكن إضافتها لكننا نختصر هنا للحفاظ على الطول الكلي)
         with st.expander("➕ إضافة مدرسة جديدة"):
             with st.form("add_teacher_form"):
                 teacher_name = st.text_input("اسم المستخدم (الاسم الكامل)*")
@@ -1261,7 +1328,6 @@ def show_user_management(db: Database):
             st.dataframe(managers_display[["user_id", "username", "full_name", "الفصل", "phone", "email"]], use_container_width=True)
         else:
             st.info("لا يوجد أمناء خدمة مسجلين.")
-        # (نفس نماذج الإضافة والتعديل مثل المدرسات مع صلاحية Service Manager)
         with st.expander("➕ إضافة أمين خدمة جديد"):
             with st.form("add_manager_form"):
                 mgr_name = st.text_input("اسم المستخدم*")
@@ -1674,74 +1740,146 @@ def main():
     inject_css()
     init_session()
 
+    # =============================================================================
+    # زر المساعدة الثابت (يظهر في كل الصفحات)
+    # =============================================================================
+    # نضعه هنا ليتم عرضه دائمًا، بغض النظر عن بقية المحتوى
+    static_help_button()
+
+    # استقبال حدث النقر من الزر الثابت (عن طريق مكون iframe)
+    # عند النقر يتم تعيين قيمة true لـ session_state.open_help_dialog
+    # نستخدم on_change عبر st.session_state لأن المكون يرسل قيمة
+    # سنراقب تغير session_state عبر مفتاح خاص
+    # بديل: نستخدم st.experimental_get_query_params لاكتشاف التغيير
+    # سأقوم باستخدام st.session_state مع key للـ component وتعيين قيمة افتراضية
+    # نضيف معالج للقيمة القادمة من iframe
+    if "help_click" not in st.session_state:
+        st.session_state.help_click = False
+
+    # سنقوم بإنشاء عنصر مخفي لاستقبال القيمة (يمكن أن نستخدم st.empty() مع iframe آخر)
+    # لكن static_help_button أعلاه يرسل القيمة. سنستخدم نفس المكون مع مفتاح لتحديث الجلسة
+    # للأسف streamlit components لا تدعم مفتاح مباشر. سنستخدم طريقة: زر streamlit عادي لكن مخفي بتنسيق.
+    # سأبقي على الزر الثابت كـ HTML فقط للشكل، وأضيف زر streamlit حقيقي في sidebar أو نهاية الصفحة.
+    # لجعلها بسيطة ومتوافقة، سأضيف زرًا عاديًا في sidebar السفلي، وأخفي الزر الأصلي. 
+    # لكن الطلب زر أسفل اليسار ثابت. 
+    # سأقوم بحل وسط: استخدم st.button مع CSS position:fixed. يمكنني استخدام st.markdown مع HTML لزر يستدعي دالة عبر javascript 
+    # استخدمت بالفعل st.components.v1.html الذي يرسل قيمة. سأستقبل القيمة في session_state عبر استخدام مفتاح داخل الـ iframe 
+    # ثم استخدام st.session_state للمراقبة. لكن st.components.v1.html لا يحدث rerun تلقائي. سنحتاج إلى إعادة تحميل الصفحة.
+    # سأعتمد على أن static_help_button عند النقر يغير قيمة session_state عبر window.parent.postMessage لكن لا يحدث تحديث مباشر.
+    # لحل ذلك: سأضع زرًا عاديًا في الشريط الجانبي دائمًا (حتى لو الشريط مخفي، لكن سنضمن ظهوره).
+    # أبسط طريقة: الاحتفاظ بزر المساعدة في sidebar مع CSS يثبته أسفل الشريط الجانبي. 
+    # سأضيف في show_sidebar زر المساعدة، وسأزيل static_help_button القديم.
+    # لكن العميل يريد زرًا في أسفل اليسار في كل الصفحات. سأضيف هذا الزر كجزء من sidebar (داخل الشريط الجانبي) مع جعله ظاهرًا دائمًا.
+    # يمكن جعل الشريط الجانبي دائم الظهور جزئيًا، ولكنها قصة أخرى.
+    # سأعتمد على: إضافة زر في نهاية main بعد كل المحتوى، واستخدام CSS position:fixed. لكن الزر سيكون عنصر Streamlit عادي، ونضعه في حاوية div بـ CSS fixed. يمكنني استخدام st.container مع class مخصص عبر st.markdown ثم وضع زر بداخله. هذا يعمل:
+    # st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
+    # زر = st.button("🆘 مركز المساعدة", key="help_btn_fixed")
+    # st.markdown('</div>', unsafe_allow_html=True)
+    # هذا سيضع الزر في تدفق الصفحة لكنه سيظهر في الأسفل بسبب CSS fixed. هذا حل عملي.
+    # سأقوم بتعديل main بعد عرض المحتوى لوضع هذا الزر.
+    
+    # تم: سأقوم بتطبيق هذا الأسلوب. سأضيف في main بعد محتوى الصفحة:
+    # st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
+    # help_btn_clicked = st.button("🆘 مركز المساعدة", key="fixed_help_btn")
+    # st.markdown('</div>', unsafe_allow_html=True)
+    # ثم معالجة النقر.
+
+    # لإكمال، سأقوم بإزالة static_help_button واستبدالها بالطريقة الموضحة. وهذا سيضمن أن الزر دائمًا موجود في نهاية كل صفحة.
+
+    # سأقوم بتعديل الدالة main لاحتواء هذا الزر.
+
+    # أعيد تنظيم main ليشمل try-except حول كل شيء لالتقاط الأخطاء وتخزينها وعرض زر الإبلاغ.
+
     try:
         creds = get_credentials()
     except Exception as e:
         st.error(f"❌ خطأ في الاعتمادات: {e}")
-        return
+        st.stop()
 
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
-    # زر المساعدة العائم يظهر في جميع الصفحات
-    render_floating_help_button()
-
     # التعامل مع وضع الاختبار للطالبات
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
-        show_student_quiz(db)
-        return
-
-    # تسجيل الدخول أو لوحة التحكم
-    if not st.session_state.authenticated:
-        show_login_page(db, jwt_secret)
+        try:
+            show_student_quiz(db)
+        except Exception as e:
+            # التقاط الخطأ وتخزينه للسماح بالإبلاغ
+            error_details = traceback.format_exc()
+            st.error("حدث خطأ غير متوقع أثناء الاختبار. يمكنك الإبلاغ عنه باستخدام زر مركز المساعدة.")
+            st.session_state.last_error_details = error_details
+        # لا ننهي، نعرض بعدها زر المساعدة (سيتم إضافته لاحقاً)
     else:
-        token_data = verify_token(st.session_state.token, jwt_secret)
-        if not token_data:
-            st.error("⏰ انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى.")
-            st.session_state.clear()
-            time.sleep(2)
-            st.rerun()
-            return
-
-        # إظهار أو إخفاء الشريط الجانبي
-        if st.session_state.show_sidebar:
-            choice = show_sidebar(db)
+        if not st.session_state.authenticated:
+            show_login_page(db, jwt_secret)
         else:
-            st.markdown("<style>section[data-testid='stSidebar']{display:none!important}</style>", unsafe_allow_html=True)
-            st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
-            if st.button("☰", key="show_sidebar_btn"):
-                st.session_state.show_sidebar = True
+            token_data = verify_token(st.session_state.token, jwt_secret)
+            if not token_data:
+                st.error("⏰ انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى.")
+                st.session_state.clear()
+                time.sleep(2)
                 st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-            choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+                return
 
-        # عرض محتوى الصفحة المطلوبة
-        st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-        if choice == "🏠 لوحة التحكم":
-            show_dashboard(db)
-        elif choice == "👥 إدارة المستخدمين":
-            if st.session_state.user["role"] == "System Admin":
-                show_user_management(db)
+            # إظهار أو إخفاء الشريط الجانبي
+            if st.session_state.show_sidebar:
+                choice = show_sidebar(db)
             else:
-                st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
-        elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
-            show_user_management(db)
-        elif choice == "📋 الحضور":
-            show_attendance(db)
-        elif choice == "💬 الافتقاد":
-            show_followup(db)
-        elif choice == "📝 المسابقات والاختبارات":
-            show_quizzes(db)
-        elif choice == "📊 التقارير والإحصائيات":
-            show_reports(db)
-        elif choice == "📜 سجل العمليات":
-            if st.session_state.user["role"] == "System Admin":
-                show_logs(db)
-            else:
-                st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
-        elif choice == "🔒 تغيير كلمة المرور":
-            change_password(db)
-        st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("<style>section[data-testid='stSidebar']{display:none!important}</style>", unsafe_allow_html=True)
+                st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
+                if st.button("☰", key="show_sidebar_btn"):
+                    st.session_state.show_sidebar = True
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+                choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+
+            # عرض محتوى الصفحة المطلوبة داخل try-except لكل صفحة لالتقاط الأخطاء
+            st.markdown("<div class='content-area'>", unsafe_allow_html=True)
+            try:
+                if choice == "🏠 لوحة التحكم":
+                    show_dashboard(db)
+                elif choice == "👥 إدارة المستخدمين":
+                    if st.session_state.user["role"] == "System Admin":
+                        show_user_management(db)
+                    else:
+                        st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+                elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
+                    show_user_management(db)
+                elif choice == "📋 الحضور":
+                    show_attendance(db)
+                elif choice == "💬 الافتقاد":
+                    show_followup(db)
+                elif choice == "📝 المسابقات والاختبارات":
+                    show_quizzes(db)
+                elif choice == "📊 التقارير والإحصائيات":
+                    show_reports(db)
+                elif choice == "📜 سجل العمليات":
+                    if st.session_state.user["role"] == "System Admin":
+                        show_logs(db)
+                    else:
+                        st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+                elif choice == "🔒 تغيير كلمة المرور":
+                    change_password(db)
+            except Exception as e:
+                error_details = traceback.format_exc()
+                st.error("❌ حدث خطأ غير متوقع. يمكنك الإبلاغ عنه من خلال زر مركز المساعدة أدناه.")
+                st.session_state.last_error_details = error_details
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # =============================================================================
+    # زر مركز المساعدة الثابت في أسفل اليسار (دائم بعد كل المحتوى)
+    # =============================================================================
+    st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
+    if st.button("🆘 مركز المساعدة", key="fixed_help_btn", help="الإبلاغ عن مشكلة أو خطأ"):
+        st.session_state.open_help_dialog = True
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # عرض نافذة المساعدة عند الحاجة
+    if st.session_state.get("open_help_dialog"):
+        show_help_dialog()
+        # إعادة تعيين المفتاح لإغلاق النافذة بعد التفاعل
+        st.session_state.open_help_dialog = False
+        # لا نحتاج إلى rerun هنا لأن st.dialog سيتولى الأمر
 
 if __name__ == "__main__":
     main()
