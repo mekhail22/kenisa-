@@ -638,7 +638,7 @@ def show_help_dialog():
 
     with st.form("help_form_dialog", clear_on_submit=False):
         name = st.text_input("الاسم *", value=default_name, placeholder="أدخل اسمك الكامل")
-        whatsapp = st.text_input("رقم الواتساب *", placeholder="مثال:01xxxxxxxxx")
+        whatsapp = st.text_input("رقم الواتساب *", placeholder="مثال :01xxxxxxxxx")
         report_type = st.selectbox("نوع البلاغ *", ["مشكلة تقنية", "سؤال عام", "اقتراح تحسين", "بلاغ خطأ", "أخرى"])
         issue_desc = st.text_area("وصف المشكلة *", height=100, placeholder="اشرح المشكلة التي تواجهها...")
 
