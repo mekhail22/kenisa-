@@ -18,7 +18,7 @@ import traceback
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "4.7.0"
+APP_VERSION = "4.7.1"  # تم تحديث رقم الإصدار
 
 # تكوين الصفحة الأساسي
 st.set_page_config(
@@ -271,37 +271,108 @@ class Database:
         self.spreadsheet = self.client.open_by_key(spreadsheet_id)
 
     def _get_or_create_worksheet(self, name, columns):
-        """جلب الورقة أو إنشائها بسعة 100,000 صف"""
+        """جلب الورقة أو إنشائها بسعة 100,000 صف مع معالجة محسنة"""
         try:
             ws = self.spreadsheet.worksheet(name)
         except gspread.WorksheetNotFound:
-            ws = self.spreadsheet.add_worksheet(title=name, rows=100000, cols=max(len(columns), 1))
-            if columns:
-                ws.append_row(columns)
+            try:
+                ws = self.spreadsheet.add_worksheet(title=name, rows=100000, cols=max(len(columns), 1))
+                if columns:
+                    ws.append_row(columns)
+            except Exception as e:
+                raise Exception(f"فشل إنشاء ورقة '{name}': {str(e)}")
         return ws
 
     def _sheet_to_df(self, sheet_name):
-        """قراءة الورقة إلى DataFrame"""
+        """قراءة الورقة إلى DataFrame مع التحقق من النوع"""
         ws = self._get_or_create_worksheet(sheet_name, [])
         data = ws.get_all_records()
-        return pd.DataFrame(data) if data else pd.DataFrame()
+        if not data:
+            return pd.DataFrame()
+        df = pd.DataFrame(data)
+        # إزالة الأعمدة الفارغة تماماً إن وجدت
+        df.dropna(how='all', axis=1, inplace=True)
+        return df
 
     def _df_to_sheet(self, sheet_name, df, columns):
-        """كتابة DataFrame إلى الورقة مع استبدال NaN بقيم فارغة"""
+        """
+        كتابة DataFrame إلى الورقة مع معالجة شاملة للأخطاء والأنواع.
+        تدعم الإصدارات القديمة والجديدة من pandas (استبدال applymap بـ map).
+        """
+        # 1. التحقق من النوع
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError(f"يجب أن يكون df كائن DataFrame، المستلم: {type(df)}")
+        if not isinstance(columns, list):
+            raise ValueError(f"يجب أن تكون columns قائمة، المستلم: {type(columns)}")
+        if not columns:
+            raise ValueError("قائمة الأعمدة فارغة")
+
+        # 2. التأكد من وجود الورقة
         ws = self._get_or_create_worksheet(sheet_name, columns)
-        ws.clear()
-        if not df.empty:
-            for col in columns:
-                if col not in df.columns:
-                    df[col] = ""
-            # استبدال أي قيم NaN أو غير قابلة للتحويل إلى JSON بسلسلة فارغة
-            df = df[columns].fillna("").applymap(lambda x: str(x) if not isinstance(x, (str, int, float, bool)) else x)
-            try:
-                ws.update([columns] + df.values.tolist())
-            except Exception as e:
-                raise Exception(f"خطأ أثناء تحديث ورقة {sheet_name}: {str(e)}")
-        else:
+
+        # 3. تصفير الورقة (مع إعادة التأكد من وجودها بعد clear)
+        try:
+            ws.clear()
+        except gspread.exceptions.APIError as e:
+            # قد تفشل clear إذا كانت الورقة غير موجودة مؤقتاً، نحاول مرة أخرى
+            ws = self._get_or_create_worksheet(sheet_name, columns)
+            ws.clear()
+
+        # 4. إذا كان df فارغاً نكتب رؤوس الأعمدة فقط
+        if df.empty:
             ws.update([columns])
+            return
+
+        # 5. التأكد من وجود جميع الأعمدة المطلوبة في df
+        for col in columns:
+            if col not in df.columns:
+                df[col] = ""
+
+        # 6. تحضير البيانات للكتابة: معالجة القيم غير القابلة للتمثيل كـ JSON
+        try:
+            work_df = df[columns].copy()
+            # استبدال NaN بسلاسل فارغة
+            work_df.fillna("", inplace=True)
+
+            # دالة للتحويل الآمن
+            def safe_value(x):
+                if isinstance(x, (str, int, float, bool)):
+                    return x
+                # أي كائن آخر (dict, list, datetime, ...) يحول إلى نص
+                try:
+                    return str(x)
+                except:
+                    return ""
+
+            # استخدام map بدلاً من applymap (متوافقة مع pandas >= 2.1)
+            # إذا كانت map غير متوفرة (pandas قديمة جداً) نستخدم apply
+            if hasattr(work_df, 'map'):
+                work_df = work_df.map(safe_value)
+            else:
+                # fallback لإصدارات pandas الأقدم
+                work_df = work_df.apply(lambda col: col.map(safe_value) if hasattr(col, 'map') else col.apply(safe_value))
+
+            # تحويل إلى قائمة قوائم (قابلة للـ JSON)
+            values = [columns] + work_df.values.tolist()
+
+            # كتابة البيانات دفعة واحدة
+            ws.update(values)
+
+        except Exception as e:
+            # تسجيل الخطأ ومحاولة الإرسال عبر Telegram
+            error_msg = f"فشل في تحديث ورقة {sheet_name}: {str(e)}"
+            try:
+                # محاولة إرسال تفاصيل الخطأ إلى المسؤول عبر Telegram (إن أمكن)
+                bot_token, chat_id = get_telegram_config()
+                if bot_token and chat_id:
+                    requests.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={"chat_id": chat_id, "text": f"❌ خطأ في _df_to_sheet:\n{error_msg}\n{traceback.format_exc()}"},
+                        timeout=5
+                    )
+            except:
+                pass
+            raise Exception(error_msg)
 
     # ==================== المستخدمون ====================
     def get_users(self):
@@ -527,13 +598,34 @@ class Database:
         return self._sheet_to_df("Logs")
 
     def add_log(self, user_id, action, details=""):
-        df = self._sheet_to_df("Logs")
-        if df.empty:
-            df = pd.DataFrame(columns=["log_id", "timestamp", "user_id", "action", "details"])
-        log = {"log_id": str(uuid.uuid4()), "timestamp": datetime.now().isoformat(),
-               "user_id": user_id, "action": action, "details": details}
-        df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
-        self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
+        try:
+            df = self._sheet_to_df("Logs")
+            if df.empty:
+                df = pd.DataFrame(columns=["log_id", "timestamp", "user_id", "action", "details"])
+            log = {
+                "log_id": str(uuid.uuid4()),
+                "timestamp": datetime.now().isoformat(),
+                "user_id": user_id,
+                "action": action,
+                "details": details
+            }
+            df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
+            self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
+        except Exception as e:
+            # لا نوقف التطبيق بسبب فشل تسجيل log، نكتب التحذير
+            st.warning(f"⚠️ تعذر تسجيل العملية: {str(e)}")
+            # نحاول الإرسال إلى Telegram على الأقل
+            try:
+                error_msg = f"فشل add_log: {str(e)}\n{traceback.format_exc()}"
+                bot_token, chat_id = get_telegram_config()
+                if bot_token and chat_id:
+                    requests.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={"chat_id": chat_id, "text": f"❌ خطأ في add_log:\n{error_msg}"},
+                        timeout=5
+                    )
+            except:
+                pass
 
     def delete_log(self, log_id):
         df = self._sheet_to_df("Logs")
