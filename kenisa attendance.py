@@ -121,6 +121,7 @@ def inject_css():
             margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
             border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             backdrop-filter: blur(5px); border: 1px solid rgba(0,0,0,0.05);
+            margin-top: 60px; /* إفساح مجال للزر العلوي */
         }
 
         /* بطاقة عامة */
@@ -178,12 +179,24 @@ def inject_css():
         }
         .floating-show-btn button:hover { transform: scale(1.1) !important; }
 
-        /* زر مركز المساعدة الثابت - الزر الوحيد */
+        /* زر مركز المساعدة الثابت - في الأعلى */
         .help-float-container {
             position: fixed;
-            bottom: 20px;
+            top: 20px;
             left: 20px;
             z-index: 99998;
+        }
+        .help-float-container button {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
+            color: white !important;
+            font-weight: 700 !important;
+            border: none !important;
+            border-radius: 8px !important;
+            box-shadow: 0 2px 8px rgba(243,156,18,0.3) !important;
+        }
+        .help-float-container button:hover {
+            transform: scale(1.02) !important;
+            box-shadow: 0 5px 15px rgba(243,156,18,0.4) !important;
         }
 
         /* مؤقت الاختبار */
@@ -1705,6 +1718,14 @@ def main():
     db = Database(creds, get_spreadsheet_id())
     jwt_secret = get_jwt_secret()
 
+    # =========================================================================
+    # زر المساعدة الثابت - يوضع قبل أي محتوى ليظهر أعلى الصفحة
+    # =========================================================================
+    st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
+    if st.button("🆘 مركز المساعدة", key="fixed_help_btn", help="الإبلاغ عن مشكلة أو خطأ"):
+        st.session_state.open_help_dialog = True
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # التعامل مع وضع الاختبار للطالبات
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
         try:
@@ -1766,17 +1787,9 @@ def main():
                     change_password(db)
             except Exception as e:
                 error_details = traceback.format_exc()
-                st.error("❌ حدث خطأ غير متوقع. يمكنك الإبلاغ عنه من خلال زر مركز المساعدة أدناه.")
+                st.error("❌ حدث خطأ غير متوقع. يمكنك الإبلاغ عنه من خلال زر مركز المساعدة أعلاه.")
                 st.session_state.last_error_details = error_details
             st.markdown("</div>", unsafe_allow_html=True)
-
-    # =============================================================================
-    # زر مركز المساعدة الثابت (زر واحد فقط في أسفل اليسار)
-    # =============================================================================
-    st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
-    if st.button("🆘 مركز المساعدة", key="fixed_help_btn", help="الإبلاغ عن مشكلة أو خطأ"):
-        st.session_state.open_help_dialog = True
-    st.markdown('</div>', unsafe_allow_html=True)
 
     # عرض نافذة المساعدة عند الحاجة
     if st.session_state.get("open_help_dialog"):
