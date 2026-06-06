@@ -13,7 +13,6 @@ import jwt
 import time
 import requests
 import traceback
-from typing import Optional
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -179,17 +178,12 @@ def inject_css():
         }
         .floating-show-btn button:hover { transform: scale(1.1) !important; }
 
-        /* زر مركز المساعدة الثابت */
+        /* زر مركز المساعدة الثابت - الزر الوحيد */
         .help-float-container {
             position: fixed;
             bottom: 20px;
             left: 20px;
             z-index: 99998;
-        }
-        .help-float-container iframe {
-            border: none !important;
-            width: 220px;
-            height: 50px;
         }
 
         /* مؤقت الاختبار */
@@ -605,44 +599,6 @@ def send_telegram_message(message: str) -> bool:
         return response.status_code == 200
     except Exception:
         return False
-
-# =============================================================================
-# زر المساعدة الثابت (باستخدام مكون iframe)
-# =============================================================================
-
-def static_help_button():
-    """زر ثابت في أسفل اليسار لفتح نافذة مركز المساعدة"""
-    help_btn_html = """
-    <div id="help-button-container">
-        <button id="help-button" style="
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 12px 20px;
-            font-weight: bold;
-            font-size: 16px;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            transition: all 0.2s;
-        " onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 16px rgba(0,0,0,0.25)'"
-          onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.2)'">
-            🆘 مركز المساعدة
-        </button>
-    </div>
-    <script>
-        const btn = document.getElementById('help-button');
-        btn.addEventListener('click', function(e) {
-            e.preventDefault();
-            window.parent.postMessage({
-                type: 'streamlit:setComponentValue',
-                value: true
-            }, '*');
-        });
-    </script>
-    """
-    # استخدام مكون iframe لإرسال القيمة إلى Streamlit
-    st.components.v1.html(help_btn_html, height=50, scrolling=False)
 
 # =============================================================================
 # نافذة مركز المساعدة (باستخدام st.dialog)
@@ -1740,56 +1696,6 @@ def main():
     inject_css()
     init_session()
 
-    # =============================================================================
-    # زر المساعدة الثابت (يظهر في كل الصفحات)
-    # =============================================================================
-    # نضعه هنا ليتم عرضه دائمًا، بغض النظر عن بقية المحتوى
-    static_help_button()
-
-    # استقبال حدث النقر من الزر الثابت (عن طريق مكون iframe)
-    # عند النقر يتم تعيين قيمة true لـ session_state.open_help_dialog
-    # نستخدم on_change عبر st.session_state لأن المكون يرسل قيمة
-    # سنراقب تغير session_state عبر مفتاح خاص
-    # بديل: نستخدم st.experimental_get_query_params لاكتشاف التغيير
-    # سأقوم باستخدام st.session_state مع key للـ component وتعيين قيمة افتراضية
-    # نضيف معالج للقيمة القادمة من iframe
-    if "help_click" not in st.session_state:
-        st.session_state.help_click = False
-
-    # سنقوم بإنشاء عنصر مخفي لاستقبال القيمة (يمكن أن نستخدم st.empty() مع iframe آخر)
-    # لكن static_help_button أعلاه يرسل القيمة. سنستخدم نفس المكون مع مفتاح لتحديث الجلسة
-    # للأسف streamlit components لا تدعم مفتاح مباشر. سنستخدم طريقة: زر streamlit عادي لكن مخفي بتنسيق.
-    # سأبقي على الزر الثابت كـ HTML فقط للشكل، وأضيف زر streamlit حقيقي في sidebar أو نهاية الصفحة.
-    # لجعلها بسيطة ومتوافقة، سأضيف زرًا عاديًا في sidebar السفلي، وأخفي الزر الأصلي. 
-    # لكن الطلب زر أسفل اليسار ثابت. 
-    # سأقوم بحل وسط: استخدم st.button مع CSS position:fixed. يمكنني استخدام st.markdown مع HTML لزر يستدعي دالة عبر javascript 
-    # استخدمت بالفعل st.components.v1.html الذي يرسل قيمة. سأستقبل القيمة في session_state عبر استخدام مفتاح داخل الـ iframe 
-    # ثم استخدام st.session_state للمراقبة. لكن st.components.v1.html لا يحدث rerun تلقائي. سنحتاج إلى إعادة تحميل الصفحة.
-    # سأعتمد على أن static_help_button عند النقر يغير قيمة session_state عبر window.parent.postMessage لكن لا يحدث تحديث مباشر.
-    # لحل ذلك: سأضع زرًا عاديًا في الشريط الجانبي دائمًا (حتى لو الشريط مخفي، لكن سنضمن ظهوره).
-    # أبسط طريقة: الاحتفاظ بزر المساعدة في sidebar مع CSS يثبته أسفل الشريط الجانبي. 
-    # سأضيف في show_sidebar زر المساعدة، وسأزيل static_help_button القديم.
-    # لكن العميل يريد زرًا في أسفل اليسار في كل الصفحات. سأضيف هذا الزر كجزء من sidebar (داخل الشريط الجانبي) مع جعله ظاهرًا دائمًا.
-    # يمكن جعل الشريط الجانبي دائم الظهور جزئيًا، ولكنها قصة أخرى.
-    # سأعتمد على: إضافة زر في نهاية main بعد كل المحتوى، واستخدام CSS position:fixed. لكن الزر سيكون عنصر Streamlit عادي، ونضعه في حاوية div بـ CSS fixed. يمكنني استخدام st.container مع class مخصص عبر st.markdown ثم وضع زر بداخله. هذا يعمل:
-    # st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
-    # زر = st.button("🆘 مركز المساعدة", key="help_btn_fixed")
-    # st.markdown('</div>', unsafe_allow_html=True)
-    # هذا سيضع الزر في تدفق الصفحة لكنه سيظهر في الأسفل بسبب CSS fixed. هذا حل عملي.
-    # سأقوم بتعديل main بعد عرض المحتوى لوضع هذا الزر.
-    
-    # تم: سأقوم بتطبيق هذا الأسلوب. سأضيف في main بعد محتوى الصفحة:
-    # st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
-    # help_btn_clicked = st.button("🆘 مركز المساعدة", key="fixed_help_btn")
-    # st.markdown('</div>', unsafe_allow_html=True)
-    # ثم معالجة النقر.
-
-    # لإكمال، سأقوم بإزالة static_help_button واستبدالها بالطريقة الموضحة. وهذا سيضمن أن الزر دائمًا موجود في نهاية كل صفحة.
-
-    # سأقوم بتعديل الدالة main لاحتواء هذا الزر.
-
-    # أعيد تنظيم main ليشمل try-except حول كل شيء لالتقاط الأخطاء وتخزينها وعرض زر الإبلاغ.
-
     try:
         creds = get_credentials()
     except Exception as e:
@@ -1804,11 +1710,9 @@ def main():
         try:
             show_student_quiz(db)
         except Exception as e:
-            # التقاط الخطأ وتخزينه للسماح بالإبلاغ
             error_details = traceback.format_exc()
             st.error("حدث خطأ غير متوقع أثناء الاختبار. يمكنك الإبلاغ عنه باستخدام زر مركز المساعدة.")
             st.session_state.last_error_details = error_details
-        # لا ننهي، نعرض بعدها زر المساعدة (سيتم إضافته لاحقاً)
     else:
         if not st.session_state.authenticated:
             show_login_page(db, jwt_secret)
@@ -1867,7 +1771,7 @@ def main():
             st.markdown("</div>", unsafe_allow_html=True)
 
     # =============================================================================
-    # زر مركز المساعدة الثابت في أسفل اليسار (دائم بعد كل المحتوى)
+    # زر مركز المساعدة الثابت (زر واحد فقط في أسفل اليسار)
     # =============================================================================
     st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn", help="الإبلاغ عن مشكلة أو خطأ"):
@@ -1877,9 +1781,7 @@ def main():
     # عرض نافذة المساعدة عند الحاجة
     if st.session_state.get("open_help_dialog"):
         show_help_dialog()
-        # إعادة تعيين المفتاح لإغلاق النافذة بعد التفاعل
         st.session_state.open_help_dialog = False
-        # لا نحتاج إلى rerun هنا لأن st.dialog سيتولى الأمر
 
 if __name__ == "__main__":
     main()
