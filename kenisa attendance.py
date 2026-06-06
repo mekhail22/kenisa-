@@ -18,7 +18,7 @@ import traceback
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "4.6.1"
+APP_VERSION = "4.6.2"
 
 # تكوين الصفحة الأساسي
 st.set_page_config(
@@ -70,7 +70,11 @@ def get_credentials():
 def get_spreadsheet_id():
     """استخراج معرف جدول بيانات Google Sheets من secrets.toml"""
     try:
-        return st.secrets["sheets"]["spreadsheet_id"]
+        sid = st.secrets["sheets"]["spreadsheet_id"]
+        if not sid or not isinstance(sid, str) or sid.strip() == "":
+            st.error("❌ معرف جدول البيانات غير صالح أو فارغ. الرجاء التحقق من secrets.toml")
+            st.stop()
+        return sid.strip()
     except Exception as e:
         st.error(f"❌ لم يتم العثور على spreadsheet_id: {e}")
         st.stop()
@@ -264,6 +268,7 @@ class Database:
     """
     def __init__(self, creds, spreadsheet_id):
         self.client = gspread.authorize(creds)
+        # سيتم معالجة الخطأ في المتصل (main) إذا كان المعرف غير صالح أو بدون صلاحية
         self.spreadsheet = self.client.open_by_key(spreadsheet_id)
 
     def _get_or_create_worksheet(self, name, columns):
@@ -1702,13 +1707,22 @@ def main():
     inject_css()
     init_session()
 
+    # تحميل الاعتمادات
     try:
         creds = get_credentials()
     except Exception as e:
         st.error(f"❌ خطأ في الاعتمادات: {e}")
         st.stop()
 
-    db = Database(creds, get_spreadsheet_id())
+    # إنشاء كائن قاعدة البيانات مع معالجة أخطاء الاتصال
+    try:
+        db = Database(creds, get_spreadsheet_id())
+    except Exception as e:
+        st.error("❌ فشل الاتصال بجدول البيانات. تأكد من أن معرف جدول البيانات صحيح وأن حساب الخدمة يمتلك صلاحية الوصول.")
+        st.info("يمكنك الإبلاغ عن المشكلة باستخدام زر 'مركز المساعدة'.")
+        st.session_state.last_error_details = traceback.format_exc()
+        st.stop()
+
     jwt_secret = get_jwt_secret()
 
     # زر المساعدة الثابت - أعلى اليسار
