@@ -1,7 +1,7 @@
 streamlit
 gspread
-google-auth
 pandas
 plotly
 PyJWT
 requests
+google-auth
