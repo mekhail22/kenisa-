@@ -13,13 +13,13 @@ import jwt
 import time
 import requests
 from functools import wraps
-import streamlit.components.v1 as components  # لإدراج JavaScript
+import streamlit.components.v1 as components
 
 # =============================================================================
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "5.2.2"  # تحديث رقم الإصدار
+APP_VERSION = "5.2.3"
 CACHE_TTL_SECONDS = 120
 
 st.set_page_config(
@@ -79,7 +79,7 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن + إخفاء جميع آليات الإغلاق التلقائي للشريط الجانبي
+# CSS محسّن: إخفاء كامل للقائمة + منع الإغلاق التلقائي
 # =============================================================================
 def inject_css():
     st.markdown("""
@@ -92,7 +92,7 @@ def inject_css():
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
 
-        /* إخفاء جميع أزرار الإغلاق والتبديل التلقائي للشريط الجانبي */
+        /* ========= إخفاء جميع أزرار الإغلاق والتبديل التلقائي ========= */
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
         [data-testid="collapsedControl"],
@@ -101,13 +101,55 @@ def inject_css():
         [data-testid="stSidebar"] > div:first-child > button,
         [data-testid="stSidebarResizer"],
         section[data-testid="stSidebar"] .st-emotion-cache-1oe5cao,
-        /* إخفاء أي زر إغلاق يظهر على الموبايل */
         button[aria-label="Close"],
         [data-testid="baseButton-header"],
         [data-testid="stSidebarCollapseButton"] {
             display: none !important;
         }
 
+        /* ========= عند إخفاء القائمة: إخفاء كامل بدون أي بقايا ========= */
+        section[data-testid="stSidebar"][aria-expanded="false"] {
+            display: none !important;
+            width: 0px !important;
+            min-width: 0px !important;
+            max-width: 0px !important;
+            flex: 0 0 0px !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            position: absolute !important;
+            left: -9999px !important;
+        }
+        /* إخفاء أي بقايا متبقية من الشريط عند تصغيره */
+        section[data-testid="stSidebar"]:not([aria-expanded="true"]) {
+            display: none !important;
+            width: 0px !important;
+            min-width: 0px !important;
+            max-width: 0px !important;
+            flex: 0 0 0px !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            position: absolute !important;
+            left: -9999px !important;
+        }
+
+        /* ========= منع ظهور طبقة overlay التي تغلق الشريط ========= */
+        .st-emotion-cache-1oe5cao,
+        [data-testid="stSidebarOverlay"],
+        div[data-testid="stSidebar"] ~ div:has(+ section) {
+            display: none !important;
+            pointer-events: none !important;
+        }
+
+        /* ========= المحتوى الرئيسي يتمدد ليملأ الشاشة عند إخفاء القائمة ========= */
+        section[data-testid="stSidebar"][aria-expanded="false"] ~ div,
+        section[data-testid="stSidebar"]:not([aria-expanded="true"]) ~ div {
+            margin-left: 0px !important;
+            width: 100% !important;
+        }
+
+        /* ========= تنسيقات عامة ========= */
         .main-header {
             font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
             margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
@@ -133,12 +175,16 @@ def inject_css():
         .stButton > button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }
         .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
         .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
+
+        /* ========= الشريط الجانبي المفتوح ========= */
         section[data-testid="stSidebar"] {
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
             border-left: 1px solid rgba(0,0,0,0.08); padding-top: 1rem;
         }
         section[data-testid="stSidebar"] .stRadio label { font-weight: 600; color: #1a1a2e; font-size: 1rem; }
         .hide-sidebar-btn button { background: #667eea !important; color: white !important; font-weight: bold; border-radius: 8px; margin-bottom: 1rem; }
+
+        /* ========= زر إظهار القائمة العائم ========= */
         .floating-show-btn { position: fixed; top: 20px; left: 20px; z-index: 99999; }
         .floating-show-btn button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
@@ -146,11 +192,16 @@ def inject_css():
             width: 65px !important; height: 65px !important; font-size: 28px !important;
             font-weight: bold !important; box-shadow: 0 4px 20px rgba(102,126,234,0.5) !important;
         }
-        .help-float-container { position: fixed; top: 20px; left: 20px; z-index: 99998; }
+
+        /* ========= زر مركز المساعدة ========= */
+        .help-float-container { position: fixed; top: 20px; left: 90px; z-index: 99998; }
         .help-float-container button {
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
             color: white !important; font-weight: 700 !important; border-radius: 8px !important;
+            padding: 8px 16px !important;
+            font-size: 14px !important;
         }
+
         .timer-container { text-align: center; margin: 1rem 0; }
         .timer-box {
             display: inline-block; background: linear-gradient(135deg, #667eea, #764ba2);
@@ -177,58 +228,90 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 # =============================================================================
-# JavaScript لإجبار الشريط الجانبي على البقاء مفتوحًا على الموبايل
+# JavaScript قوي لمنع أي إغلاق تلقائي للشريط الجانبي + ضمان الإخفاء الكامل
 # =============================================================================
 def inject_sidebar_js():
-    """حقن كود JavaScript يمنع إغلاق الشريط الجانبي تلقائياً عند النقر خارجه"""
     components.html("""
     <script>
     (function() {
-        function preventSidebarClose() {
-            // إخفاء أي زر إغلاق قد يظهر (تأكيد)
-            const closeButtons = document.querySelectorAll(
-                '[aria-label="Close"], [data-testid="stSidebarNavToggle"], [data-testid="stSidebarCollapseButton"], ' +
-                'button[aria-label="Close sidebar"], [data-testid="baseButton-header"]'
-            );
-            closeButtons.forEach(btn => { btn.style.display = 'none'; });
+        function enforceSidebarBehavior() {
+            const sidebar = document.querySelector('[data-testid="stSidebar"]');
+            if (!sidebar) return;
 
-            // منع النقر على الـ overlay (الطبقة المعتمة) من إغلاق الشريط
+            // 1- منع الإغلاق التلقائي: إزالة أي كلاسات تصغير
+            if (sidebar.classList.contains('stSidebar--collapsed')) {
+                sidebar.classList.remove('stSidebar--collapsed');
+                sidebar.classList.add('stSidebar--expanded');
+                sidebar.setAttribute('aria-expanded', 'true');
+            }
+
+            // 2- إخفاء جميع عناصر التحكم الافتراضية
+            const selectorsToHide = [
+                '[data-testid="stSidebarNavToggle"]',
+                '[data-testid="stSidebarCollapseButton"]',
+                '[data-testid="collapsedControl"]',
+                'button[aria-label="Close sidebar"]',
+                '[data-testid="stSidebar"] > button',
+                '[data-testid="stSidebarResizer"]',
+                '[data-testid="baseButton-header"]',
+                '.st-emotion-cache-1oe5cao',
+                '[data-testid="stSidebarOverlay"]'
+            ];
+            selectorsToHide.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => {
+                    el.style.display = 'none';
+                    el.style.pointerEvents = 'none';
+                });
+            });
+
+            // 3- إزالة أي overlay طبقة خلفية
             const overlays = document.querySelectorAll(
-                '.st-emotion-cache-1oe5cao, [data-testid="stSidebarOverlay"], [data-testid="stSidebar"] ~ div'
+                '.st-emotion-cache-1oe5cao, [data-testid="stSidebarOverlay"], ' +
+                'div[data-testid="stSidebar"] ~ div'
             );
             overlays.forEach(overlay => {
+                overlay.style.display = 'none';
+                overlay.style.pointerEvents = 'none';
                 overlay.addEventListener('click', function(e) {
                     e.stopPropagation();
                     e.preventDefault();
                     return false;
                 }, true);
             });
-
-            // مراقبة تغييرات الـ DOM للحفاظ على الشريط مفتوحًا
-            const sidebar = document.querySelector('[data-testid="stSidebar"]');
-            if (sidebar && sidebar.classList.contains('stSidebar--collapsed')) {
-                sidebar.classList.remove('stSidebar--collapsed');
-                sidebar.classList.add('stSidebar--expanded');
-            }
         }
 
-        // تنفيذ الوقاية فوراً وبشكل دوري
-        document.addEventListener('DOMContentLoaded', preventSidebarClose);
-        window.addEventListener('load', preventSidebarClose);
-        setInterval(preventSidebarClose, 800);
-
-        // محاولة منع Streamlit من تغيير الحالة عبر مراقبة الأحداث
-        window.addEventListener('click', function(e) {
-            if (e.target.closest('[data-testid="stSidebar"]')) return; // مسموح بالنقر داخل الشريط
-            // إذا كان النقر خارج الشريط، نمنع أي إجراء إغلاق محتمل
-            preventSidebarClose();
+        // 4- منع النقر خارج الشريط من إغلاقه
+        document.addEventListener('click', function(e) {
+            const sidebar = document.querySelector('[data-testid="stSidebar"]');
+            if (!sidebar) return;
+            // إذا كان النقر داخل الشريط الجانبي، لا تفعل شيئًا
+            if (sidebar.contains(e.target)) return;
+            // إذا كان النقر خارج الشريط، امنع الإغلاق وأعد ضبط الحالة
+            e.stopPropagation();
+            enforceSidebarBehavior();
         }, true);
+
+        // 5- مراقبة مستمرة لكل التغييرات
+        const observer = new MutationObserver(function(mutations) {
+            enforceSidebarBehavior();
+        });
+        observer.observe(document.body, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+            attributeFilter: ['class', 'aria-expanded', 'style']
+        });
+
+        // 6- تنفيذ فوري ومتكرر
+        document.addEventListener('DOMContentLoaded', enforceSidebarBehavior);
+        window.addEventListener('load', enforceSidebarBehavior);
+        setInterval(enforceSidebarBehavior, 500);
     })();
     </script>
     """, height=0, width=0)
 
 # =============================================================================
-# SheetCache: تخزين مؤقت لتقليل الطلبات
+# SheetCache
 # =============================================================================
 class SheetCache:
     def __init__(self):
@@ -276,7 +359,7 @@ class SheetCache:
                 st.warning(f"تعذر حفظ السجلات المؤقتة: {str(e)}")
 
 # =============================================================================
-# Helper: Retry decorator
+# Retry decorator
 # =============================================================================
 def retry_operation(max_retries=5, base_delay=2):
     def decorator(func):
@@ -1698,7 +1781,7 @@ def change_password(db: Database):
 # =============================================================================
 def main():
     inject_css()
-    inject_sidebar_js()  # ← إدراج سكريبت منع إغلاق الشريط الجانبي
+    inject_sidebar_js()
     init_session()
     try:
         creds = get_credentials()
