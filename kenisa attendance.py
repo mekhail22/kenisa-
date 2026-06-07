@@ -13,12 +13,13 @@ import jwt
 import time
 import requests
 from functools import wraps
+import streamlit.components.v1 as components  # لإدراج JavaScript
 
 # =============================================================================
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "5.2.1"
+APP_VERSION = "5.2.2"  # تحديث رقم الإصدار
 CACHE_TTL_SECONDS = 120
 
 st.set_page_config(
@@ -78,7 +79,7 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن مع ضمان عدم إغلاق الشريط الجانبي تلقائياً
+# CSS محسّن + إخفاء جميع آليات الإغلاق التلقائي للشريط الجانبي
 # =============================================================================
 def inject_css():
     st.markdown("""
@@ -90,7 +91,7 @@ def inject_css():
         header[data-testid="stHeader"] { display: none !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
-        
+
         /* إخفاء جميع أزرار الإغلاق والتبديل التلقائي للشريط الجانبي */
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
@@ -99,7 +100,11 @@ def inject_css():
         [data-testid="stSidebar"] > button,
         [data-testid="stSidebar"] > div:first-child > button,
         [data-testid="stSidebarResizer"],
-        section[data-testid="stSidebar"] .st-emotion-cache-1oe5cao {
+        section[data-testid="stSidebar"] .st-emotion-cache-1oe5cao,
+        /* إخفاء أي زر إغلاق يظهر على الموبايل */
+        button[aria-label="Close"],
+        [data-testid="baseButton-header"],
+        [data-testid="stSidebarCollapseButton"] {
             display: none !important;
         }
 
@@ -170,6 +175,57 @@ def inject_css():
         .content-area { padding: 0 1rem; }
     </style>
     """, unsafe_allow_html=True)
+
+# =============================================================================
+# JavaScript لإجبار الشريط الجانبي على البقاء مفتوحًا على الموبايل
+# =============================================================================
+def inject_sidebar_js():
+    """حقن كود JavaScript يمنع إغلاق الشريط الجانبي تلقائياً عند النقر خارجه"""
+    components.html("""
+    <script>
+    (function() {
+        function preventSidebarClose() {
+            // إخفاء أي زر إغلاق قد يظهر (تأكيد)
+            const closeButtons = document.querySelectorAll(
+                '[aria-label="Close"], [data-testid="stSidebarNavToggle"], [data-testid="stSidebarCollapseButton"], ' +
+                'button[aria-label="Close sidebar"], [data-testid="baseButton-header"]'
+            );
+            closeButtons.forEach(btn => { btn.style.display = 'none'; });
+
+            // منع النقر على الـ overlay (الطبقة المعتمة) من إغلاق الشريط
+            const overlays = document.querySelectorAll(
+                '.st-emotion-cache-1oe5cao, [data-testid="stSidebarOverlay"], [data-testid="stSidebar"] ~ div'
+            );
+            overlays.forEach(overlay => {
+                overlay.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    return false;
+                }, true);
+            });
+
+            // مراقبة تغييرات الـ DOM للحفاظ على الشريط مفتوحًا
+            const sidebar = document.querySelector('[data-testid="stSidebar"]');
+            if (sidebar && sidebar.classList.contains('stSidebar--collapsed')) {
+                sidebar.classList.remove('stSidebar--collapsed');
+                sidebar.classList.add('stSidebar--expanded');
+            }
+        }
+
+        // تنفيذ الوقاية فوراً وبشكل دوري
+        document.addEventListener('DOMContentLoaded', preventSidebarClose);
+        window.addEventListener('load', preventSidebarClose);
+        setInterval(preventSidebarClose, 800);
+
+        // محاولة منع Streamlit من تغيير الحالة عبر مراقبة الأحداث
+        window.addEventListener('click', function(e) {
+            if (e.target.closest('[data-testid="stSidebar"]')) return; // مسموح بالنقر داخل الشريط
+            // إذا كان النقر خارج الشريط، نمنع أي إجراء إغلاق محتمل
+            preventSidebarClose();
+        }, true);
+    })();
+    </script>
+    """, height=0, width=0)
 
 # =============================================================================
 # SheetCache: تخزين مؤقت لتقليل الطلبات
@@ -1642,6 +1698,7 @@ def change_password(db: Database):
 # =============================================================================
 def main():
     inject_css()
+    inject_sidebar_js()  # ← إدراج سكريبت منع إغلاق الشريط الجانبي
     init_session()
     try:
         creds = get_credentials()
