@@ -659,13 +659,13 @@ def show_initialization(db: Database):
         st.stop()
 
 def show_login_page(db: Database, jwt_secret: str):
-    st.markdown("<h1 class='main-header'>⛪ <br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
     show_initialization(db)
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
         with st.form("login_form"):
-            username = st.text_input("اسم المستخدم", placeholder="admin")
-            password = st.text_input("كلمة المرور", type="password", placeholder="admin123")
+            username = st.text_input("اسم المستخدم")
+            password = st.text_input("كلمة المرور", type="password")
             if st.form_submit_button("تسجيل الدخول", use_container_width=True):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
