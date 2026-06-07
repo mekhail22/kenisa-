@@ -13,15 +13,12 @@ import jwt
 import time
 import requests
 import traceback
-import hashlib
-import os
-import hmac
-import base64
 
 # =============================================================================
 # الإعدادات العامة والثوابت
 # =============================================================================
-APP_VERSION = "4.8.0"
+DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
+APP_VERSION = "4.7.6"
 
 st.set_page_config(
     page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
@@ -29,21 +26,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# =============================================================================
-# الأمان - لا يوجد مفتاح JWT افتراضي
-# =============================================================================
-def get_jwt_secret():
-    """استخراج مفتاح JWT من secrets.toml أو رفض التشغيل"""
-    try:
-        secret = st.secrets["sheets"]["jwt_secret"]
-        if not secret or len(secret) < 32:
-            st.error("❌ مفتاح JWT غير آمن. يجب أن يكون 32 حرفاً على الأقل في secrets.toml")
-            st.stop()
-        return secret
-    except KeyError:
-        st.error("❌ لم يتم العثور على jwt_secret في secrets.toml. التطبيق لا يمكن تشغيله.")
-        st.stop()
 
 # =============================================================================
 # Telegram & Support
@@ -88,25 +70,11 @@ def get_spreadsheet_id():
         st.error(f"❌ لم يتم العثور على spreadsheet_id: {e}")
         st.stop()
 
-# =============================================================================
-# Password Hashing (PBKDF2)
-# =============================================================================
-def hash_password(password: str) -> str:
-    """تشفير كلمة المرور باستخدام PBKDF2 مع salt عشوائي"""
-    salt = os.urandom(16)
-    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
-    return base64.b64encode(salt + dk).decode('ascii')
-
-def verify_password(password: str, hashed: str) -> bool:
-    """التحقق من كلمة المرور مقابل التشفير المخزن"""
+def get_jwt_secret():
     try:
-        decoded = base64.b64decode(hashed.encode('ascii'))
-        salt = decoded[:16]
-        dk_stored = decoded[16:]
-        dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
-        return hmac.compare_digest(dk, dk_stored)
+        return st.secrets["sheets"]["jwt_secret"]
     except:
-        return False
+        return DEFAULT_JWT_SECRET
 
 # =============================================================================
 # CSS
@@ -194,7 +162,7 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 # =============================================================================
-# Database Class (with security hardening)
+# Database Class (All columns converted to object after read)
 # =============================================================================
 class Database:
     def __init__(self, creds, spreadsheet_id):
@@ -217,15 +185,9 @@ class Database:
             return pd.DataFrame()
         df = pd.DataFrame(data)
         df.dropna(how='all', axis=1, inplace=True)
+        # تحويل جميع الأعمدة إلى object لتجنب تعارض الأنواع عند التحديث
         df = df.astype(object)
         return df
-
-    @staticmethod
-    def _sanitize_for_sheets(value: str) -> str:
-        """يمنع حقن معادلات Google Sheets بإضافة فاصلة عليا إذا لزم الأمر"""
-        if isinstance(value, str) and value.startswith(('=', '+', '-', '@', '|')):
-            return "'" + value
-        return value
 
     def _df_to_sheet(self, sheet_name, df, columns):
         if not isinstance(df, pd.DataFrame):
@@ -249,9 +211,9 @@ class Database:
 
         def safe_value(x):
             if isinstance(x, (str, int, float, bool)):
-                return self._sanitize_for_sheets(str(x))
+                return x
             try:
-                return self._sanitize_for_sheets(str(x))
+                return str(x)
             except:
                 return ""
 
@@ -279,8 +241,6 @@ class Database:
         return df
 
     def add_user(self, user_data):
-        if "password" in user_data:
-            user_data["password"] = hash_password(user_data["password"])
         df = self.get_users()
         if df.empty:
             df = pd.DataFrame(columns=["user_id", "username", "password", "role",
@@ -290,8 +250,6 @@ class Database:
                                         "full_name", "section_id", "phone", "email"])
 
     def update_user(self, user_id, updates):
-        if "password" in updates:
-            updates["password"] = hash_password(updates["password"])
         df = self.get_users()
         idx = df[df.user_id == user_id].index
         if len(idx) > 0:
@@ -341,9 +299,6 @@ class Database:
         return self._sheet_to_df("Students")
 
     def add_student(self, student_data):
-        for field in ['full_name', 'phone', 'parent_phone', 'address', 'notes', 'school']:
-            if field in student_data:
-                student_data[field] = self._sanitize_for_sheets(str(student_data[field]))
         df = self.get_students()
         if df.empty:
             df = pd.DataFrame(columns=["student_id", "full_name", "section_id", "teacher_id",
@@ -354,9 +309,6 @@ class Database:
                                            "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
 
     def update_student(self, student_id, updates):
-        for field in ['full_name', 'phone', 'parent_phone', 'address', 'notes', 'school']:
-            if field in updates:
-                updates[field] = self._sanitize_for_sheets(str(updates[field]))
         df = self.get_students()
         idx = df[df.student_id == student_id].index
         if len(idx) > 0:
@@ -374,7 +326,6 @@ class Database:
         return self._sheet_to_df("Attendance")
 
     def add_attendance_record(self, record):
-        record["notes"] = self._sanitize_for_sheets(str(record.get("notes", "")))
         df = self.get_attendance()
         if df.empty:
             df = pd.DataFrame(columns=["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
@@ -402,7 +353,6 @@ class Database:
         return self._sheet_to_df("FollowUp")
 
     def add_followup_record(self, record):
-        record["notes"] = self._sanitize_for_sheets(str(record.get("notes", "")))
         df = self.get_followup()
         if df.empty:
             df = pd.DataFrame(columns=["record_id", "student_id", "teacher_id", "followup_date",
@@ -422,8 +372,6 @@ class Database:
         return self._sheet_to_df("Quizzes")
 
     def add_quiz(self, quiz_data):
-        quiz_data["title"] = self._sanitize_for_sheets(str(quiz_data.get("title", "")))
-        quiz_data["description"] = self._sanitize_for_sheets(str(quiz_data.get("description", "")))
         df = self.get_quizzes()
         if df.empty:
             df = pd.DataFrame(columns=["quiz_id", "title", "description", "created_by", "section_id",
@@ -435,9 +383,6 @@ class Database:
                                           "quiz_code", "password", "is_active"])
 
     def update_quiz(self, quiz_id, updates):
-        for field in ['title', 'description']:
-            if field in updates:
-                updates[field] = self._sanitize_for_sheets(str(updates[field]))
         df = self.get_quizzes()
         idx = df[df.quiz_id == quiz_id].index
         if len(idx) > 0:
@@ -467,9 +412,6 @@ class Database:
         return df[df.quiz_id == quiz_id]
 
     def add_question(self, q_data):
-        for field in ['question_text', 'option1', 'option2', 'option3', 'option4', 'correct_answer']:
-            if field in q_data:
-                q_data[field] = self._sanitize_for_sheets(str(q_data[field]))
         df = self._sheet_to_df("QuizQuestions")
         if df.empty:
             df = pd.DataFrame(columns=["question_id", "quiz_id", "question_text", "question_type",
@@ -591,18 +533,6 @@ def send_telegram_message(message: str) -> bool:
     except Exception:
         return False
 
-def log_error_to_telegram(error_msg: str):
-    try:
-        bot_token, chat_id = get_telegram_config()
-        if bot_token and chat_id:
-            requests.post(
-                f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                json={"chat_id": chat_id, "text": f"❌ خطأ في التطبيق:\n<pre>{error_msg}</pre>", "parse_mode": "HTML"},
-                timeout=5
-            )
-    except:
-        pass
-
 @st.dialog("🆘 مركز المساعدة والدعم الفني")
 def show_help_dialog():
     contact_name, contact_whatsapp = get_support_config()
@@ -624,7 +554,7 @@ def show_help_dialog():
                 st.error("فشل الإرسال")
 
 # =============================================================================
-# Initialization & Login (with password hashing)
+# Initialization & Login
 # =============================================================================
 def show_initialization(db: Database):
     users = db.get_users()
@@ -633,14 +563,9 @@ def show_initialization(db: Database):
         st.markdown("#### يرجى الضغط على الزر التالي لإنشاء مدير النظام الافتراضي:")
         if st.button("🛠️ تهيئة النظام وإنشاء المسؤول الأول", type="primary", use_container_width=True, key="init_admin_btn"):
             admin_data = {
-                "user_id": "admin-001",
-                "username": "admin",
-                "password": "admin123",
-                "role": "System Admin",
-                "full_name": "مدير النظام",
-                "section_id": "",
-                "phone": "0100000000",
-                "email": "admin@church.com"
+                "user_id": "admin-001", "username": "admin", "password": "admin123",
+                "role": "System Admin", "full_name": "مدير النظام",
+                "section_id": "", "phone": "0100000000", "email": "admin@church.com"
             }
             db.add_user(admin_data)
             st.success("✅ تم إنشاء مدير النظام بنجاح!")
@@ -668,7 +593,7 @@ def show_login_page(db: Database, jwt_secret: str):
                             st.error("اسم المستخدم غير موجود")
                         else:
                             user = user_row.iloc[0].to_dict()
-                            if verify_password(password, user.get("password", "")):
+                            if password == user.get("password", ""):
                                 token = generate_token(user, jwt_secret)
                                 st.session_state.token = token
                                 st.session_state.user = user
@@ -719,7 +644,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (Safe HTML)
+# Student Quiz Interface
 # =============================================================================
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
@@ -769,7 +694,7 @@ def show_student_quiz(db: Database):
         return
 
     end_timestamp = st.session_state.quiz_end_time.timestamp() * 1000
-    st.markdown(f"""
+    timer_html = f"""
     <div class="timer-container">
         <span id="quiz-timer" class="timer-box" data-end="{end_timestamp}">⏳ الوقت المتبقي: --:--</span>
     </div>
@@ -796,7 +721,8 @@ def show_student_quiz(db: Database):
             setInterval(updateTimer, 1000);
         }})();
     </script>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(timer_html, unsafe_allow_html=True)
     st.title(f"📝 {quiz['title']}")
     st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
     st.markdown("---")
@@ -911,7 +837,7 @@ def show_sidebar(db: Database):
         return choice
 
 # =============================================================================
-# Dashboard (آمن)
+# Dashboard
 # =============================================================================
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
@@ -923,10 +849,10 @@ def show_dashboard(db: Database):
     present_today = len(attendance[(attendance.date == today) & (attendance.status == "حاضر")]) if not attendance.empty else 0
     absent_today = len(attendance[(attendance.date == today) & (attendance.status == "غائب")]) if not attendance.empty else 0
     need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty else 0
-    col1.metric("عدد الطالبات", len(students))
-    col2.metric("الحضور اليوم", present_today)
-    col3.metric("الغياب اليوم", absent_today)
-    col4.metric("منقطعات", need_follow)
+    col1.markdown(f"<div class='stat-card'><div class='label'>عدد الطالبات</div><div class='value'>{len(students)}</div></div>", unsafe_allow_html=True)
+    col2.markdown(f"<div class='stat-card'><div class='label'>الحضور اليوم</div><div class='value'>{present_today}</div></div>", unsafe_allow_html=True)
+    col3.markdown(f"<div class='stat-card'><div class='label'>الغياب اليوم</div><div class='value'>{absent_today}</div></div>", unsafe_allow_html=True)
+    col4.markdown(f"<div class='stat-card'><div class='label'>منقطعات</div><div class='value'>{need_follow}</div></div>", unsafe_allow_html=True)
     st.markdown("#### 📈 الحضور الأسبوعي")
     if not attendance.empty:
         attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
@@ -1559,7 +1485,7 @@ def change_password(db: Database):
         if st.form_submit_button("تغيير كلمة المرور"):
             if not old_pwd or not new_pwd or not confirm_pwd:
                 st.error("الرجاء ملء جميع الحقول")
-            elif not verify_password(old_pwd, st.session_state.user.get("password", "")):
+            elif old_pwd != st.session_state.user.get("password", ""):
                 st.error("كلمة المرور الحالية غير صحيحة")
             elif len(new_pwd) < 4:
                 st.error("كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل")
@@ -1567,11 +1493,11 @@ def change_password(db: Database):
                 st.error("كلمتا المرور غير متطابقتين")
             else:
                 db.update_user(st.session_state.user["user_id"], {"password": new_pwd})
-                st.session_state.user["password"] = hash_password(new_pwd)  # تحديث الجلسة
+                st.session_state.user["password"] = new_pwd
                 st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
 # =============================================================================
-# Main App with Production Error Handling
+# Main App
 # =============================================================================
 def main():
     inject_css()
@@ -1580,8 +1506,7 @@ def main():
         creds = get_credentials()
         db = Database(creds, get_spreadsheet_id())
     except Exception as e:
-        st.error("❌ حدث خطأ في الاتصال بقاعدة البيانات. الرجاء المحاولة لاحقاً.")
-        log_error_to_telegram(f"Database connection error: {traceback.format_exc()}")
+        st.error(f"❌ خطأ في الاتصال: {e}")
         st.stop()
 
     jwt_secret = get_jwt_secret()
@@ -1591,63 +1516,56 @@ def main():
         st.session_state.open_help_dialog = True
     st.markdown('</div>', unsafe_allow_html=True)
 
-    try:
-        if st.session_state.student_quiz_started:
-            show_student_quiz(db)
+    if st.session_state.student_quiz_started:
+        show_student_quiz(db)
+    else:
+        if not st.session_state.authenticated:
+            show_login_page(db, jwt_secret)
         else:
-            if not st.session_state.authenticated:
-                show_login_page(db, jwt_secret)
+            token_data = verify_token(st.session_state.token, jwt_secret)
+            if not token_data:
+                st.error("⏰ انتهت صلاحية الجلسة.")
+                st.session_state.clear()
+                time.sleep(2)
+                st.rerun()
+                return
+            if st.session_state.show_sidebar:
+                choice = show_sidebar(db)
             else:
-                token_data = verify_token(st.session_state.token, jwt_secret)
-                if not token_data:
-                    st.error("⏰ انتهت صلاحية الجلسة. الرجاء تسجيل الدخول مرة أخرى.")
-                    st.session_state.clear()
-                    time.sleep(2)
+                st.markdown("<style>section[data-testid='stSidebar']{display:none!important}</style>", unsafe_allow_html=True)
+                st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
+                if st.button("☰", key="show_sidebar_btn"):
+                    st.session_state.show_sidebar = True
                     st.rerun()
-                    return
-                if st.session_state.show_sidebar:
-                    choice = show_sidebar(db)
-                else:
-                    st.markdown("<style>section[data-testid='stSidebar']{display:none!important}</style>", unsafe_allow_html=True)
-                    st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
-                    if st.button("☰", key="show_sidebar_btn"):
-                        st.session_state.show_sidebar = True
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+                st.markdown('</div>', unsafe_allow_html=True)
+                choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
 
-                st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-                if choice == "🏠 لوحة التحكم":
-                    show_dashboard(db)
-                elif choice == "👥 إدارة المستخدمين":
-                    if st.session_state.user["role"] == "System Admin":
-                        show_user_management(db)
-                    else:
-                        st.error("🚫 غير مصرح")
-                elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
+            st.markdown("<div class='content-area'>", unsafe_allow_html=True)
+            if choice == "🏠 لوحة التحكم":
+                show_dashboard(db)
+            elif choice == "👥 إدارة المستخدمين":
+                if st.session_state.user["role"] == "System Admin":
                     show_user_management(db)
-                elif choice == "📋 الحضور":
-                    show_attendance(db)
-                elif choice == "💬 الافتقاد":
-                    show_followup(db)
-                elif choice == "📝 المسابقات والاختبارات":
-                    show_quizzes(db)
-                elif choice == "📊 التقارير والإحصائيات":
-                    show_reports(db)
-                elif choice == "📜 سجل العمليات":
-                    if st.session_state.user["role"] == "System Admin":
-                        show_logs(db)
-                    else:
-                        st.error("🚫 غير مصرح")
-                elif choice == "🔒 تغيير كلمة المرور":
-                    change_password(db)
-                st.markdown("</div>", unsafe_allow_html=True)
-    except Exception as e:
-        error_trace = traceback.format_exc()
-        st.error("عذراً، حدث خطأ غير متوقع. تم تسجيل التفاصيل وسيتم مراجعتها.")
-        log_error_to_telegram(error_trace)
-        if st.session_state.get("user", {}).get("role") == "System Admin":
-            st.exception(e)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
+                show_user_management(db)
+            elif choice == "📋 الحضور":
+                show_attendance(db)
+            elif choice == "💬 الافتقاد":
+                show_followup(db)
+            elif choice == "📝 المسابقات والاختبارات":
+                show_quizzes(db)
+            elif choice == "📊 التقارير والإحصائيات":
+                show_reports(db)
+            elif choice == "📜 سجل العمليات":
+                if st.session_state.user["role"] == "System Admin":
+                    show_logs(db)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice == "🔒 تغيير كلمة المرور":
+                change_password(db)
+            st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.get("open_help_dialog"):
         show_help_dialog()
