@@ -24,7 +24,7 @@ APP_VERSION = "5.2.0"
 CACHE_TTL_SECONDS = 120  # مدة صلاحية الكاش: دقيقتين
 
 st.set_page_config(
-    page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
+    page_title="نظام- كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -659,7 +659,7 @@ def show_initialization(db: Database):
         st.stop()
 
 def show_login_page(db: Database, jwt_secret: str):
-    st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-header'>⛪ <br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
     show_initialization(db)
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
