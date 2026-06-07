@@ -19,7 +19,7 @@ from functools import wraps
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "5.3.0"
+APP_VERSION = "5.4.0"
 CACHE_TTL_SECONDS = 120  # مدة صلاحية الكاش: دقيقتين
 
 st.set_page_config(
@@ -164,7 +164,7 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 # =============================================================================
-# SheetCache: تخزين مؤقت لتقليل استهلاك API
+# SheetCache
 # =============================================================================
 class SheetCache:
     def __init__(self):
@@ -209,7 +209,7 @@ class SheetCache:
                 st.warning(f"تعذر حفظ السجلات المؤقتة: {str(e)}")
 
 # =============================================================================
-# Helper: Retry decorator
+# Retry decorator
 # =============================================================================
 def retry_operation(max_retries=5, base_delay=2):
     def decorator(func):
@@ -443,7 +443,7 @@ class Database:
         self._df_to_sheet("FollowUp", df, ["record_id", "student_id", "teacher_id", "followup_date",
                                            "followup_type", "notes", "regularity_status"])
 
-    # --- Quizzes (extended with new fields) ---
+    # --- Quizzes ---
     def get_quizzes(self):
         return self._sheet_to_df("Quizzes")
 
@@ -453,12 +453,12 @@ class Database:
             df = pd.DataFrame(columns=["quiz_id", "title", "description", "created_by", "section_id",
                                        "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
                                        "quiz_code", "password", "is_active",
-                                       "expiry_type", "expiry_hours", "start_time", "end_time"])
+                                       "expiry_type", "expiry_hours"])
         df = pd.concat([df, pd.DataFrame([quiz_data])], ignore_index=True)
         self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id",
                                           "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
                                           "quiz_code", "password", "is_active",
-                                          "expiry_type", "expiry_hours", "start_time", "end_time"])
+                                          "expiry_type", "expiry_hours"])
 
     def update_quiz(self, quiz_id, updates):
         df = self.get_quizzes()
@@ -582,7 +582,8 @@ def init_session():
         "login_attempted": False,
         "menu_choice": "🏠 لوحة التحكم",
         "show_sidebar": True,
-        "open_help_dialog": False
+        "open_help_dialog": False,
+        "confirm_finish_early": False
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -700,7 +701,8 @@ def show_login_page(db: Database, jwt_secret: str):
                             quiz = quiz.iloc[0].to_dict()
                             try:
                                 expiry = pd.to_datetime(quiz["expiry_date"])
-                                if expiry < datetime.now():
+                                # التحقق من انتهاء الصلاحية (نهاية اليوم 23:59)
+                                if expiry + timedelta(days=1) < datetime.now():
                                     st.error("انتهت صلاحية هذا الاختبار")
                                     db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
                                 elif quiz.get("is_active", "True") == "False":
@@ -724,22 +726,15 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface - محسن بالكامل
+# Student Quiz Interface
 # =============================================================================
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
 
-    # ---------- مرحلة اختيار الاسم ----------
     if st.session_state.quiz_phase == "enter_name":
         st.title(f"📝 {quiz['title']}")
-        st.markdown(f"**عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** 20")
-        expiry_type = quiz.get("expiry_type", "minutes")
-        if expiry_type == "end_of_day":
-            st.markdown("⏰ الامتحان متاح حتى نهاية اليوم (11:59 PM)")
-        elif expiry_type == "hours":
-            st.markdown(f"⏰ مدة الامتحان {quiz.get('expiry_hours', '1')} ساعات من وقت البدء")
-        else:
-            st.markdown(f"⏰ مدة الامتحان {quiz['time_limit_minutes']} دقيقة")
+        st.markdown(f"**عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** {quiz.get('total_marks', 20)}")
+        st.markdown(f"⏱️ مدة الامتحان: {quiz['time_limit_minutes']} دقيقة")
         st.markdown("---")
         students_df = db.get_students()
         active_students = students_df[students_df["status"] == "active"] if not students_df.empty else pd.DataFrame()
@@ -764,35 +759,23 @@ def show_student_quiz(db: Database):
             st.session_state.student_id = selected_id
             now = datetime.now()
             st.session_state.quiz_start_time = now
-
-            # حساب وقت النهاية حسب نوع الامتحان
-            expiry_type = quiz.get("expiry_type", "minutes")
-            if expiry_type == "end_of_day":
-                end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
-                st.session_state.quiz_end_time = end_of_day
-            elif expiry_type == "hours":
-                hours = int(quiz.get("expiry_hours", 1))
-                st.session_state.quiz_end_time = now + timedelta(hours=hours)
-            else:  # minutes
-                limit = int(quiz.get("time_limit_minutes", 15))
-                st.session_state.quiz_end_time = now + timedelta(minutes=limit)
-
+            # وقت الامتحان بالدقائق فقط
+            limit_minutes = int(quiz.get("time_limit_minutes", 15))
+            st.session_state.quiz_end_time = now + timedelta(minutes=limit_minutes)
             st.session_state.quiz_phase = "taking_quiz"
             st.rerun()
         return
 
-    # ---------- صفحة النتيجة (بعد التسليم) ----------
     if st.session_state.quiz_submitted or st.session_state.quiz_phase == "finished":
         st.markdown("<h2 style='text-align:center; color:green;'>✅ تم تسليم الاختبار بنجاح!</h2>", unsafe_allow_html=True)
         st.markdown(f"**الطالبة:** {st.session_state.student_name}")
         st.markdown(f"**عنوان الاختبار:** {quiz['title']}")
-        st.markdown(f"### 🎯 نتيجتك: {st.session_state.last_score} من 20")
+        st.markdown(f"### 🎯 نتيجتك: {st.session_state.last_score} من {quiz.get('total_marks', 20)}")
         st.markdown(f"- عدد الإجابات الصحيحة: {st.session_state.correct_count} من {st.session_state.total_questions}")
         st.markdown(f"- عدد الإجابات الخاطئة: {st.session_state.total_questions - st.session_state.correct_count}")
         if st.session_state.submission_time:
             st.markdown(f"- وقت التسليم: {st.session_state.submission_time}")
         if st.button("🏠 العودة للرئيسية", use_container_width=True, type="primary"):
-            # مسح كل مفاتيح الاختبار
             keys_to_clear = ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
                              "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers",
                              "quiz_submitted", "last_score", "correct_count", "total_questions", "submission_time"]
@@ -802,8 +785,7 @@ def show_student_quiz(db: Database):
             st.rerun()
         return
 
-    # ---------- أثناء الامتحان (مؤقت + أسئلة) ----------
-    # التايمر (يظهر فقط أثناء الامتحان)
+    # تظهر التايمر فقط أثناء الامتحان
     end_timestamp = st.session_state.quiz_end_time.timestamp() * 1000
     timer_html = f"""
     <div class="timer-container" id="timer-container">
@@ -812,7 +794,6 @@ def show_student_quiz(db: Database):
     <script>
         (function() {{
             const timerSpan = document.getElementById('quiz-timer');
-            const timerContainer = document.getElementById('timer-container');
             if (!timerSpan) return;
             const endMillis = parseInt(timerSpan.dataset.end, 10);
             if (isNaN(endMillis)) return;
@@ -837,7 +818,7 @@ def show_student_quiz(db: Database):
     st.markdown(timer_html, unsafe_allow_html=True)
 
     st.title(f"📝 {quiz['title']}")
-    st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
+    st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: {quiz.get('total_marks', 20)}")
     st.markdown("---")
     questions = db.get_quiz_questions(quiz["quiz_id"])
     if questions.empty:
@@ -873,7 +854,6 @@ def show_student_quiz(db: Database):
             st.session_state.confirm_finish_early = True
             st.rerun()
 
-    # مربع تأكيد الإنهاء المبكر
     if st.session_state.get("confirm_finish_early"):
         st.warning("⚠️ هل أنتي متأكدة من إنهاء الامتحان؟ الدرجة هتحسب على الأسئلة اللي اتجابت بس.")
         col_confirm, col_cancel = st.columns(2)
@@ -888,7 +868,6 @@ def show_student_quiz(db: Database):
                 st.session_state.confirm_finish_early = False
                 st.rerun()
 
-    # زر خفي للتسليم التلقائي عند انتهاء الوقت
     st.markdown('<div style="display:none">', unsafe_allow_html=True)
     if st.button("", key="timeout_submit_btn"):
         if not st.session_state.quiz_submitted:
@@ -908,12 +887,13 @@ def auto_submit_quiz(db, quiz):
         if str(q["correct_answer"]).strip().lower() == str(answers_dict.get(q["question_id"], "")).strip().lower():
             correct_count += 1
     total_q = len(questions)
-    score = round((correct_count / total_q) * 20, 1) if total_q > 0 else 0
+    total_marks = int(quiz.get("total_marks", 20))
+    score = round((correct_count / total_q) * total_marks, 1) if total_q > 0 else 0
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     result = {
         "result_id": str(uuid.uuid4()), "quiz_id": quiz["quiz_id"],
         "student_id": st.session_state.student_id, "student_name": st.session_state.student_name,
-        "score": score, "total_marks": 20,
+        "score": score, "total_marks": total_marks,
         "submission_time": now_str,
         "answers": json.dumps(answers_dict, ensure_ascii=False)
     }
@@ -1046,7 +1026,6 @@ def show_user_management(db: Database):
     students = db.get_students()
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول"])
 
-    # Tab1 Users
     with tab1:
         st.subheader("قائمة المستخدمين")
         if not users.empty:
@@ -1074,7 +1053,6 @@ def show_user_management(db: Database):
                         time.sleep(1)
                         st.rerun()
 
-    # Tab3 Students (مع تاريخ الميلاد)
     with tab3:
         st.subheader("الطالبات")
         if not students.empty:
@@ -1178,7 +1156,6 @@ def show_followup(db: Database):
     if students.empty:
         st.info("لا توجد طالبات.")
         return
-    # كروت
     if not followup.empty:
         f_rel = followup[followup.student_id.isin(students["student_id"])]
         reg = len(f_rel[f_rel.regularity_status=="منتظم"])
@@ -1229,7 +1206,7 @@ def show_my_students(db: Database):
     st.dataframe(students[["full_name","regularity_status"]], use_container_width=True)
 
 # =============================================================================
-# Quizzes - مع التعديلات الجديدة (إنشاء، تعديل، إدارة)
+# Quizzes - جديد بالكامل: صلاحية بالساعات، وقت بالدقائق، تعديل كامل
 # =============================================================================
 def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
@@ -1237,34 +1214,30 @@ def show_quizzes(db: Database):
     role = user["role"]
     section_id = user.get("section_id", "")
 
-    # إنشاء اختبار (لأدمن وأمين خدمة)
     if role in ["System Admin", "Service Manager"]:
         st.subheader("➕ إنشاء اختبار جديد")
         with st.form("create_quiz"):
             title = st.text_input("عنوان الاختبار*")
-            num_q = st.selectbox("عدد الأسئلة", [10,20,30], index=1)
+            num_q = st.selectbox("عدد الأسئلة", [10, 20, 30], index=1)
             total_marks = st.number_input("الدرجة الكلية", value=20, min_value=1)
-            expiry_date = st.date_input("تاريخ انتهاء الصلاحية", datetime.now()+timedelta(days=7))
+            time_limit_minutes = st.number_input("⏱️ وقت الامتحان بالدقائق", value=15, min_value=1, max_value=180)
 
-            st.markdown("**⏱️ نوع الوقت**")
-            time_type = st.radio("اختر طريقة انتهاء الوقت",
-                                 ["⏱️ وقت محدد بالدقائق", "📅 ينتهي بنهاية اليوم", "⏰ ينتهي بعد عدد ساعات"],
-                                 index=0, key="time_type_radio")
-            time_limit = 15
-            expiry_hours = 1
-            if time_type.startswith("⏱️"):
-                time_limit = st.number_input("الوقت بالدقائق", 1, 180, 15)
-                expiry_type = "minutes"
-            elif time_type.startswith("📅"):
-                expiry_type = "end_of_day"
-                time_limit = 0
+            st.markdown("**📅 صلاحية الامتحان (متى يُغلق)**")
+            expiry_method = st.radio("اختر طريقة انتهاء الصلاحية",
+                                     ["📅 تاريخ محدد", "⏰ بعد عدد ساعات من الآن"],
+                                     index=0)
+            if expiry_method.startswith("📅"):
+                expiry_date = st.date_input("تاريخ انتهاء الصلاحية", datetime.now() + timedelta(days=7))
+                expiry_hours = 0
+                expiry_type = "date"
             else:
+                expiry_hours = st.number_input("عدد الساعات من الآن", min_value=1, max_value=720, value=24)
+                expiry_date = datetime.now() + timedelta(hours=expiry_hours)
+                expiry_date = expiry_date.date()
                 expiry_type = "hours"
-                expiry_hours = st.number_input("عدد الساعات", 1, 24, 1)
-                time_limit = 0
 
-            quiz_code = ''.join(random.choices(string.ascii_uppercase+string.digits, k=6))
-            quiz_pass = ''.join(random.choices(string.ascii_uppercase+string.digits, k=5))
+            quiz_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            quiz_pass = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
             if st.form_submit_button("إنشاء الاختبار"):
                 if not title:
                     st.error("العنوان مطلوب")
@@ -1273,77 +1246,67 @@ def show_quizzes(db: Database):
                     db.add_quiz({
                         "quiz_id": quiz_id, "title": title, "description": "",
                         "created_by": user["user_id"], "section_id": "",
-                        "num_questions": num_q, "time_limit_minutes": time_limit,
-                        "total_marks": total_marks, "expiry_date": expiry_date.strftime("%Y-%m-%d"),
+                        "num_questions": num_q, "time_limit_minutes": time_limit_minutes,
+                        "total_marks": total_marks,
+                        "expiry_date": expiry_date.strftime("%Y-%m-%d"),
                         "quiz_code": quiz_code, "password": quiz_pass, "is_active": "True",
-                        "expiry_type": expiry_type, "expiry_hours": expiry_hours,
-                        "start_time": "", "end_time": ""
+                        "expiry_type": expiry_type, "expiry_hours": expiry_hours
                     })
                     st.success(f"✅ تم إنشاء الاختبار! الكود: {quiz_code}")
                     time.sleep(2)
                     st.rerun()
 
-        # إدارة الامتحانات الحالية
         st.markdown("---")
-        st.subheader("📋 قائمة الاختبارات")
+        st.subheader("📋 قائمة الاختبارات الحالية")
         quizzes = db.get_quizzes()
         if not quizzes.empty:
             for _, qrow in quizzes.iterrows():
                 q = qrow.to_dict()
-                with st.expander(f"{q.get('title','')} (كود: {q.get('quiz_code','')})"):
-                    st.write(f"**عدد الأسئلة:** {q.get('num_questions','')} | **نوع الوقت:** {q.get('expiry_type','minutes')}")
-                    if q.get('expiry_type') == 'hours':
-                        st.write(f"**عدد الساعات:** {q.get('expiry_hours','1')}")
-                    elif q.get('expiry_type') == 'minutes':
-                        st.write(f"**الدقائق:** {q.get('time_limit_minutes','15')}")
-                    st.write(f"**تاريخ الانتهاء:** {q.get('expiry_date','')}")
-                    st.write(f"**نشط:** {q.get('is_active','True')}")
+                with st.expander(f"📝 {q.get('title','')} (كود: {q.get('quiz_code','')})"):
+                    st.write(f"**عدد الأسئلة:** {q.get('num_questions','')} | **وقت الامتحان:** {q.get('time_limit_minutes','')} دقيقة")
+                    st.write(f"**تاريخ انتهاء الصلاحية:** {q.get('expiry_date','')}")
+                    st.write(f"**نشط:** {q.get('is_active','True')} | **كلمة المرور:** {q.get('password','')}")
 
-                    # زر تعديل الإعدادات
+                    # تعديل الإعدادات
                     if st.button("⚙️ تعديل الإعدادات", key=f"edit_settings_{q['quiz_id']}"):
                         st.session_state[f"edit_quiz_{q['quiz_id']}"] = True
                     if st.session_state.get(f"edit_quiz_{q['quiz_id']}"):
                         with st.form(key=f"edit_form_{q['quiz_id']}"):
                             new_title = st.text_input("العنوان", value=q.get("title",""))
                             new_num = st.number_input("عدد الأسئلة", value=int(q.get("num_questions",20)), min_value=1)
-                            new_type = st.radio("نوع الوقت",
-                                                ["minutes", "end_of_day", "hours"],
-                                                index=["minutes","end_of_day","hours"].index(q.get("expiry_type","minutes")),
-                                                key=f"edit_type_{q['quiz_id']}")
-                            new_time_limit = 15
-                            new_expiry_hours = 1
-                            if new_type == "minutes":
-                                new_time_limit = st.number_input("الدقائق", value=int(q.get("time_limit_minutes",15)), min_value=1)
-                            elif new_type == "hours":
-                                new_expiry_hours = st.number_input("عدد الساعات", value=int(q.get("expiry_hours",1)), min_value=1)
-                            new_expiry_date = st.date_input("تاريخ الانتهاء", value=pd.to_datetime(q.get("expiry_date", datetime.now().strftime("%Y-%m-%d"))).date())
+                            new_total = st.number_input("الدرجة الكلية", value=int(q.get("total_marks",20)), min_value=1)
+                            new_time_limit = st.number_input("⏱️ وقت الامتحان بالدقائق", value=int(q.get("time_limit_minutes",15)), min_value=1)
+
+                            st.markdown("**📅 صلاحية الامتحان**")
+                            current_expiry = pd.to_datetime(q.get("expiry_date", datetime.now().strftime("%Y-%m-%d"))).date()
+                            new_expiry = st.date_input("تاريخ انتهاء الصلاحية", value=current_expiry)
                             new_active = st.checkbox("نشط", value=(q.get("is_active","True")=="True"))
-                            new_pass = st.text_input("كلمة مرور جديدة (اختياري)")
+                            new_pass = st.text_input("كلمة مرور جديدة (اتركه فارغاً لعدم التغيير)")
+
                             if st.form_submit_button("💾 حفظ التعديلات"):
                                 updates = {
                                     "title": new_title,
                                     "num_questions": new_num,
-                                    "expiry_type": new_type,
-                                    "time_limit_minutes": new_time_limit if new_type=="minutes" else 0,
-                                    "expiry_hours": new_expiry_hours if new_type=="hours" else 0,
-                                    "expiry_date": new_expiry_date.strftime("%Y-%m-%d"),
+                                    "total_marks": new_total,
+                                    "time_limit_minutes": new_time_limit,
+                                    "expiry_date": new_expiry.strftime("%Y-%m-%d"),
                                     "is_active": str(new_active)
                                 }
                                 if new_pass.strip():
                                     updates["password"] = new_pass.strip()
                                 db.update_quiz(q["quiz_id"], updates)
-                                st.success("تم التحديث!")
+                                st.success("تم تحديث الاختبار!")
                                 st.session_state[f"edit_quiz_{q['quiz_id']}"] = False
                                 time.sleep(1)
                                 st.rerun()
-                    # زر حذف الامتحان
+
                     if st.button("🗑️ حذف الامتحان", key=f"del_quiz_{q['quiz_id']}"):
                         db.delete_quiz(q["quiz_id"])
                         st.success("تم الحذف")
                         time.sleep(1)
                         st.rerun()
 
-            # إضافة أسئلة لاختبار محدد
+            # إضافة أسئلة
             st.markdown("---")
             st.subheader("📝 إضافة أسئلة لاختبار")
             active_q = quizzes[quizzes.is_active == "True"] if not quizzes.empty else pd.DataFrame()
@@ -1378,7 +1341,7 @@ def show_quizzes(db: Database):
                                 time.sleep(1)
                                 st.rerun()
         else:
-            st.info("لا توجد اختبارات.")
+            st.info("لا توجد اختبارات حتى الآن.")
 
     # نتائج الاختبارات (للمدرسين وأمناء الخدمة)
     st.markdown("---")
