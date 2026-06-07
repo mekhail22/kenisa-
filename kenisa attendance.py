@@ -20,8 +20,8 @@ import math
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "5.2.0"
-CACHE_TTL_SECONDS = 120  # مدة صلاحية الكاش: دقيقتين
+APP_VERSION = "5.2.1"  # تم تحديث رقم الإصدار
+CACHE_TTL_SECONDS = 120
 
 st.set_page_config(
     page_title="نظام- كنيسة الشهيدة دميانة",
@@ -203,7 +203,6 @@ class SheetCache:
             logs = st.session_state.log_buffer.copy()
             st.session_state.log_buffer = []
             try:
-                # كتابة دفعة واحدة
                 df = db_instance._sheet_to_df("Logs")
                 if df.empty:
                     df = pd.DataFrame(columns=["log_id", "timestamp", "user_id", "action", "details"])
@@ -263,7 +262,6 @@ class Database:
         return ws
 
     def _sheet_to_df(self, sheet_name):
-        # تحقق من الكاش
         cached = self.cache.get(sheet_name)
         if cached is not None:
             return cached.copy()
@@ -400,7 +398,6 @@ class Database:
         return self._sheet_to_df("Attendance")
 
     def batch_add_attendance(self, records_list):
-        """كتابة عدة سجلات حضور دفعة واحدة"""
         if not records_list:
             return
         df = self.get_attendance()
@@ -617,25 +614,45 @@ def send_telegram_message(message: str) -> bool:
     except Exception:
         return False
 
-@st.dialog("🆘 مركز المساعدة والدعم الفني")
+# =============================================================================
+# مركز المساعدة المحسّن
+# =============================================================================
+@st.dialog("🆘 مركز المساعدة والدعم الفني", width="large")
 def show_help_dialog():
     contact_name, contact_whatsapp = get_support_config()
-    st.markdown("<h3>📬 الإبلاغ عن مشكلة أو خطأ</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align:center; color:#667eea;'>📬 تواصل معنا</h3>", unsafe_allow_html=True)
     if contact_whatsapp:
-        st.info(f"📞 تواصل مع {contact_name}: {contact_whatsapp}")
-    with st.form("help_form_dialog"):
-        name = st.text_input("الاسم *")
-        whatsapp = st.text_input("رقم الواتساب *")
-        issue_desc = st.text_area("وصف المشكلة *")
-        if st.form_submit_button("إرسال"):
+        st.info(f"📞 للدعم المباشر: {contact_name} - {contact_whatsapp}")
+    st.markdown("---")
+    with st.form("help_form_enhanced"):
+        col1, col2 = st.columns(2)
+        with col1:
+            name = st.text_input("الاسم *", placeholder="أدخل اسمك الكامل")
+            whatsapp = st.text_input("رقم الواتساب *", placeholder="01xxxxxxxxx")
+        with col2:
+            issue_type = st.selectbox("نوع المشكلة *", ["مشكلة تقنية", "مشكلة في البيانات", "طلب مساعدة", "اقتراح تحسين", "أخرى"])
+            urgency = st.selectbox("الأولوية", ["عادي", "مستعجل", "طارئ جداً"], index=0)
+        issue_desc = st.text_area("وصف المشكلة أو الطلب *", placeholder="اشرح المشكلة بالتفصيل...", height=150)
+        st.markdown("**يمكنك أيضاً إرفاق لقطة شاشة (سيُطلب منك لاحقاً)**")
+        submitted = st.form_submit_button("🚀 إرسال الطلب", use_container_width=True)
+        if submitted:
             if not name or not whatsapp or not issue_desc:
-                st.error("جميع الحقول مطلوبة")
-                return
-            message = f"🆘 بلاغ من {name}\n📱 {whatsapp}\n📝 {issue_desc}"
-            if send_telegram_message(message):
-                st.success("تم الإرسال")
+                st.error("⚠️ الرجاء ملء جميع الحقول المطلوبة")
             else:
-                st.error("فشل الإرسال")
+                urgency_icon = {"عادي": "ℹ️", "مستعجل": "⚠️", "طارئ جداً": "🔴"}
+                message = (
+                    f"{urgency_icon.get(urgency, '')} بلاغ جديد من مركز المساعدة\n"
+                    f"👤 الاسم: {name}\n"
+                    f"📱 الواتساب: {whatsapp}\n"
+                    f"📂 النوع: {issue_type}\n"
+                    f"⚡ الأولوية: {urgency}\n"
+                    f"📝 التفاصيل: {issue_desc}"
+                )
+                if send_telegram_message(message):
+                    st.success("✅ تم إرسال طلبك بنجاح! سنتواصل معك قريباً.")
+                    st.balloons()
+                else:
+                    st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
 
 # =============================================================================
 # Initialization & Login
@@ -728,7 +745,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (كما هي)
+# Student Quiz Interface (مع ترتيب أبجدي)
 # =============================================================================
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
@@ -741,6 +758,8 @@ def show_student_quiz(db: Database):
         if active_students.empty:
             st.warning("لا توجد طالبات مسجلات حالياً. يرجى التواصل مع المسؤول.")
             st.stop()
+        # ترتيب أبجدي من الألف للياء
+        active_students = active_students.sort_values("full_name", key=lambda col: col.str.strip().str.lower())
         options_dict = dict(zip(active_students["student_id"], active_students["full_name"]))
         selected_id = st.selectbox(
             "اختر اسمك من القائمة", options=list(options_dict.keys()),
@@ -921,7 +940,7 @@ def show_sidebar(db: Database):
         return choice
 
 # =============================================================================
-# Dashboard (مصفى حسب الفصل)
+# Dashboard
 # =============================================================================
 def show_dashboard(db: Database):
     user = st.session_state.user
@@ -989,7 +1008,7 @@ def show_dashboard(db: Database):
         st.info("كل البنات منتظمات.")
 
 # =============================================================================
-# إدارة المستخدمين (Admin) مع تحسين قراءة البيانات مرة واحدة
+# إدارة المستخدمين (Admin)
 # =============================================================================
 def show_user_management(db: Database):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
@@ -998,7 +1017,6 @@ def show_user_management(db: Database):
     students = db.get_students()
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول"])
 
-    # Tab1: Users
     with tab1:
         st.subheader("قائمة المستخدمين (خدام)")
         if not users.empty:
@@ -1066,7 +1084,6 @@ def show_user_management(db: Database):
                         time.sleep(1)
                         st.rerun()
 
-    # Tab2: Teachers
     with tab2:
         st.subheader("قائمة المدرسات")
         teachers = users[users.role == "Teacher"] if not users.empty else pd.DataFrame()
@@ -1106,7 +1123,6 @@ def show_user_management(db: Database):
                         time.sleep(1)
                         st.rerun()
 
-    # Tab3: Students (تعديل الطالبات مع تاريخ الميلاد)
     with tab3:
         st.subheader("قائمة الطالبات")
         if not students.empty:
@@ -1156,7 +1172,6 @@ def show_user_management(db: Database):
                     new_section_id = st.selectbox("الفصل", section_options, index=current_idx, format_func=lambda x: sections_local[sections_local.section_id==x]["section_name"].values[0], key="student_section")
                 new_phone = st.text_input("رقم الهاتف", value=student_row.get("phone", ""), key="student_phone")
                 new_parent = st.text_input("رقم ولي الأمر", value=student_row.get("parent_phone", ""), key="student_parent")
-                # تاريخ الميلاد
                 existing_birthdate = student_row.get("birthdate", "")
                 if existing_birthdate:
                     try:
@@ -1191,7 +1206,6 @@ def show_user_management(db: Database):
                     time.sleep(1)
                     st.rerun()
 
-    # Tab4: Service Managers
     with tab4:
         st.subheader("قائمة أمناء الخدمة")
         managers = users[users.role == "Service Manager"] if not users.empty else pd.DataFrame()
@@ -1206,7 +1220,6 @@ def show_user_management(db: Database):
         else:
             st.info("لا يوجد أمناء خدمة.")
 
-    # Tab5: Sections
     with tab5:
         st.subheader("قائمة الفصول")
         if not sections.empty:
@@ -1234,7 +1247,7 @@ def show_user_management(db: Database):
                     st.rerun()
 
 # =============================================================================
-# Attendance (مع batch write)
+# Attendance
 # =============================================================================
 def show_attendance(db: Database):
     user = st.session_state.user
@@ -1326,7 +1339,7 @@ def show_attendance(db: Database):
             st.rerun()
 
 # =============================================================================
-# Follow-up (قراءة مجمعة)
+# Follow-up
 # =============================================================================
 def show_followup(db: Database):
     st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
@@ -1392,7 +1405,7 @@ def show_followup(db: Database):
             st.rerun()
 
 # =============================================================================
-# My Students (للمدرسة وأمين الخدمة)
+# My Students
 # =============================================================================
 def show_my_students(db: Database):
     st.markdown("<h2 class='main-header'>👩‍🎓 طالباتي</h2>", unsafe_allow_html=True)
@@ -1442,7 +1455,7 @@ def show_my_students(db: Database):
                 st.rerun()
 
 # =============================================================================
-# Quizzes (قراءة مجمعة)
+# Quizzes
 # =============================================================================
 def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
@@ -1694,7 +1707,6 @@ def main():
         show_help_dialog()
         st.session_state.open_help_dialog = False
 
-    # كتابة السجلات المؤقتة عند الخروج أو انتهاء الصفحة
     if st.session_state.authenticated and 'db' in locals():
         try:
             db.cache.flush_logs(db)
