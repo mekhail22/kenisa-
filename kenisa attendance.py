@@ -26,7 +26,7 @@ st.set_page_config(
     page_title="نظام- كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
-    initial_sidebar_state="expanded"  # يضمن أن القائمة تبدأ مفتوحة
+    initial_sidebar_state="expanded"
 )
 
 # =============================================================================
@@ -79,7 +79,7 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن – بدون إخفاء قسري للشريط عند التصغير
+# CSS محسّن
 # =============================================================================
 def inject_css():
     st.markdown("""
@@ -92,7 +92,7 @@ def inject_css():
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
 
-        /* ========= Force Sidebar Permanently Open (Option 1) ========= */
+        /* ========= Force Sidebar Permanently Open ========= */
         section[data-testid="stSidebar"] {
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
             border-left: 1px solid rgba(0,0,0,0.08);
@@ -115,7 +115,6 @@ def inject_css():
             animation: none !important;
         }
 
-        /* Override any collapsed state Streamlit tries to apply */
         section[data-testid="stSidebar"].stSidebar--collapsed,
         section[data-testid="stSidebar"].stSidebar--collapsed * {
             display: flex !important;
@@ -135,7 +134,6 @@ def inject_css():
             animation: none !important;
         }
 
-        /* Completely remove overlay so outside clicks do nothing */
         [data-testid="stSidebarOverlay"],
         div[data-testid="stSidebarOverlay"] {
             display: none !important;
@@ -150,7 +148,6 @@ def inject_css():
             animation: none !important;
         }
 
-        /* Hide all collapse/close controls without breaking layout */
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
         [data-testid="collapsedControl"],
@@ -175,7 +172,6 @@ def inject_css():
             animation: none !important;
         }
 
-        /* Responsive: on mobile, sidebar takes full width when forced open */
         @media (max-width: 768px) {
             section[data-testid="stSidebar"] {
                 width: 100% !important;
@@ -195,7 +191,122 @@ def inject_css():
             }
         }
 
-        /* ========= تنسيقات عامة ========= */
+        /* ========= Sidebar Navigation Buttons ========= */
+        .nav-btn-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            margin-bottom: 1rem;
+        }
+        .nav-btn-container .stButton > button {
+            width: 100% !important;
+            text-align: right !important;
+            justify-content: flex-start !important;
+            padding: 0.7rem 1rem !important;
+            font-size: 1rem !important;
+            font-weight: 600 !important;
+            border-radius: 10px !important;
+            background: transparent !important;
+            color: #1a1a2e !important;
+            border: 1px solid transparent !important;
+            box-shadow: none !important;
+            transition: all 0.2s ease !important;
+            direction: rtl !important;
+        }
+        .nav-btn-container .stButton > button:hover {
+            background: rgba(102,126,234,0.08) !important;
+            color: #667eea !important;
+            border-color: rgba(102,126,234,0.15) !important;
+            transform: translateX(-2px) !important;
+        }
+        .nav-btn-container .stButton > button[kind="primary"] {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border: none !important;
+            box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
+        }
+        .nav-btn-container .stButton > button[kind="primary"]:hover {
+            background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%) !important;
+            color: white !important;
+            transform: translateX(-2px) !important;
+        }
+        .nav-btn-container .stButton > button p {
+            font-size: 1rem !important;
+        }
+
+        /* ========= Hide Sidebar Button ========= */
+        .hide-sidebar-btn .stButton > button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            font-weight: 700 !important;
+            border-radius: 10px !important;
+            padding: 0.6rem 1rem !important;
+            margin-bottom: 1rem !important;
+            border: none !important;
+            box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
+        }
+        .hide-sidebar-btn .stButton > button:hover {
+            transform: scale(1.02) !important;
+            box-shadow: 0 4px 12px rgba(102,126,234,0.4) !important;
+        }
+
+        /* ========= Hamburger / Show Sidebar Button ========= */
+        .floating-show-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 99999;
+        }
+        .floating-show-btn .stButton > button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 16px !important;
+            width: 72px !important;
+            height: 72px !important;
+            font-size: 32px !important;
+            font-weight: bold !important;
+            box-shadow: 0 6px 24px rgba(102,126,234,0.5) !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            cursor: pointer !important;
+            padding: 0 !important;
+            min-height: 72px !important;
+        }
+        .floating-show-btn .stButton > button:hover {
+            transform: scale(1.08) !important;
+            box-shadow: 0 8px 28px rgba(102,126,234,0.6) !important;
+        }
+        .floating-show-btn .stButton > button:active {
+            transform: scale(0.96) !important;
+        }
+
+        /* ========= Help Float Button ========= */
+        .help-float-container {
+            position: fixed;
+            top: 20px;
+            left: 108px;
+            z-index: 99998;
+        }
+        .help-float-container .stButton > button {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
+            color: white !important;
+            font-weight: 700 !important;
+            border-radius: 12px !important;
+            padding: 12px 22px !important;
+            font-size: 16px !important;
+            border: none !important;
+            box-shadow: 0 4px 14px rgba(243,156,18,0.4) !important;
+            white-space: nowrap !important;
+            min-height: 48px !important;
+        }
+        .help-float-container .stButton > button:hover {
+            transform: scale(1.04) !important;
+            box-shadow: 0 6px 18px rgba(243,156,18,0.5) !important;
+        }
+
+        /* ========= General Styles ========= */
         .main-header {
             font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
             margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
@@ -223,69 +334,6 @@ def inject_css():
         .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
 
         section[data-testid="stSidebar"] .stRadio label { font-weight: 600; color: #1a1a2e; font-size: 1rem; }
-        .hide-sidebar-btn button { background: #667eea !important; color: white !important; font-weight: bold; border-radius: 8px; margin-bottom: 1rem; }
-
-        /* الأزرار العائمة */
-        .floating-show-btn {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 99999;
-        }
-        .floating-show-btn button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important;
-            border: none !important;
-            border-radius: 14px !important;
-            width: 65px !important;
-            height: 65px !important;
-            font-size: 30px !important;
-            font-weight: bold !important;
-            box-shadow: 0 4px 20px rgba(102,126,234,0.6) !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            cursor: pointer !important;
-        }
-        .help-float-container {
-            position: fixed;
-            top: 20px;
-            left: 100px;
-            z-index: 99998;
-        }
-        .help-float-container button {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
-            color: white !important;
-            font-weight: 700 !important;
-            border-radius: 10px !important;
-            padding: 10px 18px !important;
-            font-size: 15px !important;
-            border: none !important;
-            box-shadow: 0 4px 12px rgba(243,156,18,0.4) !important;
-            white-space: nowrap !important;
-        }
-
-        /* تحسينات الهاتف المحمول */
-        @media (max-width: 768px) {
-            .floating-show-btn button {
-                width: 55px !important;
-                height: 55px !important;
-                font-size: 26px !important;
-                border-radius: 12px !important;
-            }
-            .help-float-container {
-                left: 85px;
-            }
-            .help-float-container button {
-                padding: 8px 14px !important;
-                font-size: 13px !important;
-                border-radius: 8px !important;
-            }
-            .main-header {
-                font-size: 1.6rem;
-                margin-top: 70px;
-            }
-        }
 
         .timer-container { text-align: center; margin: 1rem 0; }
         .timer-box {
@@ -309,11 +357,44 @@ def inject_css():
         .stSuccess { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }
         .stError { background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }
         .content-area { padding: 0 1rem; }
+
+        /* ========= Mobile Responsive ========= */
+        @media (max-width: 768px) {
+            .floating-show-btn {
+                top: 14px;
+                left: 14px;
+            }
+            .floating-show-btn .stButton > button {
+                width: 64px !important;
+                height: 64px !important;
+                font-size: 28px !important;
+                border-radius: 14px !important;
+                min-height: 64px !important;
+            }
+            .help-float-container {
+                left: 90px;
+                top: 14px;
+            }
+            .help-float-container .stButton > button {
+                padding: 10px 16px !important;
+                font-size: 14px !important;
+                border-radius: 10px !important;
+                min-height: 42px !important;
+            }
+            .main-header {
+                font-size: 1.6rem;
+                margin-top: 70px;
+            }
+            .nav-btn-container .stButton > button {
+                padding: 0.65rem 0.9rem !important;
+                font-size: 0.95rem !important;
+            }
+        }
     </style>
     """, unsafe_allow_html=True)
 
 # =============================================================================
-# JavaScript لمنع الإغلاق التلقائي (يبقى الشريط مفتوحاً)
+# JavaScript لمنع الإغلاق التلقائي
 # =============================================================================
 def inject_sidebar_js():
     js_code = """
@@ -328,20 +409,17 @@ def inject_sidebar_js():
         const EXPANDED_CLASS = 'stSidebar--expanded';
 
         function enforceSidebar() {
-            // Respect explicit hide state set by Python
             if (document.getElementById('sidebar-state-hidden')) return;
 
             const sidebar = document.querySelector(SIDEBAR_SELECTOR);
             if (!sidebar) return;
 
-            // Remove collapsed class if Streamlit adds it
             if (sidebar.classList.contains(COLLAPSED_CLASS)) {
                 sidebar.classList.remove(COLLAPSED_CLASS);
                 sidebar.classList.add(EXPANDED_CLASS);
                 sidebar.setAttribute('aria-expanded', 'true');
             }
 
-            // Force open with !important to override any stylesheet
             sidebar.style.setProperty('display', 'flex', 'important');
             sidebar.style.setProperty('transform', 'none', 'important');
             sidebar.style.setProperty('translate', 'none', 'important');
@@ -358,7 +436,6 @@ def inject_sidebar_js():
             sidebar.style.setProperty('transition', 'none', 'important');
             sidebar.style.setProperty('animation', 'none', 'important');
 
-            // Remove overlay elements so outside clicks cannot close sidebar
             document.querySelectorAll(OVERLAY_SELECTOR + ', .st-emotion-cache-1oe5cao').forEach(function(overlay) {
                 if (!overlay || !overlay.parentNode) return;
                 overlay.style.setProperty('display', 'none', 'important');
@@ -371,11 +448,9 @@ def inject_sidebar_js():
                 overlay.style.setProperty('z-index', '-9999', 'important');
                 overlay.style.setProperty('transition', 'none', 'important');
                 overlay.style.setProperty('animation', 'none', 'important');
-                // Physically remove from DOM to eliminate any event targets
                 overlay.parentNode.removeChild(overlay);
             });
 
-            // Hide collapse buttons completely
             var btnSelectors = [
                 '[data-testid="stSidebarNavToggle"]',
                 '[data-testid="stSidebarCollapseButton"]',
@@ -402,20 +477,15 @@ def inject_sidebar_js():
                     btn.style.setProperty('overflow', 'hidden', 'important');
                     btn.style.setProperty('transition', 'none', 'important');
                     btn.style.setProperty('animation', 'none', 'important');
-                    // Disable the button
                     btn.setAttribute('disabled', 'true');
                     btn.setAttribute('aria-hidden', 'true');
                 });
             });
         }
 
-        // Run immediately
         enforceSidebar();
-
-        // Keep enforcing continuously to win any React re-renders
         setInterval(enforceSidebar, 150);
 
-        // Watch DOM for Streamlit re-renders that might restore overlay
         var observer = new MutationObserver(function(mutations) {
             enforceSidebar();
         });
@@ -426,7 +496,6 @@ def inject_sidebar_js():
             attributeFilter: ['class', 'style', 'aria-expanded', 'data-testid']
         });
 
-        // Block Escape key from closing sidebar
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 var sidebar = document.querySelector(SIDEBAR_SELECTOR);
@@ -862,7 +931,7 @@ def init_session():
         "last_score": 0,
         "login_attempted": False,
         "menu_choice": "🏠 لوحة التحكم",
-        "show_sidebar": True,      # يضمن فتح القائمة افتراضياً
+        "show_sidebar": True,
         "open_help_dialog": False,
         "last_error_details": None
     }
@@ -925,10 +994,10 @@ def show_help_dialog():
                     f"📝 التفاصيل: {issue_desc}"
                 )
                 if send_telegram_message(message):
-                    st.success("✅ تم إرسال طلبك بنجاح! سنتواصل معك قريباً.")
+                    st.success("✅ تم إرسال طلبك بنجاح! سنتواصل معك قريباُ.")
                     st.balloons()
                 else:
-                    st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
+                    st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاُ أو التواصل مباشرة عبر الواتساب.")
 
 # =============================================================================
 # Initialization & Login
@@ -976,7 +1045,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
-                                st.session_state.show_sidebar = True   # نؤكد فتح القائمة
+                                st.session_state.show_sidebar = True
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
@@ -1021,7 +1090,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (مع ترتيب أبجدي)
+# Student Quiz Interface
 # =============================================================================
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
@@ -1161,20 +1230,25 @@ def auto_submit_quiz(db, quiz):
     st.session_state.last_score = score
 
 # =============================================================================
-# Sidebar
+# Sidebar with Button Navigation
 # =============================================================================
 def show_sidebar(db: Database):
     with st.sidebar:
+        # Hide sidebar button
         st.markdown('<div class="hide-sidebar-btn">', unsafe_allow_html=True)
         if st.button("◀ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
             st.session_state.show_sidebar = False
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
+
+        # Header
         st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
         st.markdown(f"**👤 {user['full_name']}**")
         st.caption(f"الصلاحية: {user['role']}")
         st.divider()
+
+        # Role-based menu items
         role = user["role"]
         menus = {
             "System Admin": [
@@ -1198,21 +1272,27 @@ def show_sidebar(db: Database):
         if not menu_items:
             st.warning("صلاحية غير معروفة")
             return None
+
         current_choice = st.session_state.get("menu_choice", menu_items[0])
         if current_choice not in menu_items:
             current_choice = menu_items[0]
-        choice = st.radio(
-            "القائمة الرئيسية", menu_items,
-            index=menu_items.index(current_choice),
-            key="nav_radio", label_visibility="collapsed"
-        )
-        if choice != current_choice:
-            st.session_state.menu_choice = choice
-            st.rerun()
+            st.session_state.menu_choice = current_choice
+
+        # Button-based navigation
+        st.markdown('<div class="nav-btn-container">', unsafe_allow_html=True)
+        for item in menu_items:
+            btn_type = "primary" if item == current_choice else "secondary"
+            if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
+                if item != current_choice:
+                    st.session_state.menu_choice = item
+                    st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
         st.divider()
         if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn"):
             logout(db)
-        return choice
+
+        return current_choice
 
 # =============================================================================
 # Dashboard
@@ -1260,7 +1340,7 @@ def show_dashboard(db: Database):
     else:
         st.info("لا توجد بيانات حضور بعد.")
 
-    st.markdown("#### 🏅 أكثر 5 طالبات غياباً هذا الشهر")
+    st.markdown("#### 🏅 أكثر 5 طالبات غياباُ هذا الشهر")
     if not attendance.empty:
         month_start = datetime.now().replace(day=1).strftime("%Y-%m-%d")
         month_att = attendance[(attendance.date >= month_start) & (attendance.status == "غائب")]
@@ -1314,9 +1394,9 @@ def show_user_management(db: Database):
                 email = st.text_input("البريد الإلكتروني (اختياري)")
                 if st.form_submit_button("إضافة"):
                     if not username or not password or not full_name:
-                        st.error("مطلوب اسم المستخدم وكلمة المرور والاسم الكامل")
+                        st.error("مطلوب nameof المستخدم وكلمة المرور والاسم الكامل")
                     elif not users[users.username == username].empty:
-                        st.error("اسم المستخدم موجود مسبقاً!")
+                        st.error("اسم المستخدم موجود مسبقاُ!")
                     else:
                         db.add_user({
                             "user_id": str(uuid.uuid4()), "username": username, "password": password,
@@ -1387,7 +1467,7 @@ def show_user_management(db: Database):
                     if not teacher_name or not password:
                         st.error("اسم المستخدم وكلمة المرور مطلوبان")
                     elif not users[users.username == teacher_name].empty:
-                        st.error("اسم المستخدم موجود مسبقاً!")
+                        st.error("اسم المستخدم موجود مسبقاُ!")
                     else:
                         db.add_user({
                             "user_id": str(uuid.uuid4()), "username": teacher_name, "password": password,
@@ -1657,7 +1737,7 @@ def show_followup(db: Database):
             urgent_display = urgent.merge(responsible[["student_id", "full_name"]], on="student_id", how="left")
             st.dataframe(urgent_display[["full_name", "followup_date", "followup_type", "notes"]], use_container_width=True)
         else:
-            st.info("كل البنات منتظمات حالياً.")
+            st.info("كل البنات منتظمات حالياُ.")
     else:
         st.info("لا توجد متابعات سابقة.")
 
@@ -1767,7 +1847,7 @@ def show_quizzes(db: Database):
         if not quizzes.empty:
             active_quizzes = quizzes[quizzes.is_active == "True"]
             if not active_quizzes.empty:
-                quiz_choice = st.selectbox("اختر اختباراً", active_quizzes["quiz_id"],
+                quiz_choice = st.selectbox("اختر اختباراُ", active_quizzes["quiz_id"],
                                            format_func=lambda x: active_quizzes[active_quizzes.quiz_id==x]["title"].values[0])
                 if quiz_choice:
                     questions = db.get_quiz_questions(quiz_choice)
@@ -1804,7 +1884,7 @@ def show_quizzes(db: Database):
                                 time.sleep(1)
                                 st.rerun()
                     if not questions.empty:
-                        del_q = st.selectbox("اختر سؤالاً لحذفه", questions["question_id"])
+                        del_q = st.selectbox("اختر سؤالاُ لحذفه", questions["question_id"])
                         if st.button("حذف السؤال"):
                             db.delete_question(del_q)
                             st.success("تم الحذف")
@@ -1863,7 +1943,7 @@ def show_reports(db: Database):
         st.info("لا توجد بيانات لهذا الشهر.")
 
     st.markdown("---")
-    st.subheader("🏆 أكثر 10 طالبات غياباً")
+    st.subheader("🏆 أكثر 10 طالبات غياباُ")
     if not attendance.empty:
         absent_counts = attendance[attendance.status == "غائب"].groupby("student_id").size().reset_index(name="أيام الغياب")
         absent_counts = absent_counts.sort_values("أيام الغياب", ascending=False).head(10)
@@ -1880,7 +1960,7 @@ def show_logs(db: Database):
     if not logs.empty:
         logs["timestamp"] = pd.to_datetime(logs["timestamp"])
         st.dataframe(logs.sort_values("timestamp", ascending=False), use_container_width=True)
-        del_id = st.selectbox("اختر سجلاً لحذفه", logs["log_id"], key="del_log_sel")
+        del_id = st.selectbox("اختر سجلاُ لحذفه", logs["log_id"], key="del_log_sel")
         if st.button("حذف السجل"):
             db.delete_log(del_id)
             st.success("تم الحذف")
@@ -1944,7 +2024,6 @@ def main():
             if st.session_state.show_sidebar:
                 choice = show_sidebar(db)
             else:
-                # عند إخفاء القائمة نضيف إخفاءً كاملاً بدون أي بقايا مرئية
                 st.markdown("""
                 <div id="sidebar-state-hidden" style="display:none;"></div>
                 <style>
@@ -1976,7 +2055,6 @@ def main():
                     width: 0 !important;
                     height: 0 !important;
                 }
-                /* Main content full width when sidebar is hidden */
                 [data-testid="stAppViewContainer"] > [data-testid="stMain"],
                 [data-testid="stMainBlockContainer"] {
                     max-width: 100% !important;
