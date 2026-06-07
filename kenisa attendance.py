@@ -18,7 +18,7 @@ import traceback
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "4.7.2"
+APP_VERSION = "4.7.3"
 
 # تكوين الصفحة الأساسي
 st.set_page_config(
@@ -290,7 +290,6 @@ class Database:
         if not data:
             return pd.DataFrame()
         df = pd.DataFrame(data)
-        # إزالة الأعمدة الفارغة تماماً إن وجدت
         df.dropna(how='all', axis=1, inplace=True)
         return df
 
@@ -299,7 +298,6 @@ class Database:
         كتابة DataFrame إلى الورقة مع معالجة شاملة للأخطاء والأنواع.
         تدعم الإصدارات القديمة والجديدة من pandas (استبدال applymap بـ map).
         """
-        # 1. التحقق من النوع
         if not isinstance(df, pd.DataFrame):
             raise ValueError(f"يجب أن يكون df كائن DataFrame، المستلم: {type(df)}")
         if not isinstance(columns, list):
@@ -307,62 +305,45 @@ class Database:
         if not columns:
             raise ValueError("قائمة الأعمدة فارغة")
 
-        # 2. التأكد من وجود الورقة
         ws = self._get_or_create_worksheet(sheet_name, columns)
 
-        # 3. تصفير الورقة (مع إعادة التأكد من وجودها بعد clear)
         try:
             ws.clear()
-        except gspread.exceptions.APIError as e:
-            # قد تفشل clear إذا كانت الورقة غير موجودة مؤقتاً، نحاول مرة أخرى
+        except gspread.exceptions.APIError:
             ws = self._get_or_create_worksheet(sheet_name, columns)
             ws.clear()
 
-        # 4. إذا كان df فارغاً نكتب رؤوس الأعمدة فقط
         if df.empty:
             ws.update([columns])
             return
 
-        # 5. التأكد من وجود جميع الأعمدة المطلوبة في df
         for col in columns:
             if col not in df.columns:
                 df[col] = ""
 
-        # 6. تحضير البيانات للكتابة: معالجة القيم غير القابلة للتمثيل كـ JSON
         try:
             work_df = df[columns].copy()
-            # استبدال NaN بسلاسل فارغة
             work_df.fillna("", inplace=True)
 
-            # دالة للتحويل الآمن
             def safe_value(x):
                 if isinstance(x, (str, int, float, bool)):
                     return x
-                # أي كائن آخر (dict, list, datetime, ...) يحول إلى نص
                 try:
                     return str(x)
                 except:
                     return ""
 
-            # استخدام map بدلاً من applymap (متوافقة مع pandas >= 2.1)
-            # إذا كانت map غير متوفرة (pandas قديمة جداً) نستخدم apply
             if hasattr(work_df, 'map'):
                 work_df = work_df.map(safe_value)
             else:
-                # fallback لإصدارات pandas الأقدم
                 work_df = work_df.apply(lambda col: col.map(safe_value) if hasattr(col, 'map') else col.apply(safe_value))
 
-            # تحويل إلى قائمة قوائم (قابلة للـ JSON)
             values = [columns] + work_df.values.tolist()
-
-            # كتابة البيانات دفعة واحدة
             ws.update(values)
 
         except Exception as e:
-            # تسجيل الخطأ ومحاولة الإرسال عبر Telegram
             error_msg = f"فشل في تحديث ورقة {sheet_name}: {str(e)}"
             try:
-                # محاولة إرسال تفاصيل الخطأ إلى المسؤول عبر Telegram (إن أمكن)
                 bot_token, chat_id = get_telegram_config()
                 if bot_token and chat_id:
                     requests.post(
@@ -373,6 +354,15 @@ class Database:
             except:
                 pass
             raise Exception(error_msg)
+
+    @staticmethod
+    def _safe_str(value):
+        """تحويل أي قيمة إلى نص آمن"""
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return ""
+        if isinstance(value, (dict, list)):
+            return str(value)
+        return str(value)
 
     # ==================== المستخدمون ====================
     def get_users(self):
@@ -395,7 +385,7 @@ class Database:
         idx = df[df.user_id == user_id].index
         if len(idx) > 0:
             for k, v in updates.items():
-                df.at[idx[0], k] = v
+                df.at[idx[0], k] = self._safe_str(v)
             self._df_to_sheet("Users", df, df.columns.tolist())
 
     def delete_user(self, user_id):
@@ -430,7 +420,7 @@ class Database:
         idx = df[df.section_id == section_id].index
         if len(idx) > 0:
             for k, v in updates.items():
-                df.at[idx[0], k] = v
+                df.at[idx[0], k] = self._safe_str(v)
             self._df_to_sheet("Sections", df, df.columns.tolist())
 
     def delete_section(self, section_id):
@@ -457,7 +447,7 @@ class Database:
         idx = df[df.student_id == student_id].index
         if len(idx) > 0:
             for k, v in updates.items():
-                df.at[idx[0], k] = v
+                df.at[idx[0], k] = self._safe_str(v)
             self._df_to_sheet("Students", df, df.columns.tolist())
 
     def delete_student(self, student_id):
@@ -476,7 +466,7 @@ class Database:
         existing_idx = df[df.record_id == record["record_id"]].index
         if len(existing_idx) > 0:
             for k, v in record.items():
-                df.at[existing_idx[0], k] = v
+                df.at[existing_idx[0], k] = self._safe_str(v)
         else:
             df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
         self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
@@ -531,7 +521,7 @@ class Database:
         idx = df[df.quiz_id == quiz_id].index
         if len(idx) > 0:
             for k, v in updates.items():
-                df.at[idx[0], k] = v
+                df.at[idx[0], k] = self._safe_str(v)
             self._df_to_sheet("Quizzes", df, df.columns.tolist())
 
     def delete_quiz(self, quiz_id):
@@ -612,9 +602,7 @@ class Database:
             df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
             self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
         except Exception as e:
-            # لا نوقف التطبيق بسبب فشل تسجيل log، نكتب التحذير
             st.warning(f"⚠️ تعذر تسجيل العملية: {str(e)}")
-            # نحاول الإرسال إلى Telegram على الأقل
             try:
                 error_msg = f"فشل add_log: {str(e)}\n{traceback.format_exc()}"
                 bot_token, chat_id = get_telegram_config()
@@ -722,12 +710,11 @@ def send_telegram_message(message: str) -> bool:
         return False
 
 # =============================================================================
-# نافذة مركز المساعدة (بدون حقل الخطأ، مع إرسال تلقائي للتفاصيل)
+# نافذة مركز المساعدة
 # =============================================================================
 
 @st.dialog("🆘 مركز المساعدة والدعم الفني")
 def show_help_dialog():
-    """عرض نافذة منبثقة لإرسال بلاغ مع إرسال تفاصيل الخطأ تلقائياً إن وجدت"""
     contact_name, contact_whatsapp = get_support_config()
 
     st.markdown("""
@@ -799,7 +786,6 @@ def show_help_dialog():
 # =============================================================================
 
 def show_initialization(db: Database):
-    """إنشاء حساب المسؤول الافتراضي إذا لم يوجد أي مستخدمين"""
     users = db.get_users()
     if users.empty:
         st.markdown("<div class='card'><h2 style='text-align:center;'>🔧 لا يوجد مستخدمون بعد</h2></div>", unsafe_allow_html=True)
@@ -1809,7 +1795,6 @@ def main():
     st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
-        # تمت إزالة try-except ليظهر الخطأ كاملاً
         show_student_quiz(db)
     else:
         if not st.session_state.authenticated:
@@ -1835,7 +1820,6 @@ def main():
                 choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
 
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-            # تمت إزالة try-except ليظهر الخطأ كاملاً في جميع الصفحات
             if choice == "🏠 لوحة التحكم":
                 show_dashboard(db)
             elif choice == "👥 إدارة المستخدمين":
