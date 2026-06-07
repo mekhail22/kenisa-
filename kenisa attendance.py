@@ -19,14 +19,14 @@ import streamlit.components.v1 as components
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "5.2.4"
+APP_VERSION = "5.2.5"
 CACHE_TTL_SECONDS = 120
 
 st.set_page_config(
     page_title="نظام- كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded"  # يضمن أن القائمة تبدأ مفتوحة
 )
 
 # =============================================================================
@@ -79,7 +79,7 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن مع دعم كامل للهاتف المحمول
+# CSS محسّن – بدون إخفاء قسري للشريط عند التصغير
 # =============================================================================
 def inject_css():
     st.markdown("""
@@ -92,7 +92,7 @@ def inject_css():
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
 
-        /* ========= إخفاء جميع أزرار الإغلاق والتبديل التلقائي ========= */
+        /* إخفاء جميع أزرار الإغلاق والتبديل التلقائي */
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
         [data-testid="collapsedControl"],
@@ -107,45 +107,12 @@ def inject_css():
             display: none !important;
         }
 
-        /* ========= عند إخفاء القائمة: إخفاء كامل بدون أي بقايا ========= */
-        section[data-testid="stSidebar"][aria-expanded="false"] {
-            display: none !important;
-            width: 0px !important;
-            min-width: 0px !important;
-            max-width: 0px !important;
-            flex: 0 0 0px !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-            position: absolute !important;
-            left: -9999px !important;
-        }
-        section[data-testid="stSidebar"]:not([aria-expanded="true"]) {
-            display: none !important;
-            width: 0px !important;
-            min-width: 0px !important;
-            max-width: 0px !important;
-            flex: 0 0 0px !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-            position: absolute !important;
-            left: -9999px !important;
-        }
-
-        /* ========= منع ظهور طبقة overlay التي تغلق الشريط ========= */
+        /* منع ظهور طبقة overlay التي تغلق الشريط */
         .st-emotion-cache-1oe5cao,
         [data-testid="stSidebarOverlay"],
         div[data-testid="stSidebar"] ~ div:has(+ section) {
             display: none !important;
             pointer-events: none !important;
-        }
-
-        /* ========= المحتوى الرئيسي يتمدد ليملأ الشاشة عند إخفاء القائمة ========= */
-        section[data-testid="stSidebar"][aria-expanded="false"] ~ div,
-        section[data-testid="stSidebar"]:not([aria-expanded="true"]) ~ div {
-            margin-left: 0px !important;
-            width: 100% !important;
         }
 
         /* ========= تنسيقات عامة ========= */
@@ -175,7 +142,7 @@ def inject_css():
         .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
         .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
 
-        /* ========= الشريط الجانبي المفتوح ========= */
+        /* الشريط الجانبي المفتوح */
         section[data-testid="stSidebar"] {
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
             border-left: 1px solid rgba(0,0,0,0.08); padding-top: 1rem;
@@ -183,7 +150,7 @@ def inject_css():
         section[data-testid="stSidebar"] .stRadio label { font-weight: 600; color: #1a1a2e; font-size: 1rem; }
         .hide-sidebar-btn button { background: #667eea !important; color: white !important; font-weight: bold; border-radius: 8px; margin-bottom: 1rem; }
 
-        /* ========= الأزرار العائمة ========= */
+        /* الأزرار العائمة */
         .floating-show-btn {
             position: fixed;
             top: 20px;
@@ -223,7 +190,7 @@ def inject_css():
             white-space: nowrap !important;
         }
 
-        /* ========= تحسينات خاصة بالهاتف المحمول ========= */
+        /* تحسينات الهاتف المحمول */
         @media (max-width: 768px) {
             .floating-show-btn button {
                 width: 55px !important;
@@ -271,7 +238,7 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 # =============================================================================
-# JavaScript قوي لمنع أي إغلاق تلقائي للشريط الجانبي
+# JavaScript لمنع الإغلاق التلقائي (يبقى الشريط مفتوحاً)
 # =============================================================================
 def inject_sidebar_js():
     components.html("""
@@ -765,7 +732,7 @@ def init_session():
         "last_score": 0,
         "login_attempted": False,
         "menu_choice": "🏠 لوحة التحكم",
-        "show_sidebar": True,
+        "show_sidebar": True,      # يضمن فتح القائمة افتراضياً
         "open_help_dialog": False,
         "last_error_details": None
     }
@@ -879,7 +846,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
-                                st.session_state.show_sidebar = True
+                                st.session_state.show_sidebar = True   # نؤكد فتح القائمة
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
@@ -1847,6 +1814,7 @@ def main():
             if st.session_state.show_sidebar:
                 choice = show_sidebar(db)
             else:
+                # عند إخفاء القائمة نضيف سطر إخفاء كامل
                 st.markdown("<style>section[data-testid='stSidebar']{display:none!important}</style>", unsafe_allow_html=True)
                 st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
                 if st.button("☰", key="show_sidebar_btn"):
