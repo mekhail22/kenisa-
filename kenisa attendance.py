@@ -19,7 +19,7 @@ import streamlit.components.v1 as components
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "5.2.3"
+APP_VERSION = "5.2.4"
 CACHE_TTL_SECONDS = 120
 
 st.set_page_config(
@@ -79,7 +79,7 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن: إخفاء كامل للقائمة + منع الإغلاق التلقائي
+# CSS محسّن مع دعم كامل للهاتف المحمول
 # =============================================================================
 def inject_css():
     st.markdown("""
@@ -120,7 +120,6 @@ def inject_css():
             position: absolute !important;
             left: -9999px !important;
         }
-        /* إخفاء أي بقايا متبقية من الشريط عند تصغيره */
         section[data-testid="stSidebar"]:not([aria-expanded="true"]) {
             display: none !important;
             width: 0px !important;
@@ -184,22 +183,66 @@ def inject_css():
         section[data-testid="stSidebar"] .stRadio label { font-weight: 600; color: #1a1a2e; font-size: 1rem; }
         .hide-sidebar-btn button { background: #667eea !important; color: white !important; font-weight: bold; border-radius: 8px; margin-bottom: 1rem; }
 
-        /* ========= زر إظهار القائمة العائم ========= */
-        .floating-show-btn { position: fixed; top: 20px; left: 20px; z-index: 99999; }
+        /* ========= الأزرار العائمة ========= */
+        .floating-show-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 99999;
+        }
         .floating-show-btn button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important; border: none !important; border-radius: 14px !important;
-            width: 65px !important; height: 65px !important; font-size: 28px !important;
-            font-weight: bold !important; box-shadow: 0 4px 20px rgba(102,126,234,0.5) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 14px !important;
+            width: 65px !important;
+            height: 65px !important;
+            font-size: 30px !important;
+            font-weight: bold !important;
+            box-shadow: 0 4px 20px rgba(102,126,234,0.6) !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            cursor: pointer !important;
         }
-
-        /* ========= زر مركز المساعدة ========= */
-        .help-float-container { position: fixed; top: 20px; left: 90px; z-index: 99998; }
+        .help-float-container {
+            position: fixed;
+            top: 20px;
+            left: 100px;
+            z-index: 99998;
+        }
         .help-float-container button {
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
-            color: white !important; font-weight: 700 !important; border-radius: 8px !important;
-            padding: 8px 16px !important;
-            font-size: 14px !important;
+            color: white !important;
+            font-weight: 700 !important;
+            border-radius: 10px !important;
+            padding: 10px 18px !important;
+            font-size: 15px !important;
+            border: none !important;
+            box-shadow: 0 4px 12px rgba(243,156,18,0.4) !important;
+            white-space: nowrap !important;
+        }
+
+        /* ========= تحسينات خاصة بالهاتف المحمول ========= */
+        @media (max-width: 768px) {
+            .floating-show-btn button {
+                width: 55px !important;
+                height: 55px !important;
+                font-size: 26px !important;
+                border-radius: 12px !important;
+            }
+            .help-float-container {
+                left: 85px;
+            }
+            .help-float-container button {
+                padding: 8px 14px !important;
+                font-size: 13px !important;
+                border-radius: 8px !important;
+            }
+            .main-header {
+                font-size: 1.6rem;
+                margin-top: 70px;
+            }
         }
 
         .timer-container { text-align: center; margin: 1rem 0; }
@@ -228,7 +271,7 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 # =============================================================================
-# JavaScript قوي لمنع أي إغلاق تلقائي للشريط الجانبي + ضمان الإخفاء الكامل
+# JavaScript قوي لمنع أي إغلاق تلقائي للشريط الجانبي
 # =============================================================================
 def inject_sidebar_js():
     components.html("""
@@ -238,14 +281,12 @@ def inject_sidebar_js():
             const sidebar = document.querySelector('[data-testid="stSidebar"]');
             if (!sidebar) return;
 
-            // 1- منع الإغلاق التلقائي: إزالة أي كلاسات تصغير
             if (sidebar.classList.contains('stSidebar--collapsed')) {
                 sidebar.classList.remove('stSidebar--collapsed');
                 sidebar.classList.add('stSidebar--expanded');
                 sidebar.setAttribute('aria-expanded', 'true');
             }
 
-            // 2- إخفاء جميع عناصر التحكم الافتراضية
             const selectorsToHide = [
                 '[data-testid="stSidebarNavToggle"]',
                 '[data-testid="stSidebarCollapseButton"]',
@@ -264,7 +305,6 @@ def inject_sidebar_js():
                 });
             });
 
-            // 3- إزالة أي overlay طبقة خلفية
             const overlays = document.querySelectorAll(
                 '.st-emotion-cache-1oe5cao, [data-testid="stSidebarOverlay"], ' +
                 'div[data-testid="stSidebar"] ~ div'
@@ -280,18 +320,14 @@ def inject_sidebar_js():
             });
         }
 
-        // 4- منع النقر خارج الشريط من إغلاقه
         document.addEventListener('click', function(e) {
             const sidebar = document.querySelector('[data-testid="stSidebar"]');
             if (!sidebar) return;
-            // إذا كان النقر داخل الشريط الجانبي، لا تفعل شيئًا
             if (sidebar.contains(e.target)) return;
-            // إذا كان النقر خارج الشريط، امنع الإغلاق وأعد ضبط الحالة
             e.stopPropagation();
             enforceSidebarBehavior();
         }, true);
 
-        // 5- مراقبة مستمرة لكل التغييرات
         const observer = new MutationObserver(function(mutations) {
             enforceSidebarBehavior();
         });
@@ -302,7 +338,6 @@ def inject_sidebar_js():
             attributeFilter: ['class', 'aria-expanded', 'style']
         });
 
-        // 6- تنفيذ فوري ومتكرر
         document.addEventListener('DOMContentLoaded', enforceSidebarBehavior);
         window.addEventListener('load', enforceSidebarBehavior);
         setInterval(enforceSidebarBehavior, 500);
@@ -902,7 +937,6 @@ def show_student_quiz(db: Database):
         if active_students.empty:
             st.warning("لا توجد طالبات مسجلات حالياً. يرجى التواصل مع المسؤول.")
             st.stop()
-        # ترتيب أبجدي
         active_students = active_students.sort_values("full_name", key=lambda col: col.str.strip().str.lower())
         options_dict = dict(zip(active_students["student_id"], active_students["full_name"]))
         selected_id = st.selectbox(
@@ -1030,7 +1064,7 @@ def auto_submit_quiz(db, quiz):
     st.session_state.last_score = score
 
 # =============================================================================
-# Sidebar (تتحكم فيها الأزرار فقط)
+# Sidebar
 # =============================================================================
 def show_sidebar(db: Database):
     with st.sidebar:
