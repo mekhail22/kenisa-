@@ -18,7 +18,7 @@ import traceback
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "4.7.1"  # تم تحديث رقم الإصدار
+APP_VERSION = "4.7.2"
 
 # تكوين الصفحة الأساسي
 st.set_page_config(
@@ -1809,12 +1809,8 @@ def main():
     st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.student_quiz_started and st.session_state.student_quiz:
-        try:
-            show_student_quiz(db)
-        except Exception as e:
-            error_details = traceback.format_exc()
-            st.error("حدث خطأ غير متوقع أثناء الاختبار. يمكنك الإبلاغ عنه باستخدام زر مركز المساعدة.")
-            st.session_state.last_error_details = error_details
+        # تمت إزالة try-except ليظهر الخطأ كاملاً
+        show_student_quiz(db)
     else:
         if not st.session_state.authenticated:
             show_login_page(db, jwt_secret)
@@ -1839,35 +1835,31 @@ def main():
                 choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
 
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-            try:
-                if choice == "🏠 لوحة التحكم":
-                    show_dashboard(db)
-                elif choice == "👥 إدارة المستخدمين":
-                    if st.session_state.user["role"] == "System Admin":
-                        show_user_management(db)
-                    else:
-                        st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
-                elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
+            # تمت إزالة try-except ليظهر الخطأ كاملاً في جميع الصفحات
+            if choice == "🏠 لوحة التحكم":
+                show_dashboard(db)
+            elif choice == "👥 إدارة المستخدمين":
+                if st.session_state.user["role"] == "System Admin":
                     show_user_management(db)
-                elif choice == "📋 الحضور":
-                    show_attendance(db)
-                elif choice == "💬 الافتقاد":
-                    show_followup(db)
-                elif choice == "📝 المسابقات والاختبارات":
-                    show_quizzes(db)
-                elif choice == "📊 التقارير والإحصائيات":
-                    show_reports(db)
-                elif choice == "📜 سجل العمليات":
-                    if st.session_state.user["role"] == "System Admin":
-                        show_logs(db)
-                    else:
-                        st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
-                elif choice == "🔒 تغيير كلمة المرور":
-                    change_password(db)
-            except Exception as e:
-                error_details = traceback.format_exc()
-                st.error("❌ حدث خطأ غير متوقع. يمكنك الإبلاغ عنه من خلال زر مركز المساعدة أعلاه.")
-                st.session_state.last_error_details = error_details
+                else:
+                    st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+            elif choice in ["👩‍🎓 الطالبات", "👩‍🎓 طالباتي"]:
+                show_user_management(db)
+            elif choice == "📋 الحضور":
+                show_attendance(db)
+            elif choice == "💬 الافتقاد":
+                show_followup(db)
+            elif choice == "📝 المسابقات والاختبارات":
+                show_quizzes(db)
+            elif choice == "📊 التقارير والإحصائيات":
+                show_reports(db)
+            elif choice == "📜 سجل العمليات":
+                if st.session_state.user["role"] == "System Admin":
+                    show_logs(db)
+                else:
+                    st.error("🚫 غير مصرح لك بالوصول لهذه الصفحة")
+            elif choice == "🔒 تغيير كلمة المرور":
+                change_password(db)
             st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.get("open_help_dialog"):
