@@ -18,9 +18,8 @@ import traceback
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "4.7.3"
+APP_VERSION = "4.7.5"
 
-# تكوين الصفحة الأساسي
 st.set_page_config(
     page_title="نظام الغياب والافتقاد - كنيسة الشهيدة دميانة",
     page_icon="⛪",
@@ -29,34 +28,27 @@ st.set_page_config(
 )
 
 # =============================================================================
-# إعدادات Telegram والدعم (من secrets.toml)
+# Telegram & Support
 # =============================================================================
-
 def get_telegram_config():
-    """قراءة إعدادات Telegram من secrets.toml"""
     try:
-        bot_token = st.secrets["telegram"]["bot_token"]
-        chat_id = st.secrets["telegram"]["chat_id"]
-        return bot_token, chat_id
-    except Exception as e:
-        st.error(f"❌ خطأ في قراءة إعدادات Telegram من secrets.toml: {e}")
+        return st.secrets["telegram"]["bot_token"], st.secrets["telegram"]["chat_id"]
+    except:
         return None, None
 
 def get_support_config():
-    """قراءة إعدادات التواصل المباشر من secrets.toml"""
     try:
-        contact_name = st.secrets.get("support", {}).get("contact_name", "مسؤول النظام")
-        whatsapp = st.secrets.get("support", {}).get("whatsapp", "")
-        return contact_name, whatsapp
-    except Exception:
+        return (
+            st.secrets.get("support", {}).get("contact_name", "مسؤول النظام"),
+            st.secrets.get("support", {}).get("whatsapp", "")
+        )
+    except:
         return "مسؤول النظام", ""
 
 # =============================================================================
-# دوال الاعتماد والإعدادات
+# Credentials & IDs
 # =============================================================================
-
 def get_credentials():
-    """تحميل بيانات اعتماد Google Cloud من secrets.toml"""
     try:
         creds = Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
@@ -68,11 +60,10 @@ def get_credentials():
         st.stop()
 
 def get_spreadsheet_id():
-    """استخراج معرف جدول بيانات Google Sheets من secrets.toml"""
     try:
         sid = st.secrets["sheets"]["spreadsheet_id"]
         if not sid or not isinstance(sid, str) or sid.strip() == "":
-            st.error("❌ معرف جدول البيانات غير صالح أو فارغ. الرجاء التحقق من secrets.toml")
+            st.error("❌ معرف جدول البيانات غير صالح.")
             st.stop()
         return sid.strip()
     except Exception as e:
@@ -80,46 +71,28 @@ def get_spreadsheet_id():
         st.stop()
 
 def get_jwt_secret():
-    """استخراج مفتاح JWT من secrets.toml أو إرجاع المفتاح الافتراضي"""
     try:
         return st.secrets["sheets"]["jwt_secret"]
     except:
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# تنسيقات CSS المخصصة
+# CSS
 # =============================================================================
-
 def inject_css():
-    """إدراج أكواد CSS لتجميل التطبيق وإخفاء العناصر غير المرغوبة"""
     st.markdown("""
     <style>
-        /* استيراد خط القاهرة */
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
         * { font-family: 'Cairo', sans-serif; }
         body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; }
-
-        /* خلفية الصفحة */
         .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
-
-        /* إخفاء عناصر Streamlit الافتراضية */
         header[data-testid="stHeader"] { display: none !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
-
-        /* إخفاء جميع أزرار الشريط الجانبي الافتراضية */
-        [data-testid="stSidebarNavToggle"],
-        [data-testid="stSidebarCollapseButton"],
-        [data-testid="collapsedControl"],
-        button[aria-label="Close sidebar"],
-        [data-testid="stSidebar"] > button,
-        [data-testid="stSidebar"] > div:first-child > button,
-        [data-testid="stSidebarResizer"],
-        section[data-testid="stSidebar"] .st-emotion-cache-1oe5cao {
-            display: none !important;
-        }
-
-        /* عنوان رئيسي */
+        [data-testid="stSidebarNavToggle"], [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"],
+        button[aria-label="Close sidebar"], [data-testid="stSidebar"] > button,
+        [data-testid="stSidebar"] > div:first-child > button, [data-testid="stSidebarResizer"],
+        section[data-testid="stSidebar"] .st-emotion-cache-1oe5cao { display: none !important; }
         .main-header {
             font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
             margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
@@ -127,16 +100,9 @@ def inject_css():
             backdrop-filter: blur(5px); border: 1px solid rgba(0,0,0,0.05);
             margin-top: 60px;
         }
-
-        /* بطاقة عامة */
-        .card {
-            background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.5rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem;
-            transition: transform 0.2s; color: #1a1a2e; border: 1px solid rgba(0,0,0,0.05);
-        }
+        .card { background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem; transition: transform 0.2s; color: #1a1a2e; border: 1px solid rgba(0,0,0,0.05); }
         .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
-
-        /* بطاقة إحصائية */
         .stat-card {
             background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.2rem;
             text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
@@ -144,36 +110,20 @@ def inject_css():
         }
         .stat-card .value { font-size: 2.2rem; font-weight: 700; color: #667eea; margin: 0.5rem 0; }
         .stat-card .label { font-size: 1rem; color: #555; font-weight: 600; }
-
-        /* زر أساسي */
         .stButton > button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white; border: none; border-radius: 8px; font-weight: 600;
             transition: all 0.2s; box-shadow: 0 2px 8px rgba(102,126,234,0.3);
         }
         .stButton > button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }
-
-        /* اتجاه النصوص والأزرار */
         .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
         .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
-
-        /* تنسيق الشريط الجانبي */
         section[data-testid="stSidebar"] {
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
             border-left: 1px solid rgba(0,0,0,0.08); padding-top: 1rem;
         }
-        section[data-testid="stSidebar"] .stRadio > div { direction: rtl; }
-        section[data-testid="stSidebar"] .stRadio label {
-            font-weight: 600; color: #1a1a2e; font-size: 1rem;
-        }
-
-        /* زر إخفاء القائمة */
-        .hide-sidebar-btn button {
-            background: #667eea !important; color: white !important;
-            font-weight: bold; border-radius: 8px; margin-bottom: 1rem;
-        }
-
-        /* زر إظهار القائمة العائم */
+        section[data-testid="stSidebar"] .stRadio label { font-weight: 600; color: #1a1a2e; font-size: 1rem; }
+        .hide-sidebar-btn button { background: #667eea !important; color: white !important; font-weight: bold; border-radius: 8px; margin-bottom: 1rem; }
         .floating-show-btn { position: fixed; top: 20px; left: 20px; z-index: 99999; }
         .floating-show-btn button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
@@ -181,197 +131,116 @@ def inject_css():
             width: 65px !important; height: 65px !important; font-size: 28px !important;
             font-weight: bold !important; box-shadow: 0 4px 20px rgba(102,126,234,0.5) !important;
         }
-        .floating-show-btn button:hover { transform: scale(1.1) !important; }
-
-        /* زر مركز المساعدة الثابت - في الأعلى */
-        .help-float-container {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 99998;
-        }
+        .help-float-container { position: fixed; top: 20px; left: 20px; z-index: 99998; }
         .help-float-container button {
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
-            color: white !important;
-            font-weight: 700 !important;
-            border: none !important;
-            border-radius: 8px !important;
-            box-shadow: 0 2px 8px rgba(243,156,18,0.3) !important;
+            color: white !important; font-weight: 700 !important; border-radius: 8px !important;
         }
-        .help-float-container button:hover {
-            transform: scale(1.02) !important;
-            box-shadow: 0 5px 15px rgba(243,156,18,0.4) !important;
-        }
-
-        /* مؤقت الاختبار */
         .timer-container { text-align: center; margin: 1rem 0; }
         .timer-box {
             display: inline-block; background: linear-gradient(135deg, #667eea, #764ba2);
             color: white; padding: 0.8rem 2rem; border-radius: 15px;
             font-size: 1.8rem; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
-
-        /* جداول وأشكال */
         .stDataFrame { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .streamlit-expanderHeader {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white !important; border-radius: 8px; font-weight: 600;
         }
-        .streamlit-expanderContent {
-            background: white; border-radius: 0 0 8px 8px;
-            border: 1px solid rgba(0,0,0,0.05);
-        }
-        .stForm {
-            background: white; padding: 20px; border-radius: 15px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);
-        }
+        .stForm { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
         .stTabs [data-baseweb="tab-list"] { gap: 8px; }
         .stTabs [data-baseweb="tab"] {
             background: rgba(102,126,234,0.1); border-radius: 8px 8px 0 0;
             padding: 10px 20px; font-weight: 600; color: #667eea;
             border: 1px solid rgba(102,126,234,0.2); border-bottom: none;
         }
-        .stTabs [aria-selected="true"] {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important;
-        }
-        .stSelectbox > div > div {
-            background: white; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1);
-        }
-        .stSuccess, .stInfo, .stWarning, .stError { border-radius: 10px; font-weight: 600; }
-        .stSuccess {
-            background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2);
-            color: #155724;
-        }
-        .stError {
-            background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2);
-            color: #721c24;
-        }
+        .stTabs [aria-selected="true"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; }
+        .stSuccess { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }
+        .stError { background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }
         .content-area { padding: 0 1rem; }
-        .search-box input {
-            border-radius: 25px !important; border: 2px solid #667eea !important;
-            padding: 10px 20px !important;
-        }
     </style>
     """, unsafe_allow_html=True)
 
 # =============================================================================
-# كلاس قاعدة البيانات (Google Sheets)
+# Database Class (All columns converted to object after read)
 # =============================================================================
-
 class Database:
-    """
-    كافة العمليات على جداول Google Sheets.
-    - إنشاء الأوراق تلقائياً
-    - القراءة والكتابة إلى DataFrame
-    - دوال مخصصة لكل كيان (مستخدم، طالب، حضور، ...)
-    """
     def __init__(self, creds, spreadsheet_id):
         self.client = gspread.authorize(creds)
         self.spreadsheet = self.client.open_by_key(spreadsheet_id)
 
     def _get_or_create_worksheet(self, name, columns):
-        """جلب الورقة أو إنشائها بسعة 100,000 صف مع معالجة محسنة"""
         try:
             ws = self.spreadsheet.worksheet(name)
         except gspread.WorksheetNotFound:
-            try:
-                ws = self.spreadsheet.add_worksheet(title=name, rows=100000, cols=max(len(columns), 1))
-                if columns:
-                    ws.append_row(columns)
-            except Exception as e:
-                raise Exception(f"فشل إنشاء ورقة '{name}': {str(e)}")
+            ws = self.spreadsheet.add_worksheet(title=name, rows=100000, cols=max(len(columns), 1))
+            if columns:
+                ws.append_row(columns)
         return ws
 
     def _sheet_to_df(self, sheet_name):
-        """قراءة الورقة إلى DataFrame مع التحقق من النوع"""
         ws = self._get_or_create_worksheet(sheet_name, [])
         data = ws.get_all_records()
         if not data:
             return pd.DataFrame()
         df = pd.DataFrame(data)
         df.dropna(how='all', axis=1, inplace=True)
+        # تحويل جميع الأعمدة إلى object لتجنب تعارض الأنواع عند التحديث
+        df = df.astype(object)
         return df
 
     def _df_to_sheet(self, sheet_name, df, columns):
-        """
-        كتابة DataFrame إلى الورقة مع معالجة شاملة للأخطاء والأنواع.
-        تدعم الإصدارات القديمة والجديدة من pandas (استبدال applymap بـ map).
-        """
         if not isinstance(df, pd.DataFrame):
-            raise ValueError(f"يجب أن يكون df كائن DataFrame، المستلم: {type(df)}")
-        if not isinstance(columns, list):
-            raise ValueError(f"يجب أن تكون columns قائمة، المستلم: {type(columns)}")
-        if not columns:
-            raise ValueError("قائمة الأعمدة فارغة")
-
+            raise ValueError("df must be a DataFrame")
+        if not isinstance(columns, list) or not columns:
+            raise ValueError("columns must be a non-empty list")
         ws = self._get_or_create_worksheet(sheet_name, columns)
-
         try:
             ws.clear()
         except gspread.exceptions.APIError:
             ws = self._get_or_create_worksheet(sheet_name, columns)
             ws.clear()
-
         if df.empty:
             ws.update([columns])
             return
-
         for col in columns:
             if col not in df.columns:
                 df[col] = ""
+        work_df = df[columns].copy()
+        work_df.fillna("", inplace=True)
 
-        try:
-            work_df = df[columns].copy()
-            work_df.fillna("", inplace=True)
-
-            def safe_value(x):
-                if isinstance(x, (str, int, float, bool)):
-                    return x
-                try:
-                    return str(x)
-                except:
-                    return ""
-
-            if hasattr(work_df, 'map'):
-                work_df = work_df.map(safe_value)
-            else:
-                work_df = work_df.apply(lambda col: col.map(safe_value) if hasattr(col, 'map') else col.apply(safe_value))
-
-            values = [columns] + work_df.values.tolist()
-            ws.update(values)
-
-        except Exception as e:
-            error_msg = f"فشل في تحديث ورقة {sheet_name}: {str(e)}"
+        def safe_value(x):
+            if isinstance(x, (str, int, float, bool)):
+                return x
             try:
-                bot_token, chat_id = get_telegram_config()
-                if bot_token and chat_id:
-                    requests.post(
-                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                        json={"chat_id": chat_id, "text": f"❌ خطأ في _df_to_sheet:\n{error_msg}\n{traceback.format_exc()}"},
-                        timeout=5
-                    )
+                return str(x)
             except:
-                pass
-            raise Exception(error_msg)
+                return ""
+
+        if hasattr(work_df, 'map'):
+            work_df = work_df.map(safe_value)
+        else:
+            work_df = work_df.apply(lambda col: col.map(safe_value) if hasattr(col, 'map') else col.apply(safe_value))
+
+        values = [columns] + work_df.values.tolist()
+        ws.update(values)
 
     @staticmethod
     def _safe_str(value):
-        """تحويل أي قيمة إلى نص آمن"""
         if value is None or (isinstance(value, float) and pd.isna(value)):
             return ""
         if isinstance(value, (dict, list)):
             return str(value)
         return str(value)
 
-    # ==================== المستخدمون ====================
+    # ==================== Users ====================
     def get_users(self):
         df = self._sheet_to_df("Users")
         if not df.empty and "password_hash" in df.columns:
             df = df.rename(columns={"password_hash": "password"})
         return df
 
-    def add_user(self, user_data: dict):
+    def add_user(self, user_data):
         df = self.get_users()
         if df.empty:
             df = pd.DataFrame(columns=["user_id", "username", "password", "role",
@@ -393,27 +262,24 @@ class Database:
         df = df[df.user_id != user_id]
         self._df_to_sheet("Users", df, df.columns.tolist())
 
-    # ==================== الفصول ====================
+    # ==================== Sections ====================
     def get_sections(self):
         return self._sheet_to_df("Sections")
 
-    def add_section(self, sec_data: dict):
-        try:
-            if "section_id" not in sec_data or "section_name" not in sec_data:
-                raise ValueError("يجب توفير section_id و section_name")
-            self._get_or_create_worksheet("Sections", ["section_id", "section_name", "manager_user_id"])
-            df = self.get_sections()
-            if df.empty:
-                df = pd.DataFrame(columns=["section_id", "section_name", "manager_user_id"])
-            new_row = {
-                "section_id": sec_data["section_id"],
-                "section_name": sec_data["section_name"],
-                "manager_user_id": sec_data.get("manager_user_id", "")
-            }
-            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-            self._df_to_sheet("Sections", df, ["section_id", "section_name", "manager_user_id"])
-        except Exception as e:
-            raise Exception(f"فشل في إضافة الفصل: {str(e)}")
+    def add_section(self, sec_data):
+        if "section_id" not in sec_data or "section_name" not in sec_data:
+            raise ValueError("يجب توفير section_id و section_name")
+        self._get_or_create_worksheet("Sections", ["section_id", "section_name", "manager_user_id"])
+        df = self.get_sections()
+        if df.empty:
+            df = pd.DataFrame(columns=["section_id", "section_name", "manager_user_id"])
+        new_row = {
+            "section_id": sec_data["section_id"],
+            "section_name": sec_data["section_name"],
+            "manager_user_id": sec_data.get("manager_user_id", "")
+        }
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        self._df_to_sheet("Sections", df, ["section_id", "section_name", "manager_user_id"])
 
     def update_section(self, section_id, updates):
         df = self.get_sections()
@@ -428,11 +294,11 @@ class Database:
         df = df[df.section_id != section_id]
         self._df_to_sheet("Sections", df, df.columns.tolist())
 
-    # ==================== الطالبات ====================
+    # ==================== Students ====================
     def get_students(self):
         return self._sheet_to_df("Students")
 
-    def add_student(self, student_data: dict):
+    def add_student(self, student_data):
         df = self.get_students()
         if df.empty:
             df = pd.DataFrame(columns=["student_id", "full_name", "section_id", "teacher_id",
@@ -455,11 +321,11 @@ class Database:
         df = df[df.student_id != student_id]
         self._df_to_sheet("Students", df, df.columns.tolist())
 
-    # ==================== الحضور ====================
+    # ==================== Attendance ====================
     def get_attendance(self):
         return self._sheet_to_df("Attendance")
 
-    def add_attendance_record(self, record: dict):
+    def add_attendance_record(self, record):
         df = self.get_attendance()
         if df.empty:
             df = pd.DataFrame(columns=["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
@@ -482,11 +348,11 @@ class Database:
         df = df[df.record_id != record_id]
         self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
 
-    # ==================== الافتقاد ====================
+    # ==================== FollowUp ====================
     def get_followup(self):
         return self._sheet_to_df("FollowUp")
 
-    def add_followup_record(self, record: dict):
+    def add_followup_record(self, record):
         df = self.get_followup()
         if df.empty:
             df = pd.DataFrame(columns=["record_id", "student_id", "teacher_id", "followup_date",
@@ -501,11 +367,11 @@ class Database:
         self._df_to_sheet("FollowUp", df, ["record_id", "student_id", "teacher_id", "followup_date",
                                            "followup_type", "notes", "regularity_status"])
 
-    # ==================== الاختبارات ====================
+    # ==================== Quizzes ====================
     def get_quizzes(self):
         return self._sheet_to_df("Quizzes")
 
-    def add_quiz(self, quiz_data: dict):
+    def add_quiz(self, quiz_data):
         df = self.get_quizzes()
         if df.empty:
             df = pd.DataFrame(columns=["quiz_id", "title", "description", "created_by", "section_id",
@@ -545,7 +411,7 @@ class Database:
             return pd.DataFrame()
         return df[df.quiz_id == quiz_id]
 
-    def add_question(self, q_data: dict):
+    def add_question(self, q_data):
         df = self._sheet_to_df("QuizQuestions")
         if df.empty:
             df = pd.DataFrame(columns=["question_id", "quiz_id", "question_text", "question_type",
@@ -568,7 +434,7 @@ class Database:
             return df[df.quiz_id == quiz_id]
         return df
 
-    def save_quiz_result(self, result: dict):
+    def save_quiz_result(self, result):
         df = self._sheet_to_df("QuizResults")
         if df.empty:
             df = pd.DataFrame(columns=["result_id", "quiz_id", "student_id", "student_name",
@@ -583,7 +449,7 @@ class Database:
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
                                               "score", "total_marks", "submission_time", "answers"])
 
-    # ==================== السجلات ====================
+    # ==================== Logs ====================
     def get_logs(self):
         return self._sheet_to_df("Logs")
 
@@ -603,17 +469,6 @@ class Database:
             self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
         except Exception as e:
             st.warning(f"⚠️ تعذر تسجيل العملية: {str(e)}")
-            try:
-                error_msg = f"فشل add_log: {str(e)}\n{traceback.format_exc()}"
-                bot_token, chat_id = get_telegram_config()
-                if bot_token and chat_id:
-                    requests.post(
-                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                        json={"chat_id": chat_id, "text": f"❌ خطأ في add_log:\n{error_msg}"},
-                        timeout=5
-                    )
-            except:
-                pass
 
     def delete_log(self, log_id):
         df = self._sheet_to_df("Logs")
@@ -621,11 +476,9 @@ class Database:
         self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
 
 # =============================================================================
-# JWT
+# JWT & Session Helpers
 # =============================================================================
-
 def generate_token(user: dict, secret: str) -> str:
-    """توليد رمز JWT للمستخدم صالح لمدة 24 ساعة"""
     payload = {
         "user_id": user["user_id"],
         "role": user["role"],
@@ -636,18 +489,12 @@ def generate_token(user: dict, secret: str) -> str:
     return jwt.encode(payload, secret, algorithm="HS256")
 
 def verify_token(token: str, secret: str):
-    """التحقق من صحة رمز JWT"""
     try:
         return jwt.decode(token, secret, algorithms=["HS256"])
     except:
         return None
 
-# =============================================================================
-# إدارة الجلسة
-# =============================================================================
-
 def init_session():
-    """تهيئة جميع متغيرات الجلسة المطلوبة للتطبيق"""
     defaults = {
         "authenticated": False, "user": None, "token": None,
         "student_quiz": None, "student_quiz_started": False,
@@ -664,7 +511,6 @@ def init_session():
             st.session_state[k] = v
 
 def logout():
-    """تسجيل الخروج ومسح بيانات الجلسة"""
     if st.session_state.user:
         try:
             db = Database(get_credentials(), get_spreadsheet_id())
@@ -675,12 +521,7 @@ def logout():
         del st.session_state[key]
     st.rerun()
 
-# =============================================================================
-# دوال مساعدة
-# =============================================================================
-
 def search_students(df, query):
-    """البحث عن طالبة بالاسم أو الهاتف أو العنوان"""
     if df.empty or not query:
         return df
     query = str(query).lower()
@@ -691,13 +532,11 @@ def search_students(df, query):
     return df[mask]
 
 def export_to_csv(df, filename):
-    """تصدير DataFrame إلى CSV بصيغة مناسبة للغة العربية"""
     if df.empty:
         return None
     return df.to_csv(index=False).encode("utf-8-sig")
 
 def send_telegram_message(message: str) -> bool:
-    """إرسال رسالة عبر بوت تليجرام"""
     bot_token, chat_id = get_telegram_config()
     if not bot_token or not chat_id:
         return False
@@ -710,53 +549,41 @@ def send_telegram_message(message: str) -> bool:
         return False
 
 # =============================================================================
-# نافذة مركز المساعدة
+# Help Dialog
 # =============================================================================
-
 @st.dialog("🆘 مركز المساعدة والدعم الفني")
 def show_help_dialog():
     contact_name, contact_whatsapp = get_support_config()
-
-    st.markdown("""
-    <div style="text-align: center; margin-bottom: 20px;">
+    st.markdown("""<div style="text-align: center; margin-bottom: 20px;">
         <h3>📬 الإبلاغ عن مشكلة أو خطأ</h3>
         <p style="color: #555;">املأ البيانات التالية وسنتواصل معك في أقرب وقت</p>
-    </div>
-    """, unsafe_allow_html=True)
-
+    </div>""", unsafe_allow_html=True)
     if contact_whatsapp:
         st.info(f"📞 يمكنك أيضًا التواصل مباشرة مع **{contact_name}** عبر الواتساب: {contact_whatsapp}")
-
     default_name = ""
     if st.session_state.authenticated and st.session_state.user:
         default_name = st.session_state.user.get("full_name", "")
     elif st.session_state.get("student_name"):
         default_name = st.session_state.student_name
-
     with st.form("help_form_dialog", clear_on_submit=False):
-        name = st.text_input("الاسم *", value=default_name, placeholder="أدخل اسمك الكامل")
-        whatsapp = st.text_input("رقم الواتساب *", placeholder="مثال: 010xxxxxxxx")
+        name = st.text_input("الاسم *", value=default_name)
+        whatsapp = st.text_input("رقم الواتساب *")
         report_type = st.selectbox("نوع البلاغ *", ["مشكلة تقنية", "سؤال عام", "اقتراح تحسين", "بلاغ خطأ", "أخرى"])
-        issue_desc = st.text_area("وصف المشكلة *", height=100, placeholder="اشرح المشكلة التي تواجهها...")
-
+        issue_desc = st.text_area("وصف المشكلة *", height=100)
         submit = st.form_submit_button("📨 إرسال البلاغ", use_container_width=True)
-
         if submit:
             if not name.strip() or not whatsapp.strip() or not issue_desc.strip():
                 st.error("⚠️ الاسم ورقم الواتساب ووصف المشكلة حقول إلزامية.")
                 return
-
             current_page = st.session_state.get("menu_choice", "غير معروف")
             if st.session_state.get("student_quiz_started"):
                 current_page = "واجهة الاختبار الإلكتروني"
-
             user_info = "زائر غير مسجل"
             if st.session_state.authenticated and st.session_state.user:
                 u = st.session_state.user
                 user_info = f"{u.get('full_name', '')} (صلاحية: {u.get('role', '')})"
             elif st.session_state.get("student_name"):
                 user_info = f"طالبة: {st.session_state.student_name}"
-
             telegram_message = (
                 f"🆘 <b>بلاغ جديد من مركز المساعدة</b>\n\n"
                 f"👤 <b>الاسم:</b> {name}\n"
@@ -767,11 +594,9 @@ def show_help_dialog():
                 f"⏰ <b>تاريخ ووقت الإرسال:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
                 f"📝 <b>وصف المشكلة:</b>\n{issue_desc}\n\n"
             )
-
             error_details = st.session_state.get("last_error_details", "")
             if error_details:
                 telegram_message += f"💥 <b>تفاصيل الخطأ (مُضافة تلقائياً):</b>\n<pre>{error_details}</pre>"
-
             success = send_telegram_message(telegram_message)
             if success:
                 st.success("✅ تم إرسال بلاغك بنجاح. سنتواصل معك قريباً على رقم الواتساب.")
@@ -782,9 +607,8 @@ def show_help_dialog():
                 st.error("❌ فشل في إرسال البلاغ. تأكد من أن بوت التليجرام مفعّل بشكل صحيح.")
 
 # =============================================================================
-# التهيئة الأولية للنظام
+# Initialization & Login
 # =============================================================================
-
 def show_initialization(db: Database):
     users = db.get_users()
     if users.empty:
@@ -803,16 +627,10 @@ def show_initialization(db: Database):
             st.rerun()
         st.stop()
 
-# =============================================================================
-# صفحة تسجيل الدخول
-# =============================================================================
-
 def show_login_page(db: Database, jwt_secret: str):
     st.markdown("<h1 class='main-header'>⛪ نظام الغياب والافتقاد<br>الكنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
     show_initialization(db)
-
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
-
     with tab1:
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم", placeholder="admin")
@@ -841,7 +659,6 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.rerun()
                             else:
                                 st.error("كلمة المرور غير صحيحة")
-
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
         with st.form("student_login_form"):
@@ -880,17 +697,13 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# واجهة الطالبة للاختبار
+# Student Quiz Interface
 # =============================================================================
-
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
-
     if st.session_state.quiz_phase == "enter_name":
         st.title(f"📝 {quiz['title']}")
-        st.markdown(
-            f"**عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** 20 | **الوقت:** {quiz['time_limit_minutes']} دقيقة"
-        )
+        st.markdown(f"**عدد الأسئلة:** {quiz['num_questions']} | **الدرجة الكلية:** 20 | **الوقت:** {quiz['time_limit_minutes']} دقيقة")
         st.markdown("---")
         students_df = db.get_students()
         active_students = students_df[students_df["status"] == "active"] if not students_df.empty else pd.DataFrame()
@@ -963,23 +776,19 @@ def show_student_quiz(db: Database):
     </script>
     """
     st.markdown(timer_html, unsafe_allow_html=True)
-
     st.title(f"📝 {quiz['title']}")
     st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
     st.markdown("---")
-
     questions = db.get_quiz_questions(quiz["quiz_id"])
     if questions.empty:
         st.warning("لا توجد أسئلة في هذا الاختبار بعد.")
         return
-
     for idx, row in questions.iterrows():
         q = row.to_dict()
         q_id = q["question_id"]
         st.markdown(f"**سؤال {idx+1}:** {q['question_text']}")
         q_type = q["question_type"]
         prev_answer = st.session_state.quiz_answers.get(q_id, "")
-
         if q_type in ["اختيار من متعدد", "صح وخطأ"]:
             options = [q["option1"], q["option2"], q["option3"], q["option4"]] if q_type == "اختيار من متعدد" else ["صح", "خطأ"]
             options = [opt for opt in options if opt and str(opt).strip()]
@@ -991,12 +800,10 @@ def show_student_quiz(db: Database):
             ans = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
             st.session_state.quiz_answers[q_id] = ans
         st.markdown("---")
-
     if st.button("تسليم الاختبار", type="primary", use_container_width=True):
         auto_submit_quiz(db, quiz)
         st.session_state.quiz_phase = "finished"
         st.rerun()
-
     st.markdown('<div style="display:none">', unsafe_allow_html=True)
     if st.button("", key="timeout_submit_btn"):
         if not st.session_state.quiz_submitted:
@@ -1029,9 +836,8 @@ def auto_submit_quiz(db, quiz):
     st.session_state.last_score = score
 
 # =============================================================================
-# القائمة الجانبية
+# Sidebar
 # =============================================================================
-
 def show_sidebar(db: Database):
     with st.sidebar:
         st.markdown('<div class="hide-sidebar-btn">', unsafe_allow_html=True)
@@ -1039,13 +845,11 @@ def show_sidebar(db: Database):
             st.session_state.show_sidebar = False
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-
         st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
         st.markdown(f"**👤 {user['full_name']}**")
         st.caption(f"الصلاحية: {user['role']}")
         st.divider()
-
         role = user["role"]
         menus = {
             "System Admin": [
@@ -1086,9 +890,8 @@ def show_sidebar(db: Database):
         return choice
 
 # =============================================================================
-# الصفحات المختلفة
+# Dashboard
 # =============================================================================
-
 def show_dashboard(db: Database):
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns(4)
@@ -1096,16 +899,13 @@ def show_dashboard(db: Database):
     students = db.get_students()
     attendance = db.get_attendance()
     followup = db.get_followup()
-
     present_today = len(attendance[(attendance.date == today) & (attendance.status == "حاضر")]) if not attendance.empty else 0
     absent_today = len(attendance[(attendance.date == today) & (attendance.status == "غائب")]) if not attendance.empty else 0
     need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty else 0
-
     col1.markdown(f"<div class='stat-card'><div class='label'>عدد الطالبات</div><div class='value'>{len(students)}</div></div>", unsafe_allow_html=True)
     col2.markdown(f"<div class='stat-card'><div class='label'>الحضور اليوم</div><div class='value'>{present_today}</div></div>", unsafe_allow_html=True)
     col3.markdown(f"<div class='stat-card'><div class='label'>الغياب اليوم</div><div class='value'>{absent_today}</div></div>", unsafe_allow_html=True)
     col4.markdown(f"<div class='stat-card'><div class='label'>منقطعات</div><div class='value'>{need_follow}</div></div>", unsafe_allow_html=True)
-
     st.markdown("#### 📈 الحضور الأسبوعي")
     if not attendance.empty:
         attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
@@ -1119,7 +919,6 @@ def show_dashboard(db: Database):
             st.info("لا توجد بيانات حضور للأيام الماضية.")
     else:
         st.info("لا توجد بيانات حضور بعد.")
-
     if need_follow > 0:
         st.markdown("#### 🔔 بنات بحاجة لافتقاد عاجل")
         urgent = followup[followup.regularity_status == "منقطع"].merge(
@@ -1128,11 +927,14 @@ def show_dashboard(db: Database):
         if not urgent.empty:
             st.dataframe(urgent[["full_name", "followup_date", "notes"]], use_container_width=True)
 
+# =============================================================================
+# User Management (all tabs)
+# =============================================================================
 def show_user_management(db: Database):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول"])
 
-    # ---------- تبويب الخدام ----------
+    # ---------- Tab1: Users ----------
     with tab1:
         st.subheader("قائمة المستخدمين (خدام)")
         users = db.get_users()
@@ -1140,7 +942,6 @@ def show_user_management(db: Database):
             st.dataframe(users[["user_id", "username", "full_name", "role", "section_id", "phone", "email"]], use_container_width=True)
         else:
             st.info("لا يوجد مستخدمون مسجلون.")
-
         with st.expander("➕ إضافة مستخدم جديد"):
             with st.form("add_user_form"):
                 col1, col2 = st.columns(2)
@@ -1170,7 +971,6 @@ def show_user_management(db: Database):
                         st.success("تم إضافة المستخدم بنجاح")
                         time.sleep(1)
                         st.rerun()
-
         with st.expander("✏️ تعديل / حذف مستخدم"):
             if not users.empty:
                 selected_user_id = st.selectbox("اختر المستخدم", users["user_id"])
@@ -1208,7 +1008,7 @@ def show_user_management(db: Database):
                         time.sleep(1)
                         st.rerun()
 
-    # ---------- تبويب المدرسات ----------
+    # ---------- Tab2: Teachers ----------
     with tab2:
         st.subheader("قائمة المدرسات")
         users = db.get_users()
@@ -1279,7 +1079,7 @@ def show_user_management(db: Database):
                     time.sleep(1)
                     st.rerun()
 
-    # ---------- تبويب الطالبات ----------
+    # ---------- Tab3: Students ----------
     with tab3:
         st.subheader("قائمة الطالبات")
         students = db.get_students()
@@ -1356,7 +1156,7 @@ def show_user_management(db: Database):
                     time.sleep(1)
                     st.rerun()
 
-    # ---------- تبويب أمناء الخدمة ----------
+    # ---------- Tab4: Service Managers ----------
     with tab4:
         st.subheader("قائمة أمناء الخدمة")
         users = db.get_users()
@@ -1428,7 +1228,7 @@ def show_user_management(db: Database):
                     time.sleep(1)
                     st.rerun()
 
-    # ---------- تبويب الفصول ----------
+    # ---------- Tab5: Sections ----------
     with tab5:
         st.subheader("قائمة الفصول")
         sections = db.get_sections()
@@ -1436,7 +1236,6 @@ def show_user_management(db: Database):
             st.dataframe(sections[["section_id", "section_name"]], use_container_width=True)
         else:
             st.info("لا توجد فصول مسجلة.")
-
         with st.expander("➕ إضافة فصل جديد"):
             with st.form("add_section_form"):
                 name = st.text_input("اسم الفصل*")
@@ -1460,7 +1259,6 @@ def show_user_management(db: Database):
                         except Exception as e:
                             st.error(f"❌ حدث خطأ أثناء إضافة الفصل: {str(e)}")
                             st.session_state.last_error_details = traceback.format_exc()
-
         with st.expander("🗑️ حذف فصل"):
             if not sections.empty:
                 delete_sec = st.selectbox("اختر فصل للحذف", sections["section_id"])
@@ -1470,6 +1268,9 @@ def show_user_management(db: Database):
                     time.sleep(1)
                     st.rerun()
 
+# =============================================================================
+# Attendance
+# =============================================================================
 def show_attendance(db: Database):
     st.markdown("<h2 class='main-header'>📋 تسجيل الحضور</h2>", unsafe_allow_html=True)
     sections = db.get_sections()
@@ -1538,12 +1339,14 @@ def show_attendance(db: Database):
             time.sleep(1)
             st.rerun()
 
+# =============================================================================
+# Follow-up
+# =============================================================================
 def show_followup(db: Database):
     st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
     user_role = st.session_state.user["role"]
     user_id = st.session_state.user["user_id"]
     students = db.get_students()
-
     if user_role == "Teacher":
         responsible = students[students.teacher_id == user_id] if not students.empty else pd.DataFrame()
     elif user_role == "Service Manager":
@@ -1551,15 +1354,12 @@ def show_followup(db: Database):
         responsible = students[students.section_id == sec_id] if sec_id and not students.empty else students
     else:
         responsible = students
-
     if responsible.empty:
         st.info("لا توجد طالبات مسؤولة عنك.")
         return
-
     student = st.selectbox("اختر الطالبة", responsible["student_id"],
                             format_func=lambda x: responsible[responsible.student_id==x]["full_name"].values[0])
     student_data = responsible[responsible.student_id == student].iloc[0].to_dict()
-
     with st.form("followup_form"):
         ftype = st.selectbox("نوع الافتقاد", ["زيارة", "اتصال هاتفي", "رسالة", "لقاء شخصي"])
         notes = st.text_area("ملاحظات")
@@ -1571,7 +1371,6 @@ def show_followup(db: Database):
                 "followup_type": ftype, "notes": notes, "regularity_status": regularity
             })
             st.success("✅ تم تسجيل الافتقاد بنجاح")
-
     st.markdown("---")
     st.subheader("📋 سجل المتابعات السابقة")
     followups = db.get_followup()
@@ -1586,6 +1385,9 @@ def show_followup(db: Database):
                 time.sleep(1)
                 st.rerun()
 
+# =============================================================================
+# Quizzes
+# =============================================================================
 def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
     user_role = st.session_state.user["role"]
@@ -1614,7 +1416,6 @@ def show_quizzes(db: Database):
                     st.success(f"✅ تم إنشاء الاختبار! الكود: {quiz_code}")
                     time.sleep(2)
                     st.rerun()
-
         st.markdown("---")
         st.subheader("📝 إدارة الأسئلة")
         quizzes = db.get_quizzes()
@@ -1631,7 +1432,6 @@ def show_quizzes(db: Database):
                     st.markdown(f"**عدد الأسئلة الحالية:** {len(questions)}")
                     if not questions.empty:
                         st.dataframe(questions[["question_id", "question_text", "question_type", "correct_answer"]], use_container_width=True)
-
                     with st.form("add_question_form"):
                         qtext = st.text_area("نص السؤال*")
                         qtype = st.selectbox("نوع السؤال", ["اختيار من متعدد", "صح وخطأ", "أكمل", "إجابة قصيرة"])
@@ -1663,7 +1463,6 @@ def show_quizzes(db: Database):
                                 st.success("✅ تمت إضافة السؤال")
                                 time.sleep(1)
                                 st.rerun()
-
                     if not questions.empty:
                         del_q_id = st.selectbox(
                             "اختر سؤالاً لحذفه",
@@ -1679,7 +1478,6 @@ def show_quizzes(db: Database):
                 st.info("لا توجد اختبارات نشطة.")
         else:
             st.info("لا توجد اختبارات مسجلة.")
-
         st.markdown("---")
         st.subheader("🗑️ حذف اختبار وكل ما يتعلق به")
         all_quizzes = db.get_quizzes()
@@ -1694,7 +1492,6 @@ def show_quizzes(db: Database):
                 st.success("تم حذف الاختبار وكل ما يتعلق به")
                 time.sleep(1)
                 st.rerun()
-
     st.markdown("---")
     st.subheader("📊 نتائج الاختبارات")
     results = db.get_quiz_results()
@@ -1706,6 +1503,9 @@ def show_quizzes(db: Database):
     else:
         st.info("لا توجد نتائج بعد.")
 
+# =============================================================================
+# Reports
+# =============================================================================
 def show_reports(db: Database):
     st.markdown("<h2 class='main-header'>📊 التقارير والإحصائيات</h2>", unsafe_allow_html=True)
     attendance = db.get_attendance()
@@ -1730,6 +1530,9 @@ def show_reports(db: Database):
     else:
         st.info("لا توجد بيانات لهذا الشهر.")
 
+# =============================================================================
+# Logs
+# =============================================================================
 def show_logs(db: Database):
     st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
     logs = db.get_logs()
@@ -1743,6 +1546,9 @@ def show_logs(db: Database):
             time.sleep(1)
             st.rerun()
 
+# =============================================================================
+# Change Password
+# =============================================================================
 def change_password(db: Database):
     st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
     with st.form("change_password_form"):
@@ -1764,37 +1570,26 @@ def change_password(db: Database):
                 st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
 # =============================================================================
-# الدالة الرئيسية
+# Main App
 # =============================================================================
-
 def main():
-    """نقطة بداية التطبيق"""
     inject_css()
     init_session()
-
     try:
         creds = get_credentials()
-    except Exception as e:
-        st.error(f"❌ خطأ في الاعتمادات: {e}")
-        st.stop()
-
-    try:
         db = Database(creds, get_spreadsheet_id())
     except Exception as e:
-        st.error("❌ فشل الاتصال بجدول البيانات. تأكد من أن معرف جدول البيانات صحيح وأن حساب الخدمة يمتلك صلاحية الوصول.")
-        st.info("يمكنك الإبلاغ عن المشكلة باستخدام زر 'مركز المساعدة'.")
-        st.session_state.last_error_details = traceback.format_exc()
+        st.error(f"❌ خطأ في الاتصال: {e}")
         st.stop()
 
     jwt_secret = get_jwt_secret()
 
-    # زر المساعدة الثابت - أعلى اليسار
     st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
-    if st.button("🆘 مركز المساعدة", key="fixed_help_btn", help="الإبلاغ عن مشكلة أو خطأ"):
+    if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
     st.markdown('</div>', unsafe_allow_html=True)
 
-    if st.session_state.student_quiz_started and st.session_state.student_quiz:
+    if st.session_state.student_quiz_started:
         show_student_quiz(db)
     else:
         if not st.session_state.authenticated:
@@ -1807,7 +1602,6 @@ def main():
                 time.sleep(2)
                 st.rerun()
                 return
-
             if st.session_state.show_sidebar:
                 choice = show_sidebar(db)
             else:
