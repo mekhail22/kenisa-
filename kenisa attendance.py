@@ -92,27 +92,107 @@ def inject_css():
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
 
-        /* إخفاء جميع أزرار الإغلاق والتبديل التلقائي */
+        /* ========= Force Sidebar Permanently Open (Option 1) ========= */
+        section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
+            border-left: 1px solid rgba(0,0,0,0.08);
+            padding-top: 1rem;
+            display: flex !important;
+            transform: none !important;
+            translate: none !important;
+            width: 21rem !important;
+            min-width: 21rem !important;
+            max-width: 21rem !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            margin-left: 0 !important;
+            left: 0 !important;
+            position: relative !important;
+            overflow: visible !important;
+            flex-shrink: 0 !important;
+            z-index: 100 !important;
+            transition: none !important;
+            animation: none !important;
+        }
+
+        /* Override any collapsed state Streamlit tries to apply */
+        section[data-testid="stSidebar"].stSidebar--collapsed,
+        section[data-testid="stSidebar"].stSidebar--collapsed * {
+            display: flex !important;
+            transform: none !important;
+            translate: none !important;
+            width: 21rem !important;
+            min-width: 21rem !important;
+            max-width: 21rem !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            margin-left: 0 !important;
+            left: 0 !important;
+            position: relative !important;
+            overflow: visible !important;
+            flex-shrink: 0 !important;
+            transition: none !important;
+            animation: none !important;
+        }
+
+        /* Completely remove overlay so outside clicks do nothing */
+        [data-testid="stSidebarOverlay"],
+        div[data-testid="stSidebarOverlay"] {
+            display: none !important;
+            pointer-events: none !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            position: absolute !important;
+            z-index: -9999 !important;
+            transition: none !important;
+            animation: none !important;
+        }
+
+        /* Hide all collapse/close controls without breaking layout */
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
         [data-testid="collapsedControl"],
         button[aria-label="Close sidebar"],
-        [data-testid="stSidebar"] > button,
-        [data-testid="stSidebar"] > div:first-child > button,
-        [data-testid="stSidebarResizer"],
-        section[data-testid="stSidebar"] .st-emotion-cache-1oe5cao,
         button[aria-label="Close"],
         [data-testid="baseButton-header"],
-        [data-testid="stSidebarCollapseButton"] {
-            display: none !important;
-        }
-
-        /* منع ظهور طبقة overlay التي تغلق الشريط */
-        .st-emotion-cache-1oe5cao,
-        [data-testid="stSidebarOverlay"],
-        div[data-testid="stSidebar"] ~ div:has(+ section) {
+        [data-testid="stSidebarResizer"],
+        [data-testid="stSidebar"] > button {
             display: none !important;
             pointer-events: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            width: 0 !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            position: absolute !important;
+            z-index: -9999 !important;
+            overflow: hidden !important;
+            transition: none !important;
+            animation: none !important;
+        }
+
+        /* Responsive: on mobile, sidebar takes full width when forced open */
+        @media (max-width: 768px) {
+            section[data-testid="stSidebar"] {
+                width: 100% !important;
+                min-width: 100% !important;
+                max-width: 100% !important;
+                position: fixed !important;
+                left: 0 !important;
+                top: 0 !important;
+                bottom: 0 !important;
+                z-index: 1000 !important;
+            }
+            section[data-testid="stSidebar"].stSidebar--collapsed,
+            section[data-testid="stSidebar"].stSidebar--collapsed * {
+                width: 100% !important;
+                min-width: 100% !important;
+                max-width: 100% !important;
+            }
         }
 
         /* ========= تنسيقات عامة ========= */
@@ -142,11 +222,6 @@ def inject_css():
         .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
         .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
 
-        /* الشريط الجانبي المفتوح */
-        section[data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
-            border-left: 1px solid rgba(0,0,0,0.08); padding-top: 1rem;
-        }
         section[data-testid="stSidebar"] .stRadio label { font-weight: 600; color: #1a1a2e; font-size: 1rem; }
         .hide-sidebar-btn button { background: #667eea !important; color: white !important; font-weight: bold; border-radius: 8px; margin-bottom: 1rem; }
 
@@ -241,76 +316,131 @@ def inject_css():
 # JavaScript لمنع الإغلاق التلقائي (يبقى الشريط مفتوحاً)
 # =============================================================================
 def inject_sidebar_js():
-    components.html("""
+    js_code = """
     <script>
     (function() {
-        function enforceSidebarBehavior() {
-            const sidebar = document.querySelector('[data-testid="stSidebar"]');
+        if (window.__sidebarGuardInstalled) return;
+        window.__sidebarGuardInstalled = true;
+
+        const SIDEBAR_SELECTOR = '[data-testid="stSidebar"]';
+        const OVERLAY_SELECTOR = '[data-testid="stSidebarOverlay"]';
+        const COLLAPSED_CLASS = 'stSidebar--collapsed';
+        const EXPANDED_CLASS = 'stSidebar--expanded';
+
+        function enforceSidebar() {
+            // Respect explicit hide state set by Python
+            if (document.getElementById('sidebar-state-hidden')) return;
+
+            const sidebar = document.querySelector(SIDEBAR_SELECTOR);
             if (!sidebar) return;
 
-            if (sidebar.classList.contains('stSidebar--collapsed')) {
-                sidebar.classList.remove('stSidebar--collapsed');
-                sidebar.classList.add('stSidebar--expanded');
+            // Remove collapsed class if Streamlit adds it
+            if (sidebar.classList.contains(COLLAPSED_CLASS)) {
+                sidebar.classList.remove(COLLAPSED_CLASS);
+                sidebar.classList.add(EXPANDED_CLASS);
                 sidebar.setAttribute('aria-expanded', 'true');
             }
 
-            const selectorsToHide = [
+            // Force open with !important to override any stylesheet
+            sidebar.style.setProperty('display', 'flex', 'important');
+            sidebar.style.setProperty('transform', 'none', 'important');
+            sidebar.style.setProperty('translate', 'none', 'important');
+            sidebar.style.setProperty('width', '21rem', 'important');
+            sidebar.style.setProperty('min-width', '21rem', 'important');
+            sidebar.style.setProperty('max-width', '21rem', 'important');
+            sidebar.style.setProperty('visibility', 'visible', 'important');
+            sidebar.style.setProperty('opacity', '1', 'important');
+            sidebar.style.setProperty('margin-left', '0', 'important');
+            sidebar.style.setProperty('left', '0', 'important');
+            sidebar.style.setProperty('position', 'relative', 'important');
+            sidebar.style.setProperty('overflow', 'visible', 'important');
+            sidebar.style.setProperty('flex-shrink', '0', 'important');
+            sidebar.style.setProperty('transition', 'none', 'important');
+            sidebar.style.setProperty('animation', 'none', 'important');
+
+            // Remove overlay elements so outside clicks cannot close sidebar
+            document.querySelectorAll(OVERLAY_SELECTOR + ', .st-emotion-cache-1oe5cao').forEach(function(overlay) {
+                if (!overlay || !overlay.parentNode) return;
+                overlay.style.setProperty('display', 'none', 'important');
+                overlay.style.setProperty('pointer-events', 'none', 'important');
+                overlay.style.setProperty('opacity', '0', 'important');
+                overlay.style.setProperty('visibility', 'hidden', 'important');
+                overlay.style.setProperty('width', '0', 'important');
+                overlay.style.setProperty('height', '0', 'important');
+                overlay.style.setProperty('position', 'absolute', 'important');
+                overlay.style.setProperty('z-index', '-9999', 'important');
+                overlay.style.setProperty('transition', 'none', 'important');
+                overlay.style.setProperty('animation', 'none', 'important');
+                // Physically remove from DOM to eliminate any event targets
+                overlay.parentNode.removeChild(overlay);
+            });
+
+            // Hide collapse buttons completely
+            var btnSelectors = [
                 '[data-testid="stSidebarNavToggle"]',
                 '[data-testid="stSidebarCollapseButton"]',
                 '[data-testid="collapsedControl"]',
                 'button[aria-label="Close sidebar"]',
-                '[data-testid="stSidebar"] > button',
-                '[data-testid="stSidebarResizer"]',
+                'button[aria-label="Close"]',
                 '[data-testid="baseButton-header"]',
-                '.st-emotion-cache-1oe5cao',
-                '[data-testid="stSidebarOverlay"]'
+                '[data-testid="stSidebarResizer"]',
+                '[data-testid="stSidebar"] > button'
             ];
-            selectorsToHide.forEach(sel => {
-                document.querySelectorAll(sel).forEach(el => {
-                    el.style.display = 'none';
-                    el.style.pointerEvents = 'none';
+            btnSelectors.forEach(function(sel) {
+                document.querySelectorAll(sel).forEach(function(btn) {
+                    btn.style.setProperty('display', 'none', 'important');
+                    btn.style.setProperty('pointer-events', 'none', 'important');
+                    btn.style.setProperty('visibility', 'hidden', 'important');
+                    btn.style.setProperty('opacity', '0', 'important');
+                    btn.style.setProperty('width', '0', 'important');
+                    btn.style.setProperty('height', '0', 'important');
+                    btn.style.setProperty('margin', '0', 'important');
+                    btn.style.setProperty('padding', '0', 'important');
+                    btn.style.setProperty('border', 'none', 'important');
+                    btn.style.setProperty('position', 'absolute', 'important');
+                    btn.style.setProperty('z-index', '-9999', 'important');
+                    btn.style.setProperty('overflow', 'hidden', 'important');
+                    btn.style.setProperty('transition', 'none', 'important');
+                    btn.style.setProperty('animation', 'none', 'important');
+                    // Disable the button
+                    btn.setAttribute('disabled', 'true');
+                    btn.setAttribute('aria-hidden', 'true');
                 });
-            });
-
-            const overlays = document.querySelectorAll(
-                '.st-emotion-cache-1oe5cao, [data-testid="stSidebarOverlay"], ' +
-                'div[data-testid="stSidebar"] ~ div'
-            );
-            overlays.forEach(overlay => {
-                overlay.style.display = 'none';
-                overlay.style.pointerEvents = 'none';
-                overlay.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    return false;
-                }, true);
             });
         }
 
-        document.addEventListener('click', function(e) {
-            const sidebar = document.querySelector('[data-testid="stSidebar"]');
-            if (!sidebar) return;
-            if (sidebar.contains(e.target)) return;
-            e.stopPropagation();
-            enforceSidebarBehavior();
-        }, true);
+        // Run immediately
+        enforceSidebar();
 
-        const observer = new MutationObserver(function(mutations) {
-            enforceSidebarBehavior();
+        // Keep enforcing continuously to win any React re-renders
+        setInterval(enforceSidebar, 150);
+
+        // Watch DOM for Streamlit re-renders that might restore overlay
+        var observer = new MutationObserver(function(mutations) {
+            enforceSidebar();
         });
         observer.observe(document.body, {
-            attributes: true,
             childList: true,
             subtree: true,
-            attributeFilter: ['class', 'aria-expanded', 'style']
+            attributes: true,
+            attributeFilter: ['class', 'style', 'aria-expanded', 'data-testid']
         });
 
-        document.addEventListener('DOMContentLoaded', enforceSidebarBehavior);
-        window.addEventListener('load', enforceSidebarBehavior);
-        setInterval(enforceSidebarBehavior, 500);
+        // Block Escape key from closing sidebar
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                var sidebar = document.querySelector(SIDEBAR_SELECTOR);
+                if (sidebar && sidebar.classList.contains(EXPANDED_CLASS)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    enforceSidebar();
+                }
+            }
+        }, true);
     })();
     </script>
-    """, height=0, width=0)
+    """
+    st.markdown(js_code, unsafe_allow_html=True)
 
 # =============================================================================
 # SheetCache
@@ -822,7 +952,7 @@ def show_initialization(db: Database):
         st.stop()
 
 def show_login_page(db: Database, jwt_secret: str):
-    st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة بأسيوط</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة</h1>", unsafe_allow_html=True)
     show_initialization(db)
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
@@ -1814,8 +1944,49 @@ def main():
             if st.session_state.show_sidebar:
                 choice = show_sidebar(db)
             else:
-                # عند إخفاء القائمة نضيف سطر إخفاء كامل
-                st.markdown("<style>section[data-testid='stSidebar']{display:none!important}</style>", unsafe_allow_html=True)
+                # عند إخفاء القائمة نضيف إخفاءً كاملاً بدون أي بقايا مرئية
+                st.markdown("""
+                <div id="sidebar-state-hidden" style="display:none;"></div>
+                <style>
+                section[data-testid="stSidebar"] {
+                    display: none !important;
+                    width: 0 !important;
+                    min-width: 0 !important;
+                    max-width: 0 !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    border: none !important;
+                    flex: 0 0 0 !important;
+                    overflow: hidden !important;
+                    position: absolute !important;
+                    left: -9999px !important;
+                    transform: none !important;
+                    translate: none !important;
+                    transition: none !important;
+                    animation: none !important;
+                }
+                [data-testid="stSidebarOverlay"],
+                div[data-testid="stSidebarOverlay"] {
+                    display: none !important;
+                    pointer-events: none !important;
+                    opacity: 0 !important;
+                    visibility: hidden !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                }
+                /* Main content full width when sidebar is hidden */
+                [data-testid="stAppViewContainer"] > [data-testid="stMain"],
+                [data-testid="stMainBlockContainer"] {
+                    max-width: 100% !important;
+                    width: 100% !important;
+                    margin-left: 0 !important;
+                    padding-left: 1rem !important;
+                    padding-right: 1rem !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
                 st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
                 if st.button("☰", key="show_sidebar_btn"):
                     st.session_state.show_sidebar = True
@@ -1862,4 +2033,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
