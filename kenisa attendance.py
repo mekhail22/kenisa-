@@ -12,15 +12,13 @@ import string
 import jwt
 import time
 import requests
-import traceback
 from functools import wraps
-import math
 
 # =============================================================================
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "5.2.1"  # تم تحديث رقم الإصدار
+APP_VERSION = "5.2.1"
 CACHE_TTL_SECONDS = 120
 
 st.set_page_config(
@@ -80,7 +78,7 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS (مظبوط)
+# CSS محسّن مع ضمان عدم إغلاق الشريط الجانبي تلقائياً
 # =============================================================================
 def inject_css():
     st.markdown("""
@@ -92,10 +90,19 @@ def inject_css():
         header[data-testid="stHeader"] { display: none !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
-        [data-testid="stSidebarNavToggle"], [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"],
-        button[aria-label="Close sidebar"], [data-testid="stSidebar"] > button,
-        [data-testid="stSidebar"] > div:first-child > button, [data-testid="stSidebarResizer"],
-        section[data-testid="stSidebar"] .st-emotion-cache-1oe5cao { display: none !important; }
+        
+        /* إخفاء جميع أزرار الإغلاق والتبديل التلقائي للشريط الجانبي */
+        [data-testid="stSidebarNavToggle"],
+        [data-testid="stSidebarCollapseButton"],
+        [data-testid="collapsedControl"],
+        button[aria-label="Close sidebar"],
+        [data-testid="stSidebar"] > button,
+        [data-testid="stSidebar"] > div:first-child > button,
+        [data-testid="stSidebarResizer"],
+        section[data-testid="stSidebar"] .st-emotion-cache-1oe5cao {
+            display: none !important;
+        }
+
         .main-header {
             font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
             margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
@@ -213,7 +220,7 @@ class SheetCache:
                 st.warning(f"تعذر حفظ السجلات المؤقتة: {str(e)}")
 
 # =============================================================================
-# Helper: Retry decorator with exponential backoff
+# Helper: Retry decorator
 # =============================================================================
 def retry_operation(max_retries=5, base_delay=2):
     def decorator(func):
@@ -243,7 +250,7 @@ def retry_operation(max_retries=5, base_delay=2):
     return decorator
 
 # =============================================================================
-# Database Class (مع كاش وتحسينات)
+# Database Class
 # =============================================================================
 class Database:
     def __init__(self, creds, spreadsheet_id):
@@ -393,7 +400,7 @@ class Database:
         df = df[df.student_id != student_id]
         self._df_to_sheet("Students", df, df.columns.tolist())
 
-    # --- Attendance (batch write) ---
+    # --- Attendance ---
     def get_attendance(self):
         return self._sheet_to_df("Attendance")
 
@@ -529,7 +536,7 @@ class Database:
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
                                               "score", "total_marks", "submission_time", "answers"])
 
-    # --- Logs (buffered) ---
+    # --- Logs ---
     def get_logs(self):
         return self._sheet_to_df("Logs")
 
@@ -633,9 +640,7 @@ def show_help_dialog():
             issue_type = st.selectbox("نوع المشكلة *", ["مشكلة تقنية", "مشكلة في البيانات", "طلب مساعدة", "اقتراح تحسين", "أخرى"])
             urgency = st.selectbox("الأولوية", ["عادي", "مستعجل", "طارئ جداً"], index=0)
         issue_desc = st.text_area("وصف المشكلة أو الطلب *", placeholder="اشرح المشكلة بالتفصيل...", height=150)
-        st.markdown("**يمكنك أيضاً إرفاق لقطة شاشة (سيُطلب منك لاحقاً)**")
-        submitted = st.form_submit_button("🚀 إرسال الطلب", use_container_width=True)
-        if submitted:
+        if st.form_submit_button("🚀 إرسال الطلب", use_container_width=True):
             if not name or not whatsapp or not issue_desc:
                 st.error("⚠️ الرجاء ملء جميع الحقول المطلوبة")
             else:
@@ -758,7 +763,7 @@ def show_student_quiz(db: Database):
         if active_students.empty:
             st.warning("لا توجد طالبات مسجلات حالياً. يرجى التواصل مع المسؤول.")
             st.stop()
-        # ترتيب أبجدي من الألف للياء
+        # ترتيب أبجدي
         active_students = active_students.sort_values("full_name", key=lambda col: col.str.strip().str.lower())
         options_dict = dict(zip(active_students["student_id"], active_students["full_name"]))
         selected_id = st.selectbox(
@@ -886,7 +891,7 @@ def auto_submit_quiz(db, quiz):
     st.session_state.last_score = score
 
 # =============================================================================
-# Sidebar (صلاحيات)
+# Sidebar (تتحكم فيها الأزرار فقط)
 # =============================================================================
 def show_sidebar(db: Database):
     with st.sidebar:
@@ -1008,7 +1013,7 @@ def show_dashboard(db: Database):
         st.info("كل البنات منتظمات.")
 
 # =============================================================================
-# إدارة المستخدمين (Admin)
+# إدارة المستخدمين
 # =============================================================================
 def show_user_management(db: Database):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
