@@ -89,67 +89,26 @@ def inject_css():
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
 
-        /* ========= Force Sidebar Permanently Open ========= */
+        /* ========= Sidebar Base Styles ========= */
         section[data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
-            border-left: 1px solid rgba(0,0,0,0.08);
-            padding-top: 1rem;
-            display: flex !important;
-            transform: none !important;
-            translate: none !important;
+            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
+            border-left: 1px solid rgba(0,0,0,0.08) !important;
+            padding-top: 1rem !important;
             width: 21rem !important;
             min-width: 21rem !important;
             max-width: 21rem !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-            margin-left: 0 !important;
-            left: 0 !important;
-            position: relative !important;
-            overflow: visible !important;
-            flex-shrink: 0 !important;
             z-index: 100 !important;
-            transition: none !important;
+            transition: all 0.3s ease !important;
         }
 
-        section[data-testid="stSidebar"].stSidebar--collapsed,
-        section[data-testid="stSidebar"].stSidebar--collapsed * {
-            display: flex !important;
-            transform: none !important;
-            translate: none !important;
-            width: 21rem !important;
-            min-width: 21rem !important;
-            max-width: 21rem !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-            margin-left: 0 !important;
-            left: 0 !important;
-            position: relative !important;
-            overflow: visible !important;
-            flex-shrink: 0 !important;
-            transition: none !important;
-        }
-
-        [data-testid="stSidebarOverlay"],
-        div[data-testid="stSidebarOverlay"] {
-            display: none !important;
-            pointer-events: none !important;
-            opacity: 0 !important;
-            visibility: hidden !important;
-            width: 0 !important;
-            height: 0 !important;
-            position: absolute !important;
-            z-index: -9999 !important;
-            transition: none !important;
-        }
-
+        /* Hide native Streamlit sidebar controls */
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
         [data-testid="collapsedControl"],
-        button[aria-label="Close sidebar"],
-        button[aria-label="Close"],
+        button[aria-label*="Close sidebar"],
+        button[aria-label*="Close"],
         [data-testid="baseButton-header"],
-        [data-testid="stSidebarResizer"],
-        [data-testid="stSidebar"] > button {
+        [data-testid="stSidebarResizer"] {
             display: none !important;
             pointer-events: none !important;
             visibility: hidden !important;
@@ -162,25 +121,43 @@ def inject_css():
             position: absolute !important;
             z-index: -9999 !important;
             overflow: hidden !important;
-            transition: none !important;
         }
 
+        /* ========= Mobile Full-Screen Sidebar ========= */
         @media (max-width: 768px) {
             section[data-testid="stSidebar"] {
-                width: 100% !important;
-                min-width: 100% !important;
-                max-width: 100% !important;
+                width: 100vw !important;
+                min-width: 100vw !important;
+                max-width: 100vw !important;
+                height: 100vh !important;
+                min-height: 100vh !important;
+                max-height: 100vh !important;
                 position: fixed !important;
                 left: 0 !important;
                 top: 0 !important;
                 bottom: 0 !important;
-                z-index: 1000 !important;
+                z-index: 100000 !important;
+                margin: 0 !important;
+                padding: 1rem !important;
+                border-radius: 0 !important;
+                border: none !important;
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
             }
             section[data-testid="stSidebar"].stSidebar--collapsed,
-            section[data-testid="stSidebar"].stSidebar--collapsed * {
-                width: 100% !important;
-                min-width: 100% !important;
-                max-width: 100% !important;
+            section[data-testid="stSidebar"][aria-expanded="false"] {
+                width: 0 !important;
+                min-width: 0 !important;
+                max-width: 0 !important;
+                height: 0 !important;
+                min-height: 0 !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                border: none !important;
+                overflow: hidden !important;
+                display: none !important;
             }
         }
 
@@ -1167,7 +1144,9 @@ def show_sidebar(db: Database):
             if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
-                    st.rerun()
+                # Close sidebar automatically on navigation for mobile-first experience
+                st.session_state.show_sidebar = False
+                st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.divider()
@@ -2059,6 +2038,7 @@ def main():
                     max-width: 100% !important;
                     width: 100% !important;
                     margin-left: 0 !important;
+                    margin-right: 0 !important;
                     padding-left: 1rem !important;
                     padding-right: 1rem !important;
                 }
@@ -2070,6 +2050,30 @@ def main():
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
                 choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+                # Validate choice against current role's allowed menus
+                role = st.session_state.user["role"]
+                menus = {
+                    "System Admin": [
+                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "📋 الحضور", "💬 الافتقاد",
+                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
+                        "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
+                    ],
+                    "Father Account": [
+                        "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                    ],
+                    "Service Manager": [
+                        "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
+                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                    ],
+                    "Teacher": [
+                        "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
+                        "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
+                    ]
+                }
+                menu_items = menus.get(role, [])
+                if choice not in menu_items:
+                    choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
+                    st.session_state.menu_choice = choice
 
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if choice == "🏠 لوحة التحكم":
