@@ -595,9 +595,7 @@ class Database:
                 df.at[idx[0], k] = self._safe_str(v)
             self._df_to_sheet("Quizzes", df, df.columns.tolist())
 
-    # حذف الاختبار مع الاحتفاظ بالنتائج
     def delete_quiz_keep_results(self, quiz_id):
-        # حذف الاختبار نفسه والأسئلة فقط، النتائج تبقى
         df = self.get_quizzes()
         df = df[df.quiz_id != quiz_id]
         self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id",
@@ -607,11 +605,8 @@ class Database:
         qdf = qdf[qdf.quiz_id != quiz_id]
         self._df_to_sheet("QuizQuestions", qdf, ["question_id", "quiz_id", "question_text", "question_type",
                                                  "option1", "option2", "option3", "option4", "correct_answer"])
-        # لا نحذف QuizResults
 
-    # الحذف الكامل (اختياري غير مستخدم حالياً)
     def delete_quiz(self, quiz_id):
-        # يحذف كل شيء بما في ذلك النتائج
         self.delete_quiz_keep_results(quiz_id)
         rdf = self._sheet_to_df("QuizResults")
         rdf = rdf[rdf.quiz_id != quiz_id]
@@ -639,7 +634,7 @@ class Database:
         self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type",
                                                 "option1", "option2", "option3", "option4", "correct_answer"])
 
-    # --- Quiz Results (مع حقل status) ---
+    # --- Quiz Results (مع حفظ تلقائي) ---
     def get_quiz_results(self, quiz_id=None):
         df = self._sheet_to_df("QuizResults")
         if df.empty:
@@ -669,6 +664,17 @@ class Database:
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
                                               "score", "total_marks", "submission_time", "answers", "status"])
         return result_id
+
+    def save_answers(self, result_id, answers_dict):
+        """تحديث حقل الإجابات فقط"""
+        df = self._sheet_to_df("QuizResults")
+        if df.empty:
+            return
+        idx = df[df.result_id == result_id].index
+        if len(idx) > 0:
+            df.at[idx[0], "answers"] = json.dumps(answers_dict, ensure_ascii=False)
+            self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
+                                                  "score", "total_marks", "submission_time", "answers", "status"])
 
     def submit_quiz_attempt(self, result_id, score, answers_json):
         df = self._sheet_to_df("QuizResults")
@@ -749,7 +755,8 @@ def init_session():
         "menu_choice": "🏠 لوحة التحكم",
         "show_sidebar": True,
         "open_help_dialog": False,
-        "current_attempt_id": None
+        "current_attempt_id": None,
+        "last_saved_answers_str": ""   # لتتبع آخر إجابات تم حفظها
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -911,13 +918,39 @@ def show_login_page(db: Database, jwt_secret: str):
                                     st.session_state.quiz_submitted = False
                                     st.session_state.last_score = 0
                                     st.session_state.current_attempt_id = None
+                                    st.session_state.last_saved_answers_str = ""
                                     st.rerun()
                             except Exception as e:
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (مع منع إعادة الدخول)
+# Student Quiz Interface (مع التسليم التلقائي عند الخروج)
 # =============================================================================
+def grade_attempt(db, quiz_id, answers_dict):
+    """تصحيح الإجابات وإرجاع النتيجة"""
+    questions = db.get_quiz_questions(quiz_id)
+    if questions.empty:
+        return 0
+    correct_count = 0
+    for _, q_row in questions.iterrows():
+        q = q_row.to_dict()
+        correct = str(q["correct_answer"]).strip().lower()
+        student_ans = str(answers_dict.get(q["question_id"], "")).strip().lower()
+        if correct == student_ans:
+            correct_count += 1
+    num_q = len(questions)
+    score = round((correct_count / num_q) * 20, 1) if num_q > 0 else 0
+    return score
+
+def save_current_answers(db):
+    """حفظ الإجابات الحالية في قاعدة البيانات إذا تغيرت"""
+    if not st.session_state.current_attempt_id:
+        return
+    current_answers = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
+    if current_answers != st.session_state.last_saved_answers_str:
+        db.save_answers(st.session_state.current_attempt_id, st.session_state.quiz_answers)
+        st.session_state.last_saved_answers_str = current_answers
+
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
     if st.session_state.quiz_phase == "enter_name":
@@ -942,8 +975,26 @@ def show_student_quiz(db: Database):
             if not existing.empty and "student_id" in existing.columns:
                 student_attempts = existing[existing["student_id"] == selected_id]
                 if not student_attempts.empty:
-                    st.error("لقد قمت بتسليم هذا الاختبار بالفعل (أو أن المحاولة أغلقت). لا يمكنك الدخول مرة أخرى.")
-                    st.stop()
+                    # توجد محاولة سابقة (started أو submitted)
+                    attempt = student_attempts.iloc[0]
+                    if attempt["status"] == "started":
+                        # تسليم تلقائي بناءً على الإجابات المحفوظة
+                        answers_str = attempt["answers"]
+                        try:
+                            saved_answers = json.loads(answers_str) if answers_str else {}
+                        except:
+                            saved_answers = {}
+                        score = grade_attempt(db, quiz["quiz_id"], saved_answers)
+                        db.submit_quiz_attempt(attempt["result_id"], score, json.dumps(saved_answers, ensure_ascii=False))
+                        st.warning("تم تسليم محاولتك السابقة تلقائياً بناءً على ما قمت بحفظه.")
+                        st.session_state.last_score = score
+                        st.session_state.quiz_phase = "finished"
+                        st.session_state.quiz_submitted = True
+                        st.rerun()
+                    else:
+                        # محاولة مكتملة بالفعل
+                        st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك الدخول مرة أخرى.")
+                        st.stop()
         if st.button("بدء الاختبار", use_container_width=True, type="primary", disabled=(selected_id is None), key="start_quiz_btn"):
             selected_student = active_students[active_students["student_id"] == selected_id].iloc[0].to_dict()
             st.session_state.student_name = selected_student["full_name"]
@@ -953,6 +1004,8 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_end_time = st.session_state.quiz_start_time + timedelta(seconds=time_limit_seconds)
             attempt_id = db.start_quiz_attempt(quiz["quiz_id"], selected_id, st.session_state.student_name)
             st.session_state.current_attempt_id = attempt_id
+            st.session_state.quiz_answers = {}
+            st.session_state.last_saved_answers_str = ""
             st.session_state.quiz_phase = "taking_quiz"
             st.rerun()
         return
@@ -968,12 +1021,13 @@ def show_student_quiz(db: Database):
             st.info(f"نتيجتك: {score_display}/20")
         if st.button("إنهاء والعودة إلى الرئيسية", use_container_width=True, key="finish_quiz_btn"):
             for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
-                        "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers", "quiz_submitted", "last_score", "current_attempt_id"]:
+                        "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers", "quiz_submitted", "last_score", "current_attempt_id", "last_saved_answers_str"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
         return
 
+    # صفحة الأسئلة
     st.title(f"📝 {quiz['title']}")
     st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
     st.markdown("---")
@@ -981,6 +1035,7 @@ def show_student_quiz(db: Database):
     if questions.empty:
         st.warning("لا توجد أسئلة في هذا الاختبار بعد.")
         return
+    # عرض الأسئلة وتحديث الإجابات مع الحفظ التلقائي
     for idx, row in questions.iterrows():
         q = row.to_dict()
         q_id = q["question_id"]
@@ -993,50 +1048,23 @@ def show_student_quiz(db: Database):
             if options:
                 current_index = options.index(prev_answer) if prev_answer in options else None
                 ans = st.radio("اختر الإجابة", options, key=f"q_{q_id}", index=current_index)
-                st.session_state.quiz_answers[q_id] = ans if ans else ""
+                new_answer = ans if ans else ""
         else:
-            ans = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
-            st.session_state.quiz_answers[q_id] = ans
+            new_answer = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
+        # تحديث الإجابة في الجلسة
+        if new_answer != prev_answer:
+            st.session_state.quiz_answers[q_id] = new_answer
+            save_current_answers(db)   # حفظ فوري
         st.markdown("---")
     if st.button("تسليم الاختبار", type="primary", use_container_width=True, key="submit_quiz_btn"):
-        auto_submit_quiz(db, quiz)
+        # تصحيح وحفظ
+        score = grade_attempt(db, quiz["quiz_id"], st.session_state.quiz_answers)
+        answers_json = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
+        db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
+        st.session_state.quiz_submitted = True
+        st.session_state.last_score = score
         st.session_state.quiz_phase = "finished"
         st.rerun()
-
-def auto_submit_quiz(db, quiz):
-    questions = db.get_quiz_questions(quiz["quiz_id"])
-    if questions.empty:
-        return
-    correct_count = 0
-    answers_dict = dict(st.session_state.quiz_answers)
-    for _, q_row in questions.iterrows():
-        q = q_row.to_dict()
-        if str(q["correct_answer"]).strip().lower() == str(answers_dict.get(q["question_id"], "")).strip().lower():
-            correct_count += 1
-    num_q = len(questions)
-    score = round((correct_count / num_q) * 20, 1) if num_q > 0 else 0
-    answers_json = json.dumps(answers_dict, ensure_ascii=False)
-    if st.session_state.current_attempt_id:
-        db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
-    else:
-        result_id = str(uuid.uuid4())
-        result = {
-            "result_id": result_id, "quiz_id": quiz["quiz_id"],
-            "student_id": st.session_state.student_id, "student_name": st.session_state.student_name,
-            "score": score, "total_marks": 20,
-            "submission_time": datetime.now().isoformat(),
-            "answers": answers_json,
-            "status": "submitted"
-        }
-        df = db._sheet_to_df("QuizResults")
-        if df.empty:
-            df = pd.DataFrame(columns=["result_id", "quiz_id", "student_id", "student_name",
-                                       "score", "total_marks", "submission_time", "answers", "status"])
-        df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
-        db._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                            "score", "total_marks", "submission_time", "answers", "status"])
-    st.session_state.quiz_submitted = True
-    st.session_state.last_score = score
 
 # =============================================================================
 # Sidebar Navigation (محتوى الشريط الجانبي)
@@ -1744,7 +1772,6 @@ def show_quizzes(db: Database):
     quizzes = db.get_quizzes()
 
     if role in ["System Admin", "Service Manager"]:
-        # إنشاء اختبار جديد
         st.subheader("➕ إنشاء اختبار جديد")
         with st.form("quiz_form"):
             title = st.text_input("عنوان الاختبار*")
@@ -1770,7 +1797,6 @@ def show_quizzes(db: Database):
                     st.rerun()
 
         st.markdown("---")
-        # إدارة الأسئلة
         st.subheader("📝 إدارة الأسئلة")
         if not quizzes.empty:
             active_quizzes = quizzes[quizzes.is_active == "True"]
@@ -1820,12 +1846,10 @@ def show_quizzes(db: Database):
                             st.rerun()
 
         st.markdown("---")
-        # جدول إدارة جميع الاختبارات
         st.subheader("📋 إدارة الاختبارات")
         if quizzes.empty:
             st.info("لا توجد اختبارات بعد.")
         else:
-            # عرض جدول بجميع الاختبارات مع أزرار التحكم
             for _, q in quizzes.iterrows():
                 qid = q["quiz_id"]
                 title = q["title"]
@@ -1853,25 +1877,20 @@ def show_quizzes(db: Database):
                         time.sleep(1)
                         st.rerun()
 
-                # زر حذف مع الاحتفاظ بالنتائج
                 if col_actions[1].button("حذف (النتائج تبقى)", key=f"del_keep_{qid}"):
                     db.delete_quiz_keep_results(qid)
                     st.success(f"تم حذف الاختبار '{title}' مع الاحتفاظ بالنتائج.")
                     time.sleep(1)
                     st.rerun()
 
-                # يمكن إضافة زر تعديل أو حذف كامل لاحقاً
                 st.markdown("---")
 
-    # قسم النتائج (مشترك للجميع)
     st.markdown("### 📊 نتائج الاختبارات")
     results = db.get_quiz_results()
     students = db.get_students()
     if not results.empty:
-        # نعرض فقط المحاولات المكتملة
         if "status" in results.columns:
             results = results[results["status"] == "submitted"]
-        # للمدرس: يرى فقط نتائج طالبات فصله
         if role == "Teacher" and section_id and not students.empty:
             section_student_ids = students[students.section_id == section_id]["student_id"].tolist()
             results = results[results.student_id.isin(section_student_ids)]
@@ -1978,7 +1997,6 @@ def main():
 
     jwt_secret = get_jwt_secret()
 
-    # زر المساعدة العائم
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
@@ -1998,7 +2016,6 @@ def main():
                 st.rerun()
                 return
 
-            # التحكم في ظهور الشريط الجانبي من اليمين
             if not st.session_state.show_sidebar:
                 st.markdown("""
                 <style>
