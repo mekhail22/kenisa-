@@ -595,7 +595,9 @@ class Database:
                 df.at[idx[0], k] = self._safe_str(v)
             self._df_to_sheet("Quizzes", df, df.columns.tolist())
 
-    def delete_quiz(self, quiz_id):
+    # حذف الاختبار مع الاحتفاظ بالنتائج
+    def delete_quiz_keep_results(self, quiz_id):
+        # حذف الاختبار نفسه والأسئلة فقط، النتائج تبقى
         df = self.get_quizzes()
         df = df[df.quiz_id != quiz_id]
         self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id",
@@ -605,6 +607,12 @@ class Database:
         qdf = qdf[qdf.quiz_id != quiz_id]
         self._df_to_sheet("QuizQuestions", qdf, ["question_id", "quiz_id", "question_text", "question_type",
                                                  "option1", "option2", "option3", "option4", "correct_answer"])
+        # لا نحذف QuizResults
+
+    # الحذف الكامل (اختياري غير مستخدم حالياً)
+    def delete_quiz(self, quiz_id):
+        # يحذف كل شيء بما في ذلك النتائج
+        self.delete_quiz_keep_results(quiz_id)
         rdf = self._sheet_to_df("QuizResults")
         rdf = rdf[rdf.quiz_id != quiz_id]
         self._df_to_sheet("QuizResults", rdf, ["result_id", "quiz_id", "student_id", "student_name",
@@ -631,7 +639,7 @@ class Database:
         self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type",
                                                 "option1", "option2", "option3", "option4", "correct_answer"])
 
-    # --- Quiz Results (بإضافة حقل status) ---
+    # --- Quiz Results (مع حقل status) ---
     def get_quiz_results(self, quiz_id=None):
         df = self._sheet_to_df("QuizResults")
         if df.empty:
@@ -641,7 +649,6 @@ class Database:
         return df
 
     def start_quiz_attempt(self, quiz_id, student_id, student_name):
-        """إنشاء محاولة جديدة بحالة started"""
         result_id = str(uuid.uuid4())
         new_row = {
             "result_id": result_id,
@@ -664,7 +671,6 @@ class Database:
         return result_id
 
     def submit_quiz_attempt(self, result_id, score, answers_json):
-        """تحديث المحاولة إلى submitted مع النتيجة"""
         df = self._sheet_to_df("QuizResults")
         if df.empty:
             return
@@ -743,7 +749,7 @@ def init_session():
         "menu_choice": "🏠 لوحة التحكم",
         "show_sidebar": True,
         "open_help_dialog": False,
-        "current_attempt_id": None  # لتخزين result_id الخاص بالمحاولة الحالية
+        "current_attempt_id": None
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -910,7 +916,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (مع آلية منع إعادة الدخول بعد الخروج)
+# Student Quiz Interface (مع منع إعادة الدخول)
 # =============================================================================
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
@@ -932,7 +938,6 @@ def show_student_quiz(db: Database):
         st.markdown("---")
         st.info("إذا لم تجد اسمك في القائمة، يرجى التواصل مع مشرف الخدمة لإضافتك.")
         if selected_id is not None:
-            # التحقق من وجود أي محاولة سابقة (started أو submitted) لهذا الطالب في هذا الاختبار
             existing = db.get_quiz_results(quiz["quiz_id"])
             if not existing.empty and "student_id" in existing.columns:
                 student_attempts = existing[existing["student_id"] == selected_id]
@@ -946,7 +951,6 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_start_time = datetime.now()
             time_limit_seconds = int(quiz["time_limit_minutes"]) * 60
             st.session_state.quiz_end_time = st.session_state.quiz_start_time + timedelta(seconds=time_limit_seconds)
-            # إنشاء محاولة جديدة بقاعدة البيانات (حالة started)
             attempt_id = db.start_quiz_attempt(quiz["quiz_id"], selected_id, st.session_state.student_name)
             st.session_state.current_attempt_id = attempt_id
             st.session_state.quiz_phase = "taking_quiz"
@@ -970,7 +974,6 @@ def show_student_quiz(db: Database):
             st.rerun()
         return
 
-    # شاشة الأسئلة (بدون عداد الوقت)
     st.title(f"📝 {quiz['title']}")
     st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
     st.markdown("---")
@@ -1013,11 +1016,9 @@ def auto_submit_quiz(db, quiz):
     num_q = len(questions)
     score = round((correct_count / num_q) * 20, 1) if num_q > 0 else 0
     answers_json = json.dumps(answers_dict, ensure_ascii=False)
-    # تحديث المحاولة الموجودة (التي بدأت مسبقاً)
     if st.session_state.current_attempt_id:
         db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
     else:
-        # في حال لم توجد محاولة لأي سبب، ننشئ واحدة جديدة (وضع نادر)
         result_id = str(uuid.uuid4())
         result = {
             "result_id": result_id, "quiz_id": quiz["quiz_id"],
@@ -1027,7 +1028,6 @@ def auto_submit_quiz(db, quiz):
             "answers": answers_json,
             "status": "submitted"
         }
-        # إضافة يدوية (غير مستحسنة، لكن تحسباً)
         df = db._sheet_to_df("QuizResults")
         if df.empty:
             df = pd.DataFrame(columns=["result_id", "quiz_id", "student_id", "student_name",
@@ -1639,7 +1639,6 @@ def show_class_competition_scores(db: Database):
 
     if not results.empty and "student_id" in results.columns:
         class_results = results[results["student_id"].isin(section_student_ids)]
-        # نعرض فقط المحاولات المكتملة (submitted)
         if "status" in class_results.columns:
             class_results = class_results[class_results["status"] == "submitted"]
     else:
@@ -1735,7 +1734,7 @@ def show_class_competition_scores(db: Database):
         st.info("لا توجد نتائج مطابقة للبحث.")
 
 # =============================================================================
-# Quizzes
+# Quizzes (مع إدارة الاختبارات المتقدمة)
 # =============================================================================
 def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
@@ -1743,7 +1742,9 @@ def show_quizzes(db: Database):
     role = user["role"]
     section_id = user.get("section_id", "")
     quizzes = db.get_quizzes()
+
     if role in ["System Admin", "Service Manager"]:
+        # إنشاء اختبار جديد
         st.subheader("➕ إنشاء اختبار جديد")
         with st.form("quiz_form"):
             title = st.text_input("عنوان الاختبار*")
@@ -1767,12 +1768,14 @@ def show_quizzes(db: Database):
                     st.success(f"✅ تم إنشاء الاختبار! الكود: {code}")
                     time.sleep(2)
                     st.rerun()
+
         st.markdown("---")
+        # إدارة الأسئلة
         st.subheader("📝 إدارة الأسئلة")
         if not quizzes.empty:
             active_quizzes = quizzes[quizzes.is_active == "True"]
             if not active_quizzes.empty:
-                quiz_choice = st.selectbox("اختر اختباراً", active_quizzes["quiz_id"],
+                quiz_choice = st.selectbox("اختر اختباراً لإدارة أسئلته", active_quizzes["quiz_id"],
                                            format_func=lambda x: active_quizzes[active_quizzes.quiz_id==x]["title"].values[0])
                 if quiz_choice:
                     questions = db.get_quiz_questions(quiz_choice)
@@ -1816,17 +1819,62 @@ def show_quizzes(db: Database):
                             time.sleep(1)
                             st.rerun()
 
-    st.markdown("---")
-    st.subheader("📊 نتائج الاختبارات")
+        st.markdown("---")
+        # جدول إدارة جميع الاختبارات
+        st.subheader("📋 إدارة الاختبارات")
+        if quizzes.empty:
+            st.info("لا توجد اختبارات بعد.")
+        else:
+            # عرض جدول بجميع الاختبارات مع أزرار التحكم
+            for _, q in quizzes.iterrows():
+                qid = q["quiz_id"]
+                title = q["title"]
+                active = q.get("is_active", "True") == "True"
+                code = q.get("quiz_code", "")
+                expiry = q.get("expiry_date", "")
+
+                col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                col1.write(f"**{title}**")
+                col2.write(f"الكود: {code}")
+                col3.write("حالة: " + ("🟢 نشط" if active else "🔴 مغلق"))
+                col4.write(f"ينتهي: {expiry}")
+
+                col_actions = st.columns(4)
+                if active:
+                    if col_actions[0].button("إغلاق", key=f"deact_{qid}"):
+                        db.update_quiz(qid, {"is_active": "False"})
+                        st.success(f"تم إغلاق الاختبار: {title}")
+                        time.sleep(1)
+                        st.rerun()
+                else:
+                    if col_actions[0].button("تفعيل", key=f"act_{qid}"):
+                        db.update_quiz(qid, {"is_active": "True"})
+                        st.success(f"تم تفعيل الاختبار: {title}")
+                        time.sleep(1)
+                        st.rerun()
+
+                # زر حذف مع الاحتفاظ بالنتائج
+                if col_actions[1].button("حذف (النتائج تبقى)", key=f"del_keep_{qid}"):
+                    db.delete_quiz_keep_results(qid)
+                    st.success(f"تم حذف الاختبار '{title}' مع الاحتفاظ بالنتائج.")
+                    time.sleep(1)
+                    st.rerun()
+
+                # يمكن إضافة زر تعديل أو حذف كامل لاحقاً
+                st.markdown("---")
+
+    # قسم النتائج (مشترك للجميع)
+    st.markdown("### 📊 نتائج الاختبارات")
     results = db.get_quiz_results()
     students = db.get_students()
     if not results.empty:
+        # نعرض فقط المحاولات المكتملة
+        if "status" in results.columns:
+            results = results[results["status"] == "submitted"]
+        # للمدرس: يرى فقط نتائج طالبات فصله
         if role == "Teacher" and section_id and not students.empty:
             section_student_ids = students[students.section_id == section_id]["student_id"].tolist()
             results = results[results.student_id.isin(section_student_ids)]
-        # عرض المحاولات المكتملة فقط
-        if "status" in results.columns:
-            results = results[results["status"] == "submitted"]
         st.dataframe(results[["student_name", "score", "total_marks", "submission_time"]], use_container_width=True)
         if st.button("🏆 ترتيب الطالبات"):
             top = results.groupby("student_name")["score"].sum().reset_index().sort_values("score", ascending=False)
