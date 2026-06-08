@@ -789,7 +789,7 @@ def init_session():
         "quiz_submitted": False,
         "last_score": 0,
         "menu_choice": "🏠 لوحة التحكم",
-        "show_sidebar": True,
+        "show_sidebar": True,  # القائمة تظهر تلقائياً بعد تسجيل الدخول
         "open_help_dialog": False
     }
     for k, v in defaults.items():
@@ -910,7 +910,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
-                                st.session_state.show_sidebar = True
+                                st.session_state.show_sidebar = True  # القائمة تظهر تلقائياً
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
@@ -1145,9 +1145,10 @@ def show_sidebar(db: Database):
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
             if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
+                # عند الضغط على أي زر، يتم إخفاء القائمة وإظهار الصفحة المطلوبة
                 if item != current_choice:
                     st.session_state.menu_choice = item
-                st.session_state.show_sidebar = False
+                st.session_state.show_sidebar = False  # إخفاء القائمة
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
