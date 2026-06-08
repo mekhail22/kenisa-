@@ -23,7 +23,7 @@ st.set_page_config(
     page_title="نظام- كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
-    initial_sidebar_state="expanded"  # يبدأ موسعاً ثم نتحكم به عبر CSS
+    initial_sidebar_state="expanded"
 )
 
 # =============================================================================
@@ -89,7 +89,6 @@ def inject_css():
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
 
-        /* إخفاء زر التوسيع/التصغير الأصلي */
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
         [data-testid="collapsedControl"],
@@ -111,7 +110,6 @@ def inject_css():
             overflow: hidden !important;
         }
 
-        /* الشريط الجانبي - طبقة ثابتة على اليمين مع حركة انزلاق */
         section[data-testid="stSidebar"] {
             position: fixed !important;
             top: 0 !important;
@@ -127,22 +125,19 @@ def inject_css():
             padding-top: 1rem !important;
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
             border-left: 1px solid rgba(0,0,0,0.08) !important;
-            transform: translateX(0); /* ستتغير عبر الكود الديناميكي */
+            transform: translateX(0);
         }
 
-        /* على الهاتف عرض كامل */
         @media (max-width: 768px) {
             section[data-testid="stSidebar"] {
                 width: 100vw !important;
             }
         }
 
-        /* إخفاء طبقة الخلفية الخاصة بالشريط */
         [data-testid="stSidebarOverlay"] {
             display: none !important;
         }
 
-        /* المحتوى الرئيسي يملأ الشاشة بالكامل */
         [data-testid="stAppViewContainer"] > [data-testid="stMain"],
         [data-testid="stMainBlockContainer"] {
             max-width: 100% !important;
@@ -151,7 +146,6 @@ def inject_css():
             margin-right: 0 !important;
         }
 
-        /* أزرار التنقل في الشريط */
         .nav-btn-container .stButton > button {
             width: 100% !important;
             text-align: right !important;
@@ -185,7 +179,6 @@ def inject_css():
             transform: translateX(-2px) !important;
         }
 
-        /* زر الهامبرغر العائم */
         .floating-show-btn .stButton > button {
             position: fixed !important;
             top: 20px !important;
@@ -213,7 +206,6 @@ def inject_css():
             box-shadow: 0 6px 20px rgba(102,126,234,0.6) !important;
         }
 
-        /* زر المساعدة العائم */
         .help-float-container .stButton > button {
             position: fixed !important;
             top: 20px !important;
@@ -236,7 +228,6 @@ def inject_css():
             box-shadow: 0 6px 20px rgba(243,156,18,0.5) !important;
         }
 
-        /* تنسيقات عامة */
         .main-header {
             font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
             margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
@@ -617,7 +608,7 @@ class Database:
         rdf = self._sheet_to_df("QuizResults")
         rdf = rdf[rdf.quiz_id != quiz_id]
         self._df_to_sheet("QuizResults", rdf, ["result_id", "quiz_id", "student_id", "student_name",
-                                               "score", "total_marks", "submission_time", "answers"])
+                                               "score", "total_marks", "submission_time", "answers", "status"])
 
     def get_quiz_questions(self, quiz_id):
         df = self._sheet_to_df("QuizQuestions")
@@ -640,6 +631,7 @@ class Database:
         self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type",
                                                 "option1", "option2", "option3", "option4", "correct_answer"])
 
+    # --- Quiz Results (بإضافة حقل status) ---
     def get_quiz_results(self, quiz_id=None):
         df = self._sheet_to_df("QuizResults")
         if df.empty:
@@ -648,20 +640,48 @@ class Database:
             return df[df.quiz_id == quiz_id]
         return df
 
-    def save_quiz_result(self, result):
+    def start_quiz_attempt(self, quiz_id, student_id, student_name):
+        """إنشاء محاولة جديدة بحالة started"""
+        result_id = str(uuid.uuid4())
+        new_row = {
+            "result_id": result_id,
+            "quiz_id": quiz_id,
+            "student_id": student_id,
+            "student_name": student_name,
+            "score": "",
+            "total_marks": "20",
+            "submission_time": datetime.now().isoformat(),
+            "answers": "{}",
+            "status": "started"
+        }
         df = self._sheet_to_df("QuizResults")
         if df.empty:
             df = pd.DataFrame(columns=["result_id", "quiz_id", "student_id", "student_name",
-                                       "score", "total_marks", "submission_time", "answers"])
-        df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
+                                       "score", "total_marks", "submission_time", "answers", "status"])
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                              "score", "total_marks", "submission_time", "answers"])
+                                              "score", "total_marks", "submission_time", "answers", "status"])
+        return result_id
+
+    def submit_quiz_attempt(self, result_id, score, answers_json):
+        """تحديث المحاولة إلى submitted مع النتيجة"""
+        df = self._sheet_to_df("QuizResults")
+        if df.empty:
+            return
+        idx = df[df.result_id == result_id].index
+        if len(idx) > 0:
+            df.at[idx[0], "score"] = str(score)
+            df.at[idx[0], "answers"] = answers_json
+            df.at[idx[0], "submission_time"] = datetime.now().isoformat()
+            df.at[idx[0], "status"] = "submitted"
+            self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
+                                                  "score", "total_marks", "submission_time", "answers", "status"])
 
     def delete_quiz_result(self, result_id):
         df = self._sheet_to_df("QuizResults")
         df = df[df.result_id != result_id]
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                              "score", "total_marks", "submission_time", "answers"])
+                                              "score", "total_marks", "submission_time", "answers", "status"])
 
     # --- Logs ---
     def get_logs(self):
@@ -722,7 +742,8 @@ def init_session():
         "last_score": 0,
         "menu_choice": "🏠 لوحة التحكم",
         "show_sidebar": True,
-        "open_help_dialog": False
+        "open_help_dialog": False,
+        "current_attempt_id": None  # لتخزين result_id الخاص بالمحاولة الحالية
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -883,12 +904,13 @@ def show_login_page(db: Database, jwt_secret: str):
                                     st.session_state.quiz_answers = {}
                                     st.session_state.quiz_submitted = False
                                     st.session_state.last_score = 0
+                                    st.session_state.current_attempt_id = None
                                     st.rerun()
                             except Exception as e:
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface
+# Student Quiz Interface (مع آلية منع إعادة الدخول بعد الخروج)
 # =============================================================================
 def show_student_quiz(db: Database):
     quiz = st.session_state.student_quiz
@@ -910,10 +932,12 @@ def show_student_quiz(db: Database):
         st.markdown("---")
         st.info("إذا لم تجد اسمك في القائمة، يرجى التواصل مع مشرف الخدمة لإضافتك.")
         if selected_id is not None:
-            existing_results = db.get_quiz_results(quiz["quiz_id"])
-            if not existing_results.empty and "student_id" in existing_results.columns:
-                if not existing_results[existing_results["student_id"] == selected_id].empty:
-                    st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك تكرار المحاولة.")
+            # التحقق من وجود أي محاولة سابقة (started أو submitted) لهذا الطالب في هذا الاختبار
+            existing = db.get_quiz_results(quiz["quiz_id"])
+            if not existing.empty and "student_id" in existing.columns:
+                student_attempts = existing[existing["student_id"] == selected_id]
+                if not student_attempts.empty:
+                    st.error("لقد قمت بتسليم هذا الاختبار بالفعل (أو أن المحاولة أغلقت). لا يمكنك الدخول مرة أخرى.")
                     st.stop()
         if st.button("بدء الاختبار", use_container_width=True, type="primary", disabled=(selected_id is None), key="start_quiz_btn"):
             selected_student = active_students[active_students["student_id"] == selected_id].iloc[0].to_dict()
@@ -922,6 +946,9 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_start_time = datetime.now()
             time_limit_seconds = int(quiz["time_limit_minutes"]) * 60
             st.session_state.quiz_end_time = st.session_state.quiz_start_time + timedelta(seconds=time_limit_seconds)
+            # إنشاء محاولة جديدة بقاعدة البيانات (حالة started)
+            attempt_id = db.start_quiz_attempt(quiz["quiz_id"], selected_id, st.session_state.student_name)
+            st.session_state.current_attempt_id = attempt_id
             st.session_state.quiz_phase = "taking_quiz"
             st.rerun()
         return
@@ -929,7 +956,6 @@ def show_student_quiz(db: Database):
     if st.session_state.quiz_submitted or st.session_state.quiz_phase == "finished":
         st.success("تم تسليم الاختبار بنجاح!")
         if "last_score" in st.session_state:
-            # عرض النتيجة بصيغة 20/20 بدلاً من 20/20.0
             score = st.session_state.last_score
             if score.is_integer():
                 score_display = int(score)
@@ -938,13 +964,13 @@ def show_student_quiz(db: Database):
             st.info(f"نتيجتك: {score_display}/20")
         if st.button("إنهاء والعودة إلى الرئيسية", use_container_width=True, key="finish_quiz_btn"):
             for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
-                        "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers", "quiz_submitted", "last_score"]:
+                        "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers", "quiz_submitted", "last_score", "current_attempt_id"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
         return
 
-    # لم نعد نعرض المؤقت
+    # شاشة الأسئلة (بدون عداد الوقت)
     st.title(f"📝 {quiz['title']}")
     st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
     st.markdown("---")
@@ -973,7 +999,6 @@ def show_student_quiz(db: Database):
         auto_submit_quiz(db, quiz)
         st.session_state.quiz_phase = "finished"
         st.rerun()
-    # تمت إزالة الزر المخفي وعداد الوقت تماماً
 
 def auto_submit_quiz(db, quiz):
     questions = db.get_quiz_questions(quiz["quiz_id"])
@@ -987,14 +1012,29 @@ def auto_submit_quiz(db, quiz):
             correct_count += 1
     num_q = len(questions)
     score = round((correct_count / num_q) * 20, 1) if num_q > 0 else 0
-    result = {
-        "result_id": str(uuid.uuid4()), "quiz_id": quiz["quiz_id"],
-        "student_id": st.session_state.student_id, "student_name": st.session_state.student_name,
-        "score": score, "total_marks": 20,
-        "submission_time": datetime.now().isoformat(),
-        "answers": json.dumps(answers_dict, ensure_ascii=False)
-    }
-    db.save_quiz_result(result)
+    answers_json = json.dumps(answers_dict, ensure_ascii=False)
+    # تحديث المحاولة الموجودة (التي بدأت مسبقاً)
+    if st.session_state.current_attempt_id:
+        db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
+    else:
+        # في حال لم توجد محاولة لأي سبب، ننشئ واحدة جديدة (وضع نادر)
+        result_id = str(uuid.uuid4())
+        result = {
+            "result_id": result_id, "quiz_id": quiz["quiz_id"],
+            "student_id": st.session_state.student_id, "student_name": st.session_state.student_name,
+            "score": score, "total_marks": 20,
+            "submission_time": datetime.now().isoformat(),
+            "answers": answers_json,
+            "status": "submitted"
+        }
+        # إضافة يدوية (غير مستحسنة، لكن تحسباً)
+        df = db._sheet_to_df("QuizResults")
+        if df.empty:
+            df = pd.DataFrame(columns=["result_id", "quiz_id", "student_id", "student_name",
+                                       "score", "total_marks", "submission_time", "answers", "status"])
+        df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
+        db._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
+                                            "score", "total_marks", "submission_time", "answers", "status"])
     st.session_state.quiz_submitted = True
     st.session_state.last_score = score
 
@@ -1599,6 +1639,9 @@ def show_class_competition_scores(db: Database):
 
     if not results.empty and "student_id" in results.columns:
         class_results = results[results["student_id"].isin(section_student_ids)]
+        # نعرض فقط المحاولات المكتملة (submitted)
+        if "status" in class_results.columns:
+            class_results = class_results[class_results["status"] == "submitted"]
     else:
         class_results = pd.DataFrame()
 
@@ -1781,6 +1824,9 @@ def show_quizzes(db: Database):
         if role == "Teacher" and section_id and not students.empty:
             section_student_ids = students[students.section_id == section_id]["student_id"].tolist()
             results = results[results.student_id.isin(section_student_ids)]
+        # عرض المحاولات المكتملة فقط
+        if "status" in results.columns:
+            results = results[results["status"] == "submitted"]
         st.dataframe(results[["student_name", "score", "total_marks", "submission_time"]], use_container_width=True)
         if st.button("🏆 ترتيب الطالبات"):
             top = results.groupby("student_name")["score"].sum().reset_index().sort_values("score", ascending=False)
@@ -1906,7 +1952,6 @@ def main():
 
             # التحكم في ظهور الشريط الجانبي من اليمين
             if not st.session_state.show_sidebar:
-                # إخفاء الشريط (انزلاق لليمين خارج الشاشة)
                 st.markdown("""
                 <style>
                 section[data-testid="stSidebar"] {
@@ -1915,13 +1960,11 @@ def main():
                 </style>
                 """, unsafe_allow_html=True)
 
-                # زر الهامبرغر لفتح الشريط
                 st.markdown('<div class="floating-show-btn"></div>', unsafe_allow_html=True)
                 if st.button("☰", key="show_sidebar_btn"):
                     st.session_state.show_sidebar = True
                     st.rerun()
             else:
-                # إظهار الشريط (انزلاق للداخل)
                 st.markdown("""
                 <style>
                 section[data-testid="stSidebar"] {
@@ -1930,10 +1973,8 @@ def main():
                 </style>
                 """, unsafe_allow_html=True)
 
-                # عرض محتويات الشريط
                 choice = show_sidebar_navigation(db)
 
-            # تحديد الصفحة الحالية
             if not st.session_state.show_sidebar:
                 choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
                 role = st.session_state.user["role"]
@@ -1963,7 +2004,6 @@ def main():
                 if 'choice' not in locals():
                     choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
 
-            # عرض محتوى الصفحة
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if choice == "🏠 لوحة التحكم":
                 show_dashboard(db)
