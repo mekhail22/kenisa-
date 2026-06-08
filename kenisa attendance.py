@@ -13,13 +13,11 @@ import jwt
 import time
 import requests
 from functools import wraps
-import streamlit.components.v1 as components
 
 # =============================================================================
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-APP_VERSION = "5.2.5"
 CACHE_TTL_SECONDS = 120
 
 st.set_page_config(
@@ -35,7 +33,7 @@ st.set_page_config(
 def get_telegram_config():
     try:
         return st.secrets["telegram"]["bot_token"], st.secrets["telegram"]["chat_id"]
-    except:
+    except Exception:
         return None, None
 
 def get_support_config():
@@ -44,7 +42,7 @@ def get_support_config():
             st.secrets.get("support", {}).get("contact_name", "مسؤول النظام"),
             st.secrets.get("support", {}).get("whatsapp", "")
         )
-    except:
+    except Exception:
         return "مسؤول النظام", ""
 
 # =============================================================================
@@ -75,7 +73,7 @@ def get_spreadsheet_id():
 def get_jwt_secret():
     try:
         return st.secrets["sheets"]["jwt_secret"]
-    except:
+    except Exception:
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
@@ -112,7 +110,6 @@ def inject_css():
             flex-shrink: 0 !important;
             z-index: 100 !important;
             transition: none !important;
-            animation: none !important;
         }
 
         section[data-testid="stSidebar"].stSidebar--collapsed,
@@ -131,7 +128,6 @@ def inject_css():
             overflow: visible !important;
             flex-shrink: 0 !important;
             transition: none !important;
-            animation: none !important;
         }
 
         [data-testid="stSidebarOverlay"],
@@ -145,7 +141,6 @@ def inject_css():
             position: absolute !important;
             z-index: -9999 !important;
             transition: none !important;
-            animation: none !important;
         }
 
         [data-testid="stSidebarNavToggle"],
@@ -169,7 +164,6 @@ def inject_css():
             z-index: -9999 !important;
             overflow: hidden !important;
             transition: none !important;
-            animation: none !important;
         }
 
         @media (max-width: 768px) {
@@ -392,124 +386,6 @@ def inject_css():
         }
     </style>
     """, unsafe_allow_html=True)
-
-# =============================================================================
-# JavaScript لمنع الإغلاق التلقائي
-# =============================================================================
-def inject_sidebar_js():
-    js_code = """
-    <script>
-    (function() {
-        if (window.__sidebarGuardInstalled) return;
-        window.__sidebarGuardInstalled = true;
-
-        const SIDEBAR_SELECTOR = '[data-testid="stSidebar"]';
-        const OVERLAY_SELECTOR = '[data-testid="stSidebarOverlay"]';
-        const COLLAPSED_CLASS = 'stSidebar--collapsed';
-        const EXPANDED_CLASS = 'stSidebar--expanded';
-
-        function enforceSidebar() {
-            if (document.getElementById('sidebar-state-hidden')) return;
-
-            const sidebar = document.querySelector(SIDEBAR_SELECTOR);
-            if (!sidebar) return;
-
-            if (sidebar.classList.contains(COLLAPSED_CLASS)) {
-                sidebar.classList.remove(COLLAPSED_CLASS);
-                sidebar.classList.add(EXPANDED_CLASS);
-                sidebar.setAttribute('aria-expanded', 'true');
-            }
-
-            sidebar.style.setProperty('display', 'flex', 'important');
-            sidebar.style.setProperty('transform', 'none', 'important');
-            sidebar.style.setProperty('translate', 'none', 'important');
-            sidebar.style.setProperty('width', '21rem', 'important');
-            sidebar.style.setProperty('min-width', '21rem', 'important');
-            sidebar.style.setProperty('max-width', '21rem', 'important');
-            sidebar.style.setProperty('visibility', 'visible', 'important');
-            sidebar.style.setProperty('opacity', '1', 'important');
-            sidebar.style.setProperty('margin-left', '0', 'important');
-            sidebar.style.setProperty('left', '0', 'important');
-            sidebar.style.setProperty('position', 'relative', 'important');
-            sidebar.style.setProperty('overflow', 'visible', 'important');
-            sidebar.style.setProperty('flex-shrink', '0', 'important');
-            sidebar.style.setProperty('transition', 'none', 'important');
-            sidebar.style.setProperty('animation', 'none', 'important');
-
-            document.querySelectorAll(OVERLAY_SELECTOR + ', .st-emotion-cache-1oe5cao').forEach(function(overlay) {
-                if (!overlay || !overlay.parentNode) return;
-                overlay.style.setProperty('display', 'none', 'important');
-                overlay.style.setProperty('pointer-events', 'none', 'important');
-                overlay.style.setProperty('opacity', '0', 'important');
-                overlay.style.setProperty('visibility', 'hidden', 'important');
-                overlay.style.setProperty('width', '0', 'important');
-                overlay.style.setProperty('height', '0', 'important');
-                overlay.style.setProperty('position', 'absolute', 'important');
-                overlay.style.setProperty('z-index', '-9999', 'important');
-                overlay.style.setProperty('transition', 'none', 'important');
-                overlay.style.setProperty('animation', 'none', 'important');
-                overlay.parentNode.removeChild(overlay);
-            });
-
-            var btnSelectors = [
-                '[data-testid="stSidebarNavToggle"]',
-                '[data-testid="stSidebarCollapseButton"]',
-                '[data-testid="collapsedControl"]',
-                'button[aria-label="Close sidebar"]',
-                'button[aria-label="Close"]',
-                '[data-testid="baseButton-header"]',
-                '[data-testid="stSidebarResizer"]',
-                '[data-testid="stSidebar"] > button'
-            ];
-            btnSelectors.forEach(function(sel) {
-                document.querySelectorAll(sel).forEach(function(btn) {
-                    btn.style.setProperty('display', 'none', 'important');
-                    btn.style.setProperty('pointer-events', 'none', 'important');
-                    btn.style.setProperty('visibility', 'hidden', 'important');
-                    btn.style.setProperty('opacity', '0', 'important');
-                    btn.style.setProperty('width', '0', 'important');
-                    btn.style.setProperty('height', '0', 'important');
-                    btn.style.setProperty('margin', '0', 'important');
-                    btn.style.setProperty('padding', '0', 'important');
-                    btn.style.setProperty('border', 'none', 'important');
-                    btn.style.setProperty('position', 'absolute', 'important');
-                    btn.style.setProperty('z-index', '-9999', 'important');
-                    btn.style.setProperty('overflow', 'hidden', 'important');
-                    btn.style.setProperty('transition', 'none', 'important');
-                    btn.style.setProperty('animation', 'none', 'important');
-                    btn.setAttribute('disabled', 'true');
-                    btn.setAttribute('aria-hidden', 'true');
-                });
-            });
-        }
-
-        enforceSidebar();
-        setInterval(enforceSidebar, 150);
-
-        var observer = new MutationObserver(function(mutations) {
-            enforceSidebar();
-        });
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'style', 'aria-expanded', 'data-testid']
-        });
-
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                var sidebar = document.querySelector(SIDEBAR_SELECTOR);
-                if (sidebar && sidebar.classList.contains(EXPANDED_CLASS)) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    enforceSidebar();
-                }
-            }
-        }, true);
-    })();
-    </script>
-    """
-    st.markdown(js_code, unsafe_allow_html=True)
 
 # =============================================================================
 # SheetCache
@@ -911,7 +787,11 @@ def generate_token(user: dict, secret: str) -> str:
 def verify_token(token: str, secret: str):
     try:
         return jwt.decode(token, secret, algorithms=["HS256"])
-    except:
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+    except Exception:
         return None
 
 def init_session():
@@ -929,11 +809,9 @@ def init_session():
         "quiz_answers": {},
         "quiz_submitted": False,
         "last_score": 0,
-        "login_attempted": False,
         "menu_choice": "🏠 لوحة التحكم",
         "show_sidebar": True,
-        "open_help_dialog": False,
-        "last_error_details": None
+        "open_help_dialog": False
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -943,7 +821,7 @@ def logout(db=None):
     if db and st.session_state.user:
         try:
             db.cache.flush_logs(db)
-        except:
+        except Exception:
             pass
     for key in list(st.session_state.keys()):
         del st.session_state[key]
@@ -966,12 +844,19 @@ def send_telegram_message(message: str) -> bool:
 # =============================================================================
 @st.dialog("🆘 مركز المساعدة والدعم الفني", width="large")
 def show_help_dialog():
+    hdr_col1, hdr_col2 = st.columns([0.85, 0.15])
+    with hdr_col1:
+        st.markdown("<h3 style='text-align:center; color:#667eea; margin:0; padding-top:0.5rem;'>📬 تواصل معنا</h3>", unsafe_allow_html=True)
+    with hdr_col2:
+        if st.button("✕ إغلاق", key="help_dialog_close_btn", help="إغلاق مركز المساعدة", use_container_width=True):
+            st.session_state.open_help_dialog = False
+            st.rerun()
+
     contact_name, contact_whatsapp = get_support_config()
-    st.markdown("<h3 style='text-align:center; color:#667eea;'>📬 تواصل معنا</h3>", unsafe_allow_html=True)
     if contact_whatsapp:
         st.info(f"📞 للدعم المباشر: {contact_name} - {contact_whatsapp}")
     st.markdown("---")
-    with st.form("help_form_enhanced"):
+    with st.form("help_form_enhanced", clear_on_submit=False):
         col1, col2 = st.columns(2)
         with col1:
             name = st.text_input("الاسم *", placeholder="أدخل اسمك الكامل")
@@ -980,7 +865,8 @@ def show_help_dialog():
             issue_type = st.selectbox("نوع المشكلة *", ["مشكلة تقنية", "مشكلة في البيانات", "طلب مساعدة", "اقتراح تحسين", "أخرى"])
             urgency = st.selectbox("الأولوية", ["عادي", "مستعجل", "طارئ جداً"], index=0)
         issue_desc = st.text_area("وصف المشكلة أو الطلب *", placeholder="اشرح المشكلة بالتفصيل...", height=150)
-        if st.form_submit_button("🚀 إرسال الطلب", use_container_width=True):
+        submitted = st.form_submit_button("🚀 إرسال الطلب", use_container_width=True)
+        if submitted:
             if not name or not whatsapp or not issue_desc:
                 st.error("⚠️ الرجاء ملء جميع الحقول المطلوبة")
             else:
@@ -994,10 +880,10 @@ def show_help_dialog():
                     f"📝 التفاصيل: {issue_desc}"
                 )
                 if send_telegram_message(message):
-                    st.success("✅ تم إرسال طلبك بنجاح! سنتواصل معك قريباُ.")
+                    st.success("✅ تم إرسال طلبك بنجاح! سنتواصل معك قريباً.")
                     st.balloons()
                 else:
-                    st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاُ أو التواصل مباشرة عبر الواتساب.")
+                    st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
 
 # =============================================================================
 # Initialization & Login
@@ -1085,6 +971,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                     st.session_state.quiz_end_time = None
                                     st.session_state.quiz_answers = {}
                                     st.session_state.quiz_submitted = False
+                                    st.session_state.last_score = 0
                                     st.rerun()
                             except Exception as e:
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
@@ -1234,21 +1121,18 @@ def auto_submit_quiz(db, quiz):
 # =============================================================================
 def show_sidebar(db: Database):
     with st.sidebar:
-        # Hide sidebar button
         st.markdown('<div class="hide-sidebar-btn">', unsafe_allow_html=True)
         if st.button("◀ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
             st.session_state.show_sidebar = False
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Header
         st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
         st.markdown(f"**👤 {user['full_name']}**")
         st.caption(f"الصلاحية: {user['role']}")
         st.divider()
 
-        # Role-based menu items
         role = user["role"]
         menus = {
             "System Admin": [
@@ -1278,7 +1162,6 @@ def show_sidebar(db: Database):
             current_choice = menu_items[0]
             st.session_state.menu_choice = current_choice
 
-        # Button-based navigation
         st.markdown('<div class="nav-btn-container">', unsafe_allow_html=True)
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
@@ -1340,7 +1223,7 @@ def show_dashboard(db: Database):
     else:
         st.info("لا توجد بيانات حضور بعد.")
 
-    st.markdown("#### 🏅 أكثر 5 طالبات غياباُ هذا الشهر")
+    st.markdown("#### 🏅 أكثر 5 طالبات غياباً هذا الشهر")
     if not attendance.empty:
         month_start = datetime.now().replace(day=1).strftime("%Y-%m-%d")
         month_att = attendance[(attendance.date >= month_start) & (attendance.status == "غائب")]
@@ -1394,9 +1277,9 @@ def show_user_management(db: Database):
                 email = st.text_input("البريد الإلكتروني (اختياري)")
                 if st.form_submit_button("إضافة"):
                     if not username or not password or not full_name:
-                        st.error("مطلوب nameof المستخدم وكلمة المرور والاسم الكامل")
+                        st.error("مطلوب اسم المستخدم وكلمة المرور والاسم الكامل")
                     elif not users[users.username == username].empty:
-                        st.error("اسم المستخدم موجود مسبقاُ!")
+                        st.error("اسم المستخدم موجود مسبقاً!")
                     else:
                         db.add_user({
                             "user_id": str(uuid.uuid4()), "username": username, "password": password,
@@ -1467,7 +1350,7 @@ def show_user_management(db: Database):
                     if not teacher_name or not password:
                         st.error("اسم المستخدم وكلمة المرور مطلوبان")
                     elif not users[users.username == teacher_name].empty:
-                        st.error("اسم المستخدم موجود مسبقاُ!")
+                        st.error("اسم المستخدم موجود مسبقاً!")
                     else:
                         db.add_user({
                             "user_id": str(uuid.uuid4()), "username": teacher_name, "password": password,
@@ -1531,7 +1414,7 @@ def show_user_management(db: Database):
                 if existing_birthdate:
                     try:
                         birth_date_val = pd.to_datetime(existing_birthdate).date()
-                    except:
+                    except Exception:
                         birth_date_val = None
                 else:
                     birth_date_val = None
@@ -1622,20 +1505,20 @@ def show_attendance(db: Database):
 
     section_id = user.get("section_id", "")
     if role == "Teacher" and section_id:
-        section = section_id
+        selected_section = section_id
         section_name = sections[sections.section_id == section_id]["section_name"].values[0] if not sections.empty else section_id
         st.write(f"**الفصل:** {section_name}")
     else:
-        section = st.selectbox("اختر الفصل", sections["section_id"],
+        selected_section = st.selectbox("اختر الفصل", sections["section_id"],
                                format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0])
     date = st.date_input("التاريخ", datetime.now())
     date_str = date.strftime("%Y-%m-%d")
     students = db.get_students()
-    section_students = students[students.section_id == section] if not students.empty else pd.DataFrame()
+    section_students = students[students.section_id == selected_section] if not students.empty else pd.DataFrame()
     if section_students.empty:
         st.info("لا توجد طالبات في هذا الفصل.")
         return
-    existing = db.get_attendance_by_date_section(date_str, section)
+    existing = db.get_attendance_by_date_section(date_str, selected_section)
     already_filled = not existing.empty
     if already_filled:
         st.warning("⚠️ يوجد تسجيل حضور سابق.")
@@ -1668,10 +1551,10 @@ def show_attendance(db: Database):
                 records.append({
                     "record_id": record_id, "date": date_str, "student_id": sid,
                     "status": status, "notes": notes_dict.get(sid, ""),
-                    "recorded_by": user["user_id"], "section_id": section
+                    "recorded_by": user["user_id"], "section_id": selected_section
                 })
             db.batch_add_attendance(records)
-            db.add_log(user["user_id"], f"تسجيل حضور فصل {section} ليوم {date_str}")
+            db.add_log(user["user_id"], f"تسجيل حضور فصل {selected_section} ليوم {date_str}")
             st.success("✅ تم تسجيل الحضور بنجاح")
             time.sleep(1)
             st.rerun()
@@ -1737,7 +1620,7 @@ def show_followup(db: Database):
             urgent_display = urgent.merge(responsible[["student_id", "full_name"]], on="student_id", how="left")
             st.dataframe(urgent_display[["full_name", "followup_date", "followup_type", "notes"]], use_container_width=True)
         else:
-            st.info("كل البنات منتظمات حالياُ.")
+            st.info("كل البنات منتظمات حالياً.")
     else:
         st.info("لا توجد متابعات سابقة.")
 
@@ -1847,7 +1730,7 @@ def show_quizzes(db: Database):
         if not quizzes.empty:
             active_quizzes = quizzes[quizzes.is_active == "True"]
             if not active_quizzes.empty:
-                quiz_choice = st.selectbox("اختر اختباراُ", active_quizzes["quiz_id"],
+                quiz_choice = st.selectbox("اختر اختباراً", active_quizzes["quiz_id"],
                                            format_func=lambda x: active_quizzes[active_quizzes.quiz_id==x]["title"].values[0])
                 if quiz_choice:
                     questions = db.get_quiz_questions(quiz_choice)
@@ -1884,7 +1767,7 @@ def show_quizzes(db: Database):
                                 time.sleep(1)
                                 st.rerun()
                     if not questions.empty:
-                        del_q = st.selectbox("اختر سؤالاُ لحذفه", questions["question_id"])
+                        del_q = st.selectbox("اختر سؤالاً لحذفه", questions["question_id"])
                         if st.button("حذف السؤال"):
                             db.delete_question(del_q)
                             st.success("تم الحذف")
@@ -1943,7 +1826,7 @@ def show_reports(db: Database):
         st.info("لا توجد بيانات لهذا الشهر.")
 
     st.markdown("---")
-    st.subheader("🏆 أكثر 10 طالبات غياباُ")
+    st.subheader("🏆 أكثر 10 طالبات غياباً")
     if not attendance.empty:
         absent_counts = attendance[attendance.status == "غائب"].groupby("student_id").size().reset_index(name="أيام الغياب")
         absent_counts = absent_counts.sort_values("أيام الغياب", ascending=False).head(10)
@@ -1960,7 +1843,7 @@ def show_logs(db: Database):
     if not logs.empty:
         logs["timestamp"] = pd.to_datetime(logs["timestamp"])
         st.dataframe(logs.sort_values("timestamp", ascending=False), use_container_width=True)
-        del_id = st.selectbox("اختر سجلاُ لحذفه", logs["log_id"], key="del_log_sel")
+        del_id = st.selectbox("اختر سجلاً لحذفه", logs["log_id"], key="del_log_sel")
         if st.button("حذف السجل"):
             db.delete_log(del_id)
             st.success("تم الحذف")
@@ -1992,7 +1875,6 @@ def change_password(db: Database):
 # =============================================================================
 def main():
     inject_css()
-    inject_sidebar_js()
     init_session()
     try:
         creds = get_credentials()
@@ -2006,6 +1888,7 @@ def main():
     st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
+        st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.student_quiz_started:
@@ -2044,7 +1927,6 @@ def main():
                     transform: none !important;
                     translate: none !important;
                     transition: none !important;
-                    animation: none !important;
                 }
                 [data-testid="stSidebarOverlay"],
                 div[data-testid="stSidebarOverlay"] {
@@ -2103,10 +1985,10 @@ def main():
         show_help_dialog()
         st.session_state.open_help_dialog = False
 
-    if st.session_state.authenticated and 'db' in locals():
+    if st.session_state.authenticated:
         try:
             db.cache.flush_logs(db)
-        except:
+        except Exception:
             pass
 
 if __name__ == "__main__":
