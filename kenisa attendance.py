@@ -3,7 +3,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import uuid
 import json
@@ -244,7 +243,7 @@ def inject_css():
             box-shadow: 0 4px 12px rgba(102,126,234,0.4) !important;
         }
 
-        /* ========= Hamburger / Show Sidebar Button ========= */
+        /* ========= Hamburger / Show Sidebar Button - ENLARGED ========= */
         .floating-show-btn {
             position: fixed;
             top: 20px;
@@ -255,22 +254,22 @@ def inject_css():
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
-            border-radius: 16px !important;
-            width: 72px !important;
-            height: 72px !important;
-            font-size: 32px !important;
+            border-radius: 20px !important;
+            width: 96px !important;
+            height: 96px !important;
+            font-size: 44px !important;
             font-weight: bold !important;
-            box-shadow: 0 6px 24px rgba(102,126,234,0.5) !important;
+            box-shadow: 0 8px 32px rgba(102,126,234,0.5) !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
             cursor: pointer !important;
             padding: 0 !important;
-            min-height: 72px !important;
+            min-height: 96px !important;
         }
         .floating-show-btn .stButton > button:hover {
             transform: scale(1.08) !important;
-            box-shadow: 0 8px 28px rgba(102,126,234,0.6) !important;
+            box-shadow: 0 10px 36px rgba(102,126,234,0.6) !important;
         }
         .floating-show-btn .stButton > button:active {
             transform: scale(0.96) !important;
@@ -280,24 +279,24 @@ def inject_css():
         .help-float-container {
             position: fixed;
             top: 20px;
-            left: 108px;
+            left: 132px;
             z-index: 99998;
         }
         .help-float-container .stButton > button {
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
             color: white !important;
             font-weight: 700 !important;
-            border-radius: 12px !important;
-            padding: 12px 22px !important;
-            font-size: 16px !important;
+            border-radius: 14px !important;
+            padding: 14px 26px !important;
+            font-size: 18px !important;
             border: none !important;
-            box-shadow: 0 4px 14px rgba(243,156,18,0.4) !important;
+            box-shadow: 0 4px 16px rgba(243,156,18,0.4) !important;
             white-space: nowrap !important;
-            min-height: 48px !important;
+            min-height: 56px !important;
         }
         .help-float-container .stButton > button:hover {
             transform: scale(1.04) !important;
-            box-shadow: 0 6px 18px rgba(243,156,18,0.5) !important;
+            box-shadow: 0 6px 20px rgba(243,156,18,0.5) !important;
         }
 
         /* ========= General Styles ========= */
@@ -306,7 +305,7 @@ def inject_css():
             margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
             border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             backdrop-filter: blur(5px); border: 1px solid rgba(0,0,0,0.05);
-            margin-top: 60px;
+            margin-top: 80px;
         }
         .card { background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.5rem;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem; transition: transform 0.2s; color: #1a1a2e; border: 1px solid rgba(0,0,0,0.05); }
@@ -359,25 +358,25 @@ def inject_css():
                 left: 14px;
             }
             .floating-show-btn .stButton > button {
-                width: 64px !important;
-                height: 64px !important;
-                font-size: 28px !important;
-                border-radius: 14px !important;
-                min-height: 64px !important;
+                width: 80px !important;
+                height: 80px !important;
+                font-size: 38px !important;
+                border-radius: 18px !important;
+                min-height: 80px !important;
             }
             .help-float-container {
-                left: 90px;
+                left: 108px;
                 top: 14px;
             }
             .help-float-container .stButton > button {
-                padding: 10px 16px !important;
-                font-size: 14px !important;
-                border-radius: 10px !important;
-                min-height: 42px !important;
+                padding: 12px 20px !important;
+                font-size: 16px !important;
+                border-radius: 12px !important;
+                min-height: 48px !important;
             }
             .main-header {
                 font-size: 1.6rem;
-                margin-top: 70px;
+                margin-top: 90px;
             }
             .nav-btn-container .stButton > button {
                 padding: 0.65rem 0.9rem !important;
@@ -1149,7 +1148,7 @@ def show_sidebar(db: Database):
             ],
             "Teacher": [
                 "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
-                "🔒 تغيير كلمة المرور"
+                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
             ]
         }
         menu_items = menus.get(role, [])
@@ -1693,6 +1692,124 @@ def show_my_students(db: Database):
                 st.rerun()
 
 # =============================================================================
+# Class Competition Scores (Teacher Only)
+# =============================================================================
+def show_class_competition_scores(db: Database):
+    st.markdown("<h2 class='main-header'>🏆 درجات مسابقات الفصل</h2>", unsafe_allow_html=True)
+    user = st.session_state.user
+    role = user["role"]
+    section_id = user.get("section_id", "")
+
+    if role != "Teacher" or not section_id:
+        st.error("🚫 هذه الصفحة متاحة للمدرسات فقط.")
+        return
+
+    students = db.get_students()
+    quizzes = db.get_quizzes()
+    results = db.get_quiz_results()
+
+    section_students = students[students.section_id == section_id] if not students.empty else pd.DataFrame()
+    if section_students.empty:
+        st.info("لا توجد طالبات مسجلات في فصلك.")
+        return
+
+    section_student_ids = section_students["student_id"].tolist()
+
+    if not results.empty and "student_id" in results.columns:
+        class_results = results[results["student_id"].isin(section_student_ids)]
+    else:
+        class_results = pd.DataFrame()
+
+    if not quizzes.empty and not class_results.empty and "quiz_id" in class_results.columns:
+        class_results = class_results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
+        class_results = class_results.rename(columns={"title": "اسم المسابقة"})
+    else:
+        class_results["اسم المسابقة"] = ""
+
+    if not section_students.empty and not class_results.empty:
+        class_results = class_results.merge(section_students[["student_id", "full_name"]], on="student_id", how="left")
+        class_results = class_results.rename(columns={"full_name": "اسم الطالبة"})
+    else:
+        class_results["اسم الطالبة"] = ""
+
+    if class_results.empty:
+        st.info("لا توجد نتائج مسابقات مسجلة لطالبات فصلك بعد.")
+        return
+
+    display_cols = ["اسم المسابقة", "اسم الطالبة", "score", "total_marks", "submission_time"]
+    available_cols = [c for c in display_cols if c in class_results.columns]
+    display_df = class_results[available_cols].copy()
+
+    if "score" in display_df.columns:
+        display_df["score"] = pd.to_numeric(display_df["score"], errors="coerce").fillna(0)
+    if "total_marks" in display_df.columns:
+        display_df["total_marks"] = pd.to_numeric(display_df["total_marks"], errors="coerce").fillna(20)
+
+    st.markdown("---")
+    st.subheader("🔍 بحث وتصفية")
+
+    search_term = st.text_input("ابحث باسم الطالبة أو المسابقة", placeholder="اكتب اسم الطالبة أو المسابقة...")
+    if "اسم المسابقة" in display_df.columns:
+        quiz_names = ["الكل"] + sorted(display_df["اسم المسابقة"].dropna().unique().tolist())
+        filter_quiz = st.selectbox("تصفية حسب المسابقة", quiz_names)
+    else:
+        filter_quiz = "الكل"
+
+    sort_by = st.selectbox("ترتيب حسب", ["التاريخ", "الدرجة (تنازلي)", "الدرجة (تصاعدي)", "اسم الطالبة"])
+
+    filtered_df = display_df.copy()
+    if search_term:
+        mask = False
+        if "اسم الطالبة" in filtered_df.columns:
+            mask = mask | filtered_df["اسم الطالبة"].astype(str).str.contains(search_term, na=False, case=False)
+        if "اسم المسابقة" in filtered_df.columns:
+            mask = mask | filtered_df["اسم المسابقة"].astype(str).str.contains(search_term, na=False, case=False)
+        filtered_df = filtered_df[mask]
+
+    if filter_quiz != "الكل" and "اسم المسابقة" in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df["اسم المسابقة"] == filter_quiz]
+
+    if sort_by == "التاريخ" and "submission_time" in filtered_df.columns:
+        filtered_df = filtered_df.sort_values("submission_time", ascending=False)
+    elif sort_by == "الدرجة (تنازلي)" and "score" in filtered_df.columns:
+        filtered_df = filtered_df.sort_values("score", ascending=False)
+    elif sort_by == "الدرجة (تصاعدي)" and "score" in filtered_df.columns:
+        filtered_df = filtered_df.sort_values("score", ascending=True)
+    elif sort_by == "اسم الطالبة" and "اسم الطالبة" in filtered_df.columns:
+        filtered_df = filtered_df.sort_values("اسم الطالبة", ascending=True)
+
+    if "submission_time" in filtered_df.columns:
+        filtered_df["submission_time"] = pd.to_datetime(filtered_df["submission_time"], errors="coerce")
+
+    st.markdown("---")
+    st.subheader("📋 النتائج")
+
+    if not filtered_df.empty:
+        filtered_df = filtered_df.reset_index(drop=True)
+        filtered_df.index = filtered_df.index + 1
+        st.dataframe(filtered_df, use_container_width=True)
+
+        if "score" in filtered_df.columns and "total_marks" in filtered_df.columns:
+            st.markdown("---")
+            st.subheader("📊 إحصائيات الفصل")
+            avg_score = filtered_df["score"].mean()
+            max_score = filtered_df["score"].max()
+            min_score = filtered_df["score"].min()
+            c1, c2, c3 = st.columns(3)
+            c1.metric("متوسط الدرجات", f"{avg_score:.1f}")
+            c2.metric("أعلى درجة", f"{max_score:.1f}")
+            c3.metric("أقل درجة", f"{min_score:.1f}")
+
+            if "اسم الطالبة" in filtered_df.columns:
+                st.markdown("---")
+                st.subheader("🏆 ترتيب الطالبات")
+                ranking = filtered_df.groupby("اسم الطالبة")["score"].sum().reset_index().sort_values("score", ascending=False)
+                ranking.index = range(1, len(ranking) + 1)
+                st.dataframe(ranking, use_container_width=True)
+    else:
+        st.info("لا توجد نتائج مطابقة للبحث.")
+
+# =============================================================================
 # Quizzes
 # =============================================================================
 def show_quizzes(db: Database):
@@ -1968,6 +2085,8 @@ def main():
                 show_attendance(db)
             elif choice == "💬 الافتقاد":
                 show_followup(db)
+            elif choice == "🏆 درجات المسابقات":
+                show_class_competition_scores(db)
             elif choice == "📝 المسابقات والاختبارات":
                 show_quizzes(db)
             elif choice == "📊 التقارير والإحصائيات":
