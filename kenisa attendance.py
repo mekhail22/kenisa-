@@ -76,7 +76,7 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن (التحكم بالشريط الجانبي)
+# CSS محسّن (الشريط الجانبي يفتح من اليمين كطبقة منزلقة)
 # =============================================================================
 def inject_css():
     st.markdown("""
@@ -111,37 +111,44 @@ def inject_css():
             overflow: hidden !important;
         }
 
-        /* تنسيق الشريط الجانبي */
+        /* الشريط الجانبي - طبقة ثابتة على اليمين مع حركة انزلاق */
         section[data-testid="stSidebar"] {
+            position: fixed !important;
+            top: 0 !important;
+            right: 0 !important;
+            height: 100vh !important;
+            width: 300px !important;
+            max-width: 100vw !important;
+            z-index: 10000 !important;
+            transition: transform 0.3s ease !important;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+            overflow-y: auto !important;
+            margin: 0 !important;
+            padding-top: 1rem !important;
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
             border-left: 1px solid rgba(0,0,0,0.08) !important;
-            padding-top: 1rem !important;
-            transition: all 0.3s ease !important;
+            transform: translateX(0); /* ستتغير عبر الكود الديناميكي */
         }
 
-        /* شريط جانبي كامل على الموبايل */
+        /* على الهاتف عرض كامل */
         @media (max-width: 768px) {
             section[data-testid="stSidebar"] {
                 width: 100vw !important;
-                min-width: 100vw !important;
-                max-width: 100vw !important;
-                height: 100vh !important;
-                min-height: 100vh !important;
-                max-height: 100vh !important;
-                position: fixed !important;
-                z-index: 100000 !important;
-                margin: 0 !important;
-                padding: 1rem !important;
-                border-radius: 0 !important;
-                border: none !important;
-                overflow-y: auto !important;
             }
-            section[data-testid="stSidebar"]:not(.stSidebar--collapsed) {
-                display: flex !important;
-            }
-            section[data-testid="stSidebar"].stSidebar--collapsed {
-                display: none !important;
-            }
+        }
+
+        /* إخفاء طبقة الخلفية الخاصة بالشريط */
+        [data-testid="stSidebarOverlay"] {
+            display: none !important;
+        }
+
+        /* المحتوى الرئيسي يملأ الشاشة بالكامل */
+        [data-testid="stAppViewContainer"] > [data-testid="stMain"],
+        [data-testid="stMainBlockContainer"] {
+            max-width: 100% !important;
+            width: 100% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
         }
 
         /* أزرار التنقل في الشريط */
@@ -1021,7 +1028,7 @@ def auto_submit_quiz(db, quiz):
     st.session_state.last_score = score
 
 # =============================================================================
-# Sidebar Navigation (باستخدام الشريط الجانبي الأصلي)
+# Sidebar Navigation (محتوى الشريط الجانبي)
 # =============================================================================
 def show_sidebar_navigation(db: Database):
     with st.sidebar:
@@ -1060,7 +1067,6 @@ def show_sidebar_navigation(db: Database):
             current_choice = menu_items[0]
             st.session_state.menu_choice = current_choice
 
-        # زر إخفاء القائمة (اختياري)
         if st.button("✕ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
             st.session_state.show_sidebar = False
             st.rerun()
@@ -1071,7 +1077,6 @@ def show_sidebar_navigation(db: Database):
             if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
-                # إخفاء القائمة بعد الاختيار
                 st.session_state.show_sidebar = False
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1894,7 +1899,7 @@ def change_password(db: Database):
                 st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
 # =============================================================================
-# Main App (مع التحكم بظهور الشريط الجانبي)
+# Main App (التحكم بانزلاق القائمة من اليمين)
 # =============================================================================
 def main():
     inject_css()
@@ -1908,7 +1913,7 @@ def main():
 
     jwt_secret = get_jwt_secret()
 
-    # زر المساعدة العائم (يظهر دائماً)
+    # زر المساعدة العائم
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
@@ -1928,28 +1933,13 @@ def main():
                 st.rerun()
                 return
 
-            # التحكم في ظهور الشريط الجانبي عبر CSS ديناميكي
+            # التحكم في ظهور الشريط الجانبي من اليمين
             if not st.session_state.show_sidebar:
-                # إخفاء الشريط الجانبي
+                # إخفاء الشريط (انزلاق لليمين خارج الشاشة)
                 st.markdown("""
                 <style>
                 section[data-testid="stSidebar"] {
-                    display: none !important;
-                    width: 0 !important;
-                    min-width: 0 !important;
-                    max-width: 0 !important;
-                    height: 0 !important;
-                    min-height: 0 !important;
-                    visibility: hidden !important;
-                    opacity: 0 !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    border: none !important;
-                    flex: 0 0 0 !important;
-                    overflow: hidden !important;
-                }
-                [data-testid="stSidebarOverlay"] {
-                    display: none !important;
+                    transform: translateX(100%) !important;
                 }
                 </style>
                 """, unsafe_allow_html=True)
@@ -1960,28 +1950,16 @@ def main():
                     st.session_state.show_sidebar = True
                     st.rerun()
             else:
-                # إظهار الشريط (إزالة CSS الإخفاء)
+                # إظهار الشريط (انزلاق للداخل)
                 st.markdown("""
                 <style>
                 section[data-testid="stSidebar"] {
-                    display: flex !important;
-                    width: auto !important;
-                    min-width: auto !important;
-                    max-width: none !important;
-                    height: auto !important;
-                    min-height: auto !important;
-                    visibility: visible !important;
-                    opacity: 1 !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    border: none !important;
-                    flex: 0 0 auto !important;
-                    overflow: visible !important;
+                    transform: translateX(0) !important;
                 }
                 </style>
                 """, unsafe_allow_html=True)
 
-                # عرض محتويات الشريط الجانبي
+                # عرض محتويات الشريط
                 choice = show_sidebar_navigation(db)
 
             # تحديد الصفحة الحالية
