@@ -76,38 +76,82 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS & Mobile Scripts
+# CSS محسّن
 # =============================================================================
-def inject_styles_and_scripts():
+def inject_css():
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
         * { font-family: 'Cairo', sans-serif; }
         body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; }
         .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
+        header[data-testid="stHeader"] { display: none !important; }
+        #MainMenu { visibility: hidden; }
+        footer { visibility: hidden; }
 
-        /* Hide all default Streamlit top chrome */
-        header, .stApp > header, [data-testid="stHeader"], .stToolbar, .stAppToolbar, [data-testid="stAppToolbar"] {
-            display: none !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-            height: 0 !important;
-            min-height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
+        /* ========= Force Sidebar Permanently Open ========= */
+        section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
+            border-left: 1px solid rgba(0,0,0,0.08);
+            padding-top: 1rem;
+            display: flex !important;
+            transform: none !important;
+            translate: none !important;
+            width: 21rem !important;
+            min-width: 21rem !important;
+            max-width: 21rem !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            margin-left: 0 !important;
+            left: 0 !important;
+            position: relative !important;
+            overflow: visible !important;
+            flex-shrink: 0 !important;
+            z-index: 100 !important;
+            transition: none !important;
         }
-        #MainMenu { visibility: hidden !important; }
-        footer { visibility: hidden !important; }
 
-        /* Hide default sidebar toggle/resize controls completely */
+        section[data-testid="stSidebar"].stSidebar--collapsed,
+        section[data-testid="stSidebar"].stSidebar--collapsed * {
+            display: flex !important;
+            transform: none !important;
+            translate: none !important;
+            width: 21rem !important;
+            min-width: 21rem !important;
+            max-width: 21rem !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            margin-left: 0 !important;
+            left: 0 !important;
+            position: relative !important;
+            overflow: visible !important;
+            flex-shrink: 0 !important;
+            transition: none !important;
+        }
+
+        [data-testid="stSidebarOverlay"],
+        div[data-testid="stSidebarOverlay"] {
+            display: none !important;
+            pointer-events: none !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            position: absolute !important;
+            z-index: -9999 !important;
+            transition: none !important;
+        }
+
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
         [data-testid="collapsedControl"],
         button[aria-label="Close sidebar"],
-        button[aria-label="إغلاق الشريط الجانبي"],
-        [data-testid="stSidebarResizer"] {
+        button[aria-label="Close"],
+        [data-testid="baseButton-header"],
+        [data-testid="stSidebarResizer"],
+        [data-testid="stSidebar"] > button {
             display: none !important;
+            pointer-events: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
             width: 0 !important;
@@ -118,97 +162,36 @@ def inject_styles_and_scripts():
             position: absolute !important;
             z-index: -9999 !important;
             overflow: hidden !important;
-            pointer-events: none !important;
+            transition: none !important;
         }
 
-        /* Desktop sidebar: always visible, clean */
-        @media (min-width: 769px) {
+        @media (max-width: 768px) {
             section[data-testid="stSidebar"] {
-                display: flex !important;
-                visibility: visible !important;
-                opacity: 1 !important;
-                transform: none !important;
-                translate: none !important;
-                width: 21rem !important;
-                min-width: 21rem !important;
-                max-width: 21rem !important;
-                position: relative !important;
+                width: 100% !important;
+                min-width: 100% !important;
+                max-width: 100% !important;
+                position: fixed !important;
                 left: 0 !important;
                 top: 0 !important;
-                height: 100vh !important;
-                z-index: 100 !important;
-                transition: none !important;
-                overflow: visible !important;
-                flex-shrink: 0 !important;
-                margin-left: 0 !important;
+                bottom: 0 !important;
+                z-index: 1000 !important;
             }
             section[data-testid="stSidebar"].stSidebar--collapsed,
             section[data-testid="stSidebar"].stSidebar--collapsed * {
-                display: flex !important;
-                transform: none !important;
-                translate: none !important;
-                width: 21rem !important;
-                min-width: 21rem !important;
-                max-width: 21rem !important;
-                visibility: visible !important;
-                opacity: 1 !important;
-            }
-            [data-testid="stSidebarOverlay"],
-            div[data-testid="stSidebarOverlay"] {
-                display: none !important;
-                pointer-events: none !important;
-                opacity: 0 !important;
-                visibility: hidden !important;
-                width: 0 !important;
-                height: 0 !important;
-                position: absolute !important;
-                z-index: -9999 !important;
-            }
-        }
-
-        /* Mobile sidebar: full-screen native overlay */
-        @media (max-width: 768px) {
-            section[data-testid="stSidebar"] {
-                width: 100vw !important;
-                min-width: 100vw !important;
-                max-width: 100vw !important;
-                height: 100vh !important;
-                position: fixed !important;
-                top: 0 !important;
-                left: 0 !important;
-                bottom: 0 !important;
-                right: 0 !important;
-                z-index: 999999 !important;
-                background: #ffffff !important;
-                margin: 0 !important;
-                padding: 1rem !important;
-                transition: transform 0.3s ease !important;
-            }
-            section[data-testid="stSidebar"] > div:first-child {
                 width: 100% !important;
-                height: 100% !important;
-            }
-            [data-testid="stSidebarOverlay"] {
-                display: block !important;
-                visibility: visible !important;
-                opacity: 1 !important;
-                position: fixed !important;
-                top: 0 !important;
-                left: 0 !important;
-                width: 100vw !important;
-                height: 100vh !important;
-                background: rgba(0,0,0,0.5) !important;
-                z-index: 99999 !important;
-                pointer-events: auto !important;
-            }
-            .main-header {
-                margin-top: 10px !important;
-                font-size: 1.6rem !important;
+                min-width: 100% !important;
+                max-width: 100% !important;
             }
         }
 
-        /* Sidebar Navigation Buttons */
-        section[data-testid="stSidebar"] .stButton > button {
+        /* ========= Sidebar Navigation Buttons ========= */
+        .nav-btn-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            margin-bottom: 1rem;
+        }
+        .nav-btn-container .stButton > button {
             width: 100% !important;
             text-align: right !important;
             justify-content: flex-start !important;
@@ -222,31 +205,81 @@ def inject_styles_and_scripts():
             box-shadow: none !important;
             transition: all 0.2s ease !important;
             direction: rtl !important;
-            min-height: 44px !important;
         }
-        section[data-testid="stSidebar"] .stButton > button:hover {
+        .nav-btn-container .stButton > button:hover {
             background: rgba(102,126,234,0.08) !important;
             color: #667eea !important;
             border-color: rgba(102,126,234,0.15) !important;
             transform: translateX(-2px) !important;
         }
-        section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        .nav-btn-container .stButton > button[kind="primary"] {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
             box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
         }
-        section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+        .nav-btn-container .stButton > button[kind="primary"]:hover {
             background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%) !important;
             color: white !important;
             transform: translateX(-2px) !important;
         }
+        .nav-btn-container .stButton > button p {
+            font-size: 1rem !important;
+        }
 
-        /* Help Float Button */
-        .help-float-container {
+        /* ========= Hide Sidebar Button ========= */
+        .hide-sidebar-btn .stButton > button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            font-weight: 700 !important;
+            border-radius: 10px !important;
+            padding: 0.6rem 1rem !important;
+            margin-bottom: 1rem !important;
+            border: none !important;
+            box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
+        }
+        .hide-sidebar-btn .stButton > button:hover {
+            transform: scale(1.02) !important;
+            box-shadow: 0 4px 12px rgba(102,126,234,0.4) !important;
+        }
+
+        /* ========= Hamburger / Show Sidebar Button - ENLARGED ========= */
+        .floating-show-btn {
             position: fixed;
             top: 20px;
             left: 20px;
+            z-index: 99999;
+        }
+        .floating-show-btn .stButton > button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 20px !important;
+            width: 96px !important;
+            height: 96px !important;
+            font-size: 44px !important;
+            font-weight: bold !important;
+            box-shadow: 0 8px 32px rgba(102,126,234,0.5) !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            cursor: pointer !important;
+            padding: 0 !important;
+            min-height: 96px !important;
+        }
+        .floating-show-btn .stButton > button:hover {
+            transform: scale(1.08) !important;
+            box-shadow: 0 10px 36px rgba(102,126,234,0.6) !important;
+        }
+        .floating-show-btn .stButton > button:active {
+            transform: scale(0.96) !important;
+        }
+
+        /* ========= Help Float Button ========= */
+        .help-float-container {
+            position: fixed;
+            top: 20px;
+            left: 132px;
             z-index: 99998;
         }
         .help-float-container .stButton > button {
@@ -266,13 +299,13 @@ def inject_styles_and_scripts():
             box-shadow: 0 6px 20px rgba(243,156,18,0.5) !important;
         }
 
-        /* General Styles */
+        /* ========= General Styles ========= */
         .main-header {
             font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
             margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
             border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             backdrop-filter: blur(5px); border: 1px solid rgba(0,0,0,0.05);
-            margin-top: 20px;
+            margin-top: 80px;
         }
         .card { background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.5rem;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem; transition: transform 0.2s; color: #1a1a2e; border: 1px solid rgba(0,0,0,0.05); }
@@ -292,6 +325,8 @@ def inject_styles_and_scripts():
         .stButton > button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }
         .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
         .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
+
+        section[data-testid="stSidebar"] .stRadio label { font-weight: 600; color: #1a1a2e; font-size: 1rem; }
 
         .timer-container { text-align: center; margin: 1rem 0; }
         .timer-box {
@@ -316,56 +351,39 @@ def inject_styles_and_scripts():
         .stError { background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }
         .content-area { padding: 0 1rem; }
 
-        /* Mobile Responsive General */
+        /* ========= Mobile Responsive ========= */
         @media (max-width: 768px) {
-            .help-float-container {
+            .floating-show-btn {
                 top: 14px;
                 left: 14px;
             }
+            .floating-show-btn .stButton > button {
+                width: 80px !important;
+                height: 80px !important;
+                font-size: 38px !important;
+                border-radius: 18px !important;
+                min-height: 80px !important;
+            }
+            .help-float-container {
+                left: 108px;
+                top: 14px;
+            }
             .help-float-container .stButton > button {
-                padding: 10px 16px !important;
-                font-size: 14px !important;
-                border-radius: 10px !important;
-                min-height: 40px !important;
+                padding: 12px 20px !important;
+                font-size: 16px !important;
+                border-radius: 12px !important;
+                min-height: 48px !important;
             }
             .main-header {
                 font-size: 1.6rem;
-                margin-top: 10px;
+                margin-top: 90px;
             }
-            section[data-testid="stSidebar"] .stButton > button {
-                padding: 1rem !important;
-                min-height: 48px !important;
-                font-size: 1.05rem !important;
+            .nav-btn-container .stButton > button {
+                padding: 0.65rem 0.9rem !important;
+                font-size: 0.95rem !important;
             }
         }
     </style>
-
-    <script>
-    (function() {
-        function closeSidebar() {
-            var overlay = document.querySelector('[data-testid="stSidebarOverlay"]');
-            if (overlay) { overlay.style.pointerEvents = 'auto'; overlay.click(); }
-            var closeBtn = document.querySelector('button[aria-label="Close sidebar"], button[aria-label="إغلاق الشريط الجانبي"]');
-            if (closeBtn) closeBtn.click();
-            document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', keyCode: 27, which: 27, bubbles: true}));
-        }
-        if (window.innerWidth <= 768 && sessionStorage.getItem('closeMobileSidebar')) {
-            sessionStorage.removeItem('closeMobileSidebar');
-            setTimeout(closeSidebar, 100);
-            setTimeout(closeSidebar, 350);
-        }
-        if (window.__mobileNavFixed) return;
-        window.__mobileNavFixed = true;
-        document.addEventListener('click', function(e) {
-            if (window.innerWidth > 768) return;
-            var sidebar = document.querySelector('section[data-testid="stSidebar"]');
-            if (!sidebar) return;
-            var btn = e.target.closest('button');
-            if (!btn || !sidebar.contains(btn)) return;
-            sessionStorage.setItem('closeMobileSidebar', '1');
-        });
-    })();
-    </script>
     """, unsafe_allow_html=True)
 
 # =============================================================================
@@ -791,6 +809,7 @@ def init_session():
         "quiz_submitted": False,
         "last_score": 0,
         "menu_choice": "🏠 لوحة التحكم",
+        "show_sidebar": True,
         "open_help_dialog": False
     }
     for k, v in defaults.items():
@@ -911,6 +930,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
+                                st.session_state.show_sidebar = True
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
@@ -1100,6 +1120,12 @@ def auto_submit_quiz(db, quiz):
 # =============================================================================
 def show_sidebar(db: Database):
     with st.sidebar:
+        st.markdown('<div class="hide-sidebar-btn">', unsafe_allow_html=True)
+        if st.button("◀ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
+            st.session_state.show_sidebar = False
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
         st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
         st.markdown(f"**👤 {user['full_name']}**")
@@ -1135,12 +1161,14 @@ def show_sidebar(db: Database):
             current_choice = menu_items[0]
             st.session_state.menu_choice = current_choice
 
+        st.markdown('<div class="nav-btn-container">', unsafe_allow_html=True)
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
             if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
                     st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
         st.divider()
         if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn"):
@@ -1963,7 +1991,7 @@ def change_password(db: Database):
 # Main App
 # =============================================================================
 def main():
-    inject_styles_and_scripts()
+    inject_css()
     init_session()
     try:
         creds = get_credentials()
@@ -1982,47 +2010,95 @@ def main():
 
     if st.session_state.student_quiz_started:
         show_student_quiz(db)
-    elif not st.session_state.authenticated:
-        show_login_page(db, jwt_secret)
     else:
-        token_data = verify_token(st.session_state.token, jwt_secret)
-        if not token_data:
-            st.error("⏰ انتهت صلاحية الجلسة.")
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            time.sleep(2)
-            st.rerun()
-
-        choice = show_sidebar(db)
-
-        st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-        if choice == "🏠 لوحة التحكم":
-            show_dashboard(db)
-        elif choice == "👥 إدارة المستخدمين":
-            if st.session_state.user["role"] == "System Admin":
-                show_user_management(db)
+        if not st.session_state.authenticated:
+            show_login_page(db, jwt_secret)
+        else:
+            token_data = verify_token(st.session_state.token, jwt_secret)
+            if not token_data:
+                st.error("⏰ انتهت صلاحية الجلسة.")
+                st.session_state.clear()
+                time.sleep(2)
+                st.rerun()
+                return
+            if st.session_state.show_sidebar:
+                choice = show_sidebar(db)
             else:
-                st.error("🚫 غير مصرح")
-        elif choice == "👩‍🎓 طالباتي":
-            show_my_students(db)
-        elif choice == "📋 الحضور":
-            show_attendance(db)
-        elif choice == "💬 الافتقاد":
-            show_followup(db)
-        elif choice == "🏆 درجات المسابقات":
-            show_class_competition_scores(db)
-        elif choice == "📝 المسابقات والاختبارات":
-            show_quizzes(db)
-        elif choice == "📊 التقارير والإحصائيات":
-            show_reports(db)
-        elif choice == "📜 سجل العمليات":
-            if st.session_state.user["role"] == "System Admin":
-                show_logs(db)
-            else:
-                st.error("🚫 غير مصرح")
-        elif choice == "🔒 تغيير كلمة المرور":
-            change_password(db)
-        st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("""
+                <div id="sidebar-state-hidden" style="display:none;"></div>
+                <style>
+                section[data-testid="stSidebar"] {
+                    display: none !important;
+                    width: 0 !important;
+                    min-width: 0 !important;
+                    max-width: 0 !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    border: none !important;
+                    flex: 0 0 0 !important;
+                    overflow: hidden !important;
+                    position: absolute !important;
+                    left: -9999px !important;
+                    transform: none !important;
+                    translate: none !important;
+                    transition: none !important;
+                }
+                [data-testid="stSidebarOverlay"],
+                div[data-testid="stSidebarOverlay"] {
+                    display: none !important;
+                    pointer-events: none !important;
+                    opacity: 0 !important;
+                    visibility: hidden !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                }
+                [data-testid="stAppViewContainer"] > [data-testid="stMain"],
+                [data-testid="stMainBlockContainer"] {
+                    max-width: 100% !important;
+                    width: 100% !important;
+                    margin-left: 0 !important;
+                    padding-left: 1rem !important;
+                    padding-right: 1rem !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
+                if st.button("☰", key="show_sidebar_btn"):
+                    st.session_state.show_sidebar = True
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+                choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+
+            st.markdown("<div class='content-area'>", unsafe_allow_html=True)
+            if choice == "🏠 لوحة التحكم":
+                show_dashboard(db)
+            elif choice == "👥 إدارة المستخدمين":
+                if st.session_state.user["role"] == "System Admin":
+                    show_user_management(db)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice == "👩‍🎓 طالباتي":
+                show_my_students(db)
+            elif choice == "📋 الحضور":
+                show_attendance(db)
+            elif choice == "💬 الافتقاد":
+                show_followup(db)
+            elif choice == "🏆 درجات المسابقات":
+                show_class_competition_scores(db)
+            elif choice == "📝 المسابقات والاختبارات":
+                show_quizzes(db)
+            elif choice == "📊 التقارير والإحصائيات":
+                show_reports(db)
+            elif choice == "📜 سجل العمليات":
+                if st.session_state.user["role"] == "System Admin":
+                    show_logs(db)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice == "🔒 تغيير كلمة المرور":
+                change_password(db)
+            st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.get("open_help_dialog"):
         show_help_dialog()
