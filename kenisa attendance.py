@@ -23,7 +23,7 @@ st.set_page_config(
     page_title="نظام- كنيسة الشهيدة دميانة",
     page_icon="⛪",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"  # سنخفي الشريط الأصلي تماماً
 )
 
 # =============================================================================
@@ -76,7 +76,7 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن
+# CSS محسّن + القائمة الجانبية المخصصة
 # =============================================================================
 def inject_css():
     st.markdown("""
@@ -89,75 +89,23 @@ def inject_css():
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
 
-        /* ========= Sidebar Base Styles ========= */
+        /* إخفاء الشريط الجانبي الأصلي تماماً */
         section[data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
-            border-left: 1px solid rgba(0,0,0,0.08) !important;
-            padding-top: 1rem !important;
-            transition: all 0.3s ease !important;
-        }
-
-        /* Hide native Streamlit sidebar controls */
-        [data-testid="stSidebarNavToggle"],
-        [data-testid="stSidebarCollapseButton"],
-        [data-testid="collapsedControl"],
-        button[aria-label*="Close sidebar"],
-        button[aria-label*="Close"],
-        [data-testid="baseButton-header"],
-        [data-testid="stSidebarResizer"] {
             display: none !important;
-            pointer-events: none !important;
+            width: 0 !important;
+            min-width: 0 !important;
+            max-width: 0 !important;
+            height: 0 !important;
+            min-height: 0 !important;
             visibility: hidden !important;
             opacity: 0 !important;
-            width: 0 !important;
-            height: 0 !important;
             margin: 0 !important;
             padding: 0 !important;
             border: none !important;
-            position: absolute !important;
-            z-index: -9999 !important;
+            flex: 0 0 0 !important;
             overflow: hidden !important;
+            position: absolute !important;
         }
-
-        /* ========= Mobile Full-Screen Sidebar ========= */
-        @media (max-width: 768px) {
-            section[data-testid="stSidebar"] {
-                width: 100vw !important;
-                min-width: 100vw !important;
-                max-width: 100vw !important;
-                height: 100vh !important;
-                min-height: 100vh !important;
-                max-height: 100vh !important;
-                position: fixed !important;
-                left: 0 !important;
-                top: 0 !important;
-                bottom: 0 !important;
-                z-index: 100000 !important;
-                margin: 0 !important;
-                padding: 1rem !important;
-                border-radius: 0 !important;
-                border: none !important;
-                overflow-y: auto !important;
-                overflow-x: hidden !important;
-            }
-            section[data-testid="stSidebar"].stSidebar--collapsed,
-            section[data-testid="stSidebar"][aria-expanded="false"] {
-                display: none !important;
-                width: 0 !important;
-                min-width: 0 !important;
-                max-width: 0 !important;
-                height: 0 !important;
-                min-height: 0 !important;
-                visibility: hidden !important;
-                opacity: 0 !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                border: none !important;
-                overflow: hidden !important;
-            }
-        }
-
-        /* Hide sidebar overlay */
         [data-testid="stSidebarOverlay"],
         div[data-testid="stSidebarOverlay"] {
             display: none !important;
@@ -166,11 +114,51 @@ def inject_css():
             visibility: hidden !important;
             width: 0 !important;
             height: 0 !important;
-            position: absolute !important;
-            z-index: -9999 !important;
         }
 
-        /* ========= Sidebar Navigation Buttons ========= */
+        /* ========= القائمة الجانبية المخصصة (Custom Overlay) ========= */
+        .custom-sidebar-overlay {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 300px;
+            height: 100vh;
+            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
+            box-shadow: -5px 0 20px rgba(0,0,0,0.2);
+            z-index: 99999;
+            padding: 1.5rem 1rem;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            border-left: 1px solid rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+        }
+        .custom-sidebar-overlay.active {
+            transform: translateX(0);
+        }
+
+        /* شاشة كاملة على الموبايل */
+        @media (max-width: 768px) {
+            .custom-sidebar-overlay {
+                width: 100vw !important;
+                height: 100vh !important;
+                border-radius: 0 !important;
+            }
+        }
+
+        /* زر إغلاق القائمة */
+        .close-sidebar-btn {
+            align-self: flex-start;
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+
+        /* أزرار التنقل داخل القائمة */
         .nav-btn-container {
             display: flex;
             flex-direction: column;
@@ -209,37 +197,18 @@ def inject_css():
             color: white !important;
             transform: translateX(-2px) !important;
         }
-        .nav-btn-container .stButton > button p {
-            font-size: 1rem !important;
-        }
 
-        /* ========= Hide Sidebar Button ========= */
-        .hide-sidebar-btn .stButton > button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important;
-            font-weight: 700 !important;
-            border-radius: 10px !important;
-            padding: 0.6rem 1rem !important;
-            margin-bottom: 1rem !important;
-            border: none !important;
-            box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
-        }
-        .hide-sidebar-btn .stButton > button:hover {
-            transform: scale(1.02) !important;
-            box-shadow: 0 4px 12px rgba(102,126,234,0.4) !important;
-        }
-
-        /* ========= Hamburger / Show Sidebar Button - Smaller & on the Right ========= */
+        /* ========= Hamburger / Show Sidebar Button ========= */
         .floating-show-btn .stButton > button {
             position: fixed !important;
             top: 20px !important;
-            right: 20px !important;   /* Changed from left to right */
+            right: 20px !important;
             z-index: 99999 !important;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
             border-radius: 15px !important;
-            width: 60px !important;    /* Reduced size */
+            width: 60px !important;
             height: 60px !important;
             font-size: 28px !important;
             font-weight: bold !important;
@@ -256,15 +225,12 @@ def inject_css():
             transform: scale(1.08) !important;
             box-shadow: 0 6px 20px rgba(102,126,234,0.6) !important;
         }
-        .floating-show-btn .stButton > button:active {
-            transform: scale(0.96) !important;
-        }
 
-        /* ========= Help Float Button - Smaller & on the Right ========= */
+        /* ========= Help Float Button ========= */
         .help-float-container .stButton > button {
             position: fixed !important;
             top: 20px !important;
-            right: 100px !important;  /* Next to hamburger (20+60+gap) */
+            right: 100px !important;
             z-index: 99998 !important;
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
             color: white !important;
@@ -310,8 +276,6 @@ def inject_css():
         .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
         .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
 
-        section[data-testid="stSidebar"] .stRadio label { font-weight: 600; color: #1a1a2e; font-size: 1rem; }
-
         .timer-container { text-align: center; margin: 1rem 0; }
         .timer-box {
             display: inline-block; background: linear-gradient(135deg, #667eea, #764ba2);
@@ -347,7 +311,7 @@ def inject_css():
                 right: 14px !important;
             }
             .help-float-container .stButton > button {
-                right: 80px !important;  /* next to smaller hamburger */
+                right: 80px !important;
                 top: 14px !important;
                 padding: 10px 16px !important;
                 font-size: 14px !important;
@@ -357,10 +321,6 @@ def inject_css():
             .main-header {
                 font-size: 1.6rem;
                 margin-top: 110px;
-            }
-            .nav-btn-container .stButton > button {
-                padding: 0.65rem 0.9rem !important;
-                font-size: 0.95rem !important;
             }
         }
     </style>
@@ -789,7 +749,7 @@ def init_session():
         "quiz_submitted": False,
         "last_score": 0,
         "menu_choice": "🏠 لوحة التحكم",
-        "show_sidebar": True,  # القائمة تظهر تلقائياً بعد تسجيل الدخول
+        "show_sidebar": True,   # القائمة المخصصة تظهر تلقائياً
         "open_help_dialog": False
     }
     for k, v in defaults.items():
@@ -910,7 +870,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
-                                st.session_state.show_sidebar = True  # القائمة تظهر تلقائياً
+                                st.session_state.show_sidebar = True  # تفتح القائمة تلقائياً
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
@@ -1096,16 +1056,20 @@ def auto_submit_quiz(db, quiz):
     st.session_state.last_score = score
 
 # =============================================================================
-# Sidebar with Button Navigation
+# Custom Sidebar Overlay (تحل محل الشريط الجانبي الأصلي)
 # =============================================================================
-def show_sidebar(db: Database):
-    with st.sidebar:
-        st.markdown('<div class="hide-sidebar-btn">', unsafe_allow_html=True)
-        if st.button("◀ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
+def show_custom_sidebar(db: Database):
+    # القائمة المخصصة تظهر كطبقة فوق المحتوى
+    with st.container():
+        # إضافة الـ overlay div مع كلاس active إذا كان show_sidebar = True
+        sidebar_class = "custom-sidebar-overlay active" if st.session_state.show_sidebar else "custom-sidebar-overlay"
+        st.markdown(f'<div class="{sidebar_class}" id="custom-sidebar">', unsafe_allow_html=True)
+        
+        # زر إغلاق القائمة
+        if st.button("✕ إغلاق القائمة", key="close_sidebar_btn", help="إغلاق القائمة"):
             st.session_state.show_sidebar = False
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
+        
         st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
         st.markdown(f"**👤 {user['full_name']}**")
@@ -1134,7 +1098,8 @@ def show_sidebar(db: Database):
         menu_items = menus.get(role, [])
         if not menu_items:
             st.warning("صلاحية غير معروفة")
-            return None
+            st.markdown('</div>', unsafe_allow_html=True)
+            return
 
         current_choice = st.session_state.get("menu_choice", menu_items[0])
         if current_choice not in menu_items:
@@ -1144,19 +1109,18 @@ def show_sidebar(db: Database):
         st.markdown('<div class="nav-btn-container">', unsafe_allow_html=True)
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
-            if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
-                # عند الضغط على أي زر، يتم إخفاء القائمة وإظهار الصفحة المطلوبة
-                if item != current_choice:
-                    st.session_state.menu_choice = item
-                st.session_state.show_sidebar = False  # إخفاء القائمة
+            if st.button(item, key=f"custom_nav_{item}", use_container_width=True, type=btn_type):
+                # تحديث الصفحة المختارة وإخفاء القائمة
+                st.session_state.menu_choice = item
+                st.session_state.show_sidebar = False
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.divider()
-        if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn"):
+        if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_custom_btn"):
             logout(db)
 
-        return current_choice
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # =============================================================================
 # Dashboard
@@ -1984,7 +1948,7 @@ def main():
 
     jwt_secret = get_jwt_secret()
 
-    # Help button - always visible via robust CSS targeting
+    # زر المساعدة العائم (يظهر دائماً)
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
@@ -2003,87 +1967,45 @@ def main():
                 time.sleep(2)
                 st.rerun()
                 return
-            
+
+            # عرض القائمة المخصصة إذا كانت مفتوحة
             if st.session_state.show_sidebar:
-                choice = show_sidebar(db)
-            else:
-                # Inject CSS to hide sidebar completely and expand main content
-                st.markdown("""
-                <style>
-                section[data-testid="stSidebar"] {
-                    display: none !important;
-                    width: 0 !important;
-                    min-width: 0 !important;
-                    max-width: 0 !important;
-                    height: 0 !important;
-                    min-height: 0 !important;
-                    visibility: hidden !important;
-                    opacity: 0 !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    border: none !important;
-                    flex: 0 0 0 !important;
-                    overflow: hidden !important;
-                    position: absolute !important;
-                    left: -9999px !important;
-                    transform: none !important;
-                    translate: none !important;
-                    transition: none !important;
-                }
-                [data-testid="stSidebarOverlay"],
-                div[data-testid="stSidebarOverlay"] {
-                    display: none !important;
-                    pointer-events: none !important;
-                    opacity: 0 !important;
-                    visibility: hidden !important;
-                    width: 0 !important;
-                    height: 0 !important;
-                }
-                [data-testid="stAppViewContainer"] > [data-testid="stMain"],
-                [data-testid="stMainBlockContainer"] {
-                    max-width: 100% !important;
-                    width: 100% !important;
-                    margin-left: 0 !important;
-                    margin-right: 0 !important;
-                    padding-left: 1rem !important;
-                    padding-right: 1rem !important;
-                }
-                </style>
-                """, unsafe_allow_html=True)
-                
-                # Floating hamburger button with robust CSS targeting
+                show_custom_sidebar(db)
+
+            # زر الهامبرغر العائم (يظهر فقط عند إخفاء القائمة)
+            if not st.session_state.show_sidebar:
                 st.markdown('<div class="floating-show-btn"></div>', unsafe_allow_html=True)
                 if st.button("☰", key="show_sidebar_btn"):
                     st.session_state.show_sidebar = True
                     st.rerun()
-                
-                choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
-                # Validate choice against current role's allowed menus
-                role = st.session_state.user["role"]
-                menus = {
-                    "System Admin": [
-                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "📋 الحضور", "💬 الافتقاد",
-                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
-                        "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
-                    ],
-                    "Father Account": [
-                        "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
-                    ],
-                    "Service Manager": [
-                        "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
-                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
-                    ],
-                    "Teacher": [
-                        "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
-                        "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
-                    ]
-                }
-                menu_items = menus.get(role, [])
-                if choice not in menu_items:
-                    choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
-                    st.session_state.menu_choice = choice
 
-            # Render page content
+            # تحديد الصفحة الحالية
+            choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+            role = st.session_state.user["role"]
+            menus = {
+                "System Admin": [
+                    "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "📋 الحضور", "💬 الافتقاد",
+                    "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
+                    "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
+                ],
+                "Father Account": [
+                    "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                ],
+                "Service Manager": [
+                    "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
+                    "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                ],
+                "Teacher": [
+                    "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
+                    "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
+                ]
+            }
+            menu_items = menus.get(role, [])
+            if choice not in menu_items:
+                choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
+                st.session_state.menu_choice = choice
+
+            # عرض محتوى الصفحة
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if choice == "🏠 لوحة التحكم":
                 show_dashboard(db)
