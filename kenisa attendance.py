@@ -94,10 +94,6 @@ def inject_css():
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
             border-left: 1px solid rgba(0,0,0,0.08) !important;
             padding-top: 1rem !important;
-            width: 21rem !important;
-            min-width: 21rem !important;
-            max-width: 21rem !important;
-            z-index: 100 !important;
             transition: all 0.3s ease !important;
         }
 
@@ -146,6 +142,7 @@ def inject_css():
             }
             section[data-testid="stSidebar"].stSidebar--collapsed,
             section[data-testid="stSidebar"][aria-expanded="false"] {
+                display: none !important;
                 width: 0 !important;
                 min-width: 0 !important;
                 max-width: 0 !important;
@@ -157,8 +154,20 @@ def inject_css():
                 margin: 0 !important;
                 border: none !important;
                 overflow: hidden !important;
-                display: none !important;
             }
+        }
+
+        /* Hide sidebar overlay */
+        [data-testid="stSidebarOverlay"],
+        div[data-testid="stSidebarOverlay"] {
+            display: none !important;
+            pointer-events: none !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            position: absolute !important;
+            z-index: -9999 !important;
         }
 
         /* ========= Sidebar Navigation Buttons ========= */
@@ -221,20 +230,20 @@ def inject_css():
         }
 
         /* ========= Hamburger / Show Sidebar Button - ENLARGED ========= */
-        .floating-show-btn {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 99999;
-        }
-        .floating-show-btn .stButton > button {
+        .floating-show-btn .stButton > button,
+        .element-container:has(.floating-show-btn) + .element-container .stButton > button,
+        .element-container:has(.floating-show-btn) + .element-container button {
+            position: fixed !important;
+            top: 20px !important;
+            left: 20px !important;
+            z-index: 99999 !important;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
             border-radius: 20px !important;
-            width: 96px !important;
-            height: 96px !important;
-            font-size: 44px !important;
+            width: 100px !important;
+            height: 100px !important;
+            font-size: 48px !important;
             font-weight: bold !important;
             box-shadow: 0 8px 32px rgba(102,126,234,0.5) !important;
             display: flex !important;
@@ -242,24 +251,27 @@ def inject_css():
             justify-content: center !important;
             cursor: pointer !important;
             padding: 0 !important;
-            min-height: 96px !important;
+            min-height: 100px !important;
+            transition: all 0.2s ease !important;
         }
-        .floating-show-btn .stButton > button:hover {
+        .floating-show-btn .stButton > button:hover,
+        .element-container:has(.floating-show-btn) + .element-container .stButton > button:hover {
             transform: scale(1.08) !important;
             box-shadow: 0 10px 36px rgba(102,126,234,0.6) !important;
         }
-        .floating-show-btn .stButton > button:active {
+        .floating-show-btn .stButton > button:active,
+        .element-container:has(.floating-show-btn) + .element-container .stButton > button:active {
             transform: scale(0.96) !important;
         }
 
         /* ========= Help Float Button ========= */
-        .help-float-container {
-            position: fixed;
-            top: 20px;
-            left: 132px;
-            z-index: 99998;
-        }
-        .help-float-container .stButton > button {
+        .help-float-container .stButton > button,
+        .element-container:has(.help-float-container) + .element-container .stButton > button,
+        .element-container:has(.help-float-container) + .element-container button {
+            position: fixed !important;
+            top: 20px !important;
+            left: 140px !important;
+            z-index: 99998 !important;
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
             color: white !important;
             font-weight: 700 !important;
@@ -270,8 +282,10 @@ def inject_css():
             box-shadow: 0 4px 16px rgba(243,156,18,0.4) !important;
             white-space: nowrap !important;
             min-height: 56px !important;
+            transition: all 0.2s ease !important;
         }
-        .help-float-container .stButton > button:hover {
+        .help-float-container .stButton > button:hover,
+        .element-container:has(.help-float-container) + .element-container .stButton > button:hover {
             transform: scale(1.04) !important;
             box-shadow: 0 6px 20px rgba(243,156,18,0.5) !important;
         }
@@ -282,7 +296,7 @@ def inject_css():
             margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
             border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             backdrop-filter: blur(5px); border: 1px solid rgba(0,0,0,0.05);
-            margin-top: 80px;
+            margin-top: 100px;
         }
         .card { background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.5rem;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem; transition: transform 0.2s; color: #1a1a2e; border: 1px solid rgba(0,0,0,0.05); }
@@ -330,22 +344,22 @@ def inject_css():
 
         /* ========= Mobile Responsive ========= */
         @media (max-width: 768px) {
-            .floating-show-btn {
-                top: 14px;
-                left: 14px;
-            }
-            .floating-show-btn .stButton > button {
-                width: 80px !important;
-                height: 80px !important;
-                font-size: 38px !important;
+            .floating-show-btn .stButton > button,
+            .element-container:has(.floating-show-btn) + .element-container .stButton > button,
+            .element-container:has(.floating-show-btn) + .element-container button {
+                width: 88px !important;
+                height: 88px !important;
+                font-size: 40px !important;
                 border-radius: 18px !important;
-                min-height: 80px !important;
+                min-height: 88px !important;
+                top: 14px !important;
+                left: 14px !important;
             }
-            .help-float-container {
-                left: 108px;
-                top: 14px;
-            }
-            .help-float-container .stButton > button {
+            .help-float-container .stButton > button,
+            .element-container:has(.help-float-container) + .element-container .stButton > button,
+            .element-container:has(.help-float-container) + .element-container button {
+                left: 116px !important;
+                top: 14px !important;
                 padding: 12px 20px !important;
                 font-size: 16px !important;
                 border-radius: 12px !important;
@@ -353,7 +367,7 @@ def inject_css():
             }
             .main-header {
                 font-size: 1.6rem;
-                margin-top: 90px;
+                margin-top: 110px;
             }
             .nav-btn-container .stButton > button {
                 padding: 0.65rem 0.9rem !important;
@@ -1144,7 +1158,6 @@ def show_sidebar(db: Database):
             if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
-                # Close sidebar automatically on navigation for mobile-first experience
                 st.session_state.show_sidebar = False
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1981,11 +1994,11 @@ def main():
 
     jwt_secret = get_jwt_secret()
 
-    st.markdown('<div class="help-float-container">', unsafe_allow_html=True)
+    # Help button - always visible via robust CSS targeting
+    st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.student_quiz_started:
         show_student_quiz(db)
@@ -2000,17 +2013,20 @@ def main():
                 time.sleep(2)
                 st.rerun()
                 return
+            
             if st.session_state.show_sidebar:
                 choice = show_sidebar(db)
             else:
+                # Inject CSS to hide sidebar completely and expand main content
                 st.markdown("""
-                <div id="sidebar-state-hidden" style="display:none;"></div>
                 <style>
                 section[data-testid="stSidebar"] {
                     display: none !important;
                     width: 0 !important;
                     min-width: 0 !important;
                     max-width: 0 !important;
+                    height: 0 !important;
+                    min-height: 0 !important;
                     visibility: hidden !important;
                     opacity: 0 !important;
                     margin: 0 !important;
@@ -2044,11 +2060,13 @@ def main():
                 }
                 </style>
                 """, unsafe_allow_html=True)
-                st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
+                
+                # Floating hamburger button with robust CSS targeting
+                st.markdown('<div class="floating-show-btn"></div>', unsafe_allow_html=True)
                 if st.button("☰", key="show_sidebar_btn"):
                     st.session_state.show_sidebar = True
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
+                
                 choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
                 # Validate choice against current role's allowed menus
                 role = st.session_state.user["role"]
@@ -2075,6 +2093,7 @@ def main():
                     choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
                     st.session_state.menu_choice = choice
 
+            # Render page content
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if choice == "🏠 لوحة التحكم":
                 show_dashboard(db)
