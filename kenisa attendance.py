@@ -229,63 +229,56 @@ def inject_css():
             box-shadow: 0 4px 12px rgba(102,126,234,0.4) !important;
         }
 
-        /* ========= Hamburger / Show Sidebar Button - ENLARGED ========= */
-        .floating-show-btn .stButton > button,
-        .element-container:has(.floating-show-btn) + .element-container .stButton > button,
-        .element-container:has(.floating-show-btn) + .element-container button {
+        /* ========= Hamburger / Show Sidebar Button - Smaller & on the Right ========= */
+        .floating-show-btn .stButton > button {
             position: fixed !important;
             top: 20px !important;
-            left: 20px !important;
+            right: 20px !important;   /* Changed from left to right */
             z-index: 99999 !important;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
-            border-radius: 20px !important;
-            width: 100px !important;
-            height: 100px !important;
-            font-size: 48px !important;
+            border-radius: 15px !important;
+            width: 60px !important;    /* Reduced size */
+            height: 60px !important;
+            font-size: 28px !important;
             font-weight: bold !important;
-            box-shadow: 0 8px 32px rgba(102,126,234,0.5) !important;
+            box-shadow: 0 4px 15px rgba(102,126,234,0.4) !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
             cursor: pointer !important;
             padding: 0 !important;
-            min-height: 100px !important;
+            min-height: 60px !important;
             transition: all 0.2s ease !important;
         }
-        .floating-show-btn .stButton > button:hover,
-        .element-container:has(.floating-show-btn) + .element-container .stButton > button:hover {
+        .floating-show-btn .stButton > button:hover {
             transform: scale(1.08) !important;
-            box-shadow: 0 10px 36px rgba(102,126,234,0.6) !important;
+            box-shadow: 0 6px 20px rgba(102,126,234,0.6) !important;
         }
-        .floating-show-btn .stButton > button:active,
-        .element-container:has(.floating-show-btn) + .element-container .stButton > button:active {
+        .floating-show-btn .stButton > button:active {
             transform: scale(0.96) !important;
         }
 
-        /* ========= Help Float Button ========= */
-        .help-float-container .stButton > button,
-        .element-container:has(.help-float-container) + .element-container .stButton > button,
-        .element-container:has(.help-float-container) + .element-container button {
+        /* ========= Help Float Button - Smaller & on the Right ========= */
+        .help-float-container .stButton > button {
             position: fixed !important;
             top: 20px !important;
-            left: 140px !important;
+            right: 100px !important;  /* Next to hamburger (20+60+gap) */
             z-index: 99998 !important;
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
             color: white !important;
             font-weight: 700 !important;
-            border-radius: 14px !important;
-            padding: 14px 26px !important;
-            font-size: 18px !important;
+            border-radius: 12px !important;
+            padding: 12px 20px !important;
+            font-size: 16px !important;
             border: none !important;
-            box-shadow: 0 4px 16px rgba(243,156,18,0.4) !important;
+            box-shadow: 0 4px 15px rgba(243,156,18,0.4) !important;
             white-space: nowrap !important;
-            min-height: 56px !important;
+            min-height: 48px !important;
             transition: all 0.2s ease !important;
         }
-        .help-float-container .stButton > button:hover,
-        .element-container:has(.help-float-container) + .element-container .stButton > button:hover {
+        .help-float-container .stButton > button:hover {
             transform: scale(1.04) !important;
             box-shadow: 0 6px 20px rgba(243,156,18,0.5) !important;
         }
@@ -344,26 +337,22 @@ def inject_css():
 
         /* ========= Mobile Responsive ========= */
         @media (max-width: 768px) {
-            .floating-show-btn .stButton > button,
-            .element-container:has(.floating-show-btn) + .element-container .stButton > button,
-            .element-container:has(.floating-show-btn) + .element-container button {
-                width: 88px !important;
-                height: 88px !important;
-                font-size: 40px !important;
-                border-radius: 18px !important;
-                min-height: 88px !important;
-                top: 14px !important;
-                left: 14px !important;
-            }
-            .help-float-container .stButton > button,
-            .element-container:has(.help-float-container) + .element-container .stButton > button,
-            .element-container:has(.help-float-container) + .element-container button {
-                left: 116px !important;
-                top: 14px !important;
-                padding: 12px 20px !important;
-                font-size: 16px !important;
+            .floating-show-btn .stButton > button {
+                width: 50px !important;
+                height: 50px !important;
+                font-size: 24px !important;
                 border-radius: 12px !important;
-                min-height: 48px !important;
+                min-height: 50px !important;
+                top: 14px !important;
+                right: 14px !important;
+            }
+            .help-float-container .stButton > button {
+                right: 80px !important;  /* next to smaller hamburger */
+                top: 14px !important;
+                padding: 10px 16px !important;
+                font-size: 14px !important;
+                border-radius: 10px !important;
+                min-height: 40px !important;
             }
             .main-header {
                 font-size: 1.6rem;
