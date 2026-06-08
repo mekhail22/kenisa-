@@ -721,7 +721,7 @@ def init_session():
         "quiz_submitted": False,
         "last_score": 0,
         "menu_choice": "🏠 لوحة التحكم",
-        "show_sidebar": True,  # القائمة تظهر فوراً بعد تسجيل الدخول
+        "show_sidebar": True,
         "open_help_dialog": False
     }
     for k, v in defaults.items():
@@ -842,7 +842,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
-                                st.session_state.show_sidebar = True  # تفتح تلقائياً
+                                st.session_state.show_sidebar = True
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
@@ -929,7 +929,13 @@ def show_student_quiz(db: Database):
     if st.session_state.quiz_submitted or st.session_state.quiz_phase == "finished":
         st.success("تم تسليم الاختبار بنجاح!")
         if "last_score" in st.session_state:
-            st.info(f"نتيجتك: {st.session_state.last_score}/20")
+            # عرض النتيجة بصيغة 20/20 بدلاً من 20/20.0
+            score = st.session_state.last_score
+            if score.is_integer():
+                score_display = int(score)
+            else:
+                score_display = score
+            st.info(f"نتيجتك: {score_display}/20")
         if st.button("إنهاء والعودة إلى الرئيسية", use_container_width=True, key="finish_quiz_btn"):
             for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
                         "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers", "quiz_submitted", "last_score"]:
@@ -938,36 +944,7 @@ def show_student_quiz(db: Database):
             st.rerun()
         return
 
-    end_timestamp = st.session_state.quiz_end_time.timestamp() * 1000
-    timer_html = f"""
-    <div class="timer-container">
-        <span id="quiz-timer" class="timer-box" data-end="{end_timestamp}">⏳ الوقت المتبقي: --:--</span>
-    </div>
-    <script>
-        (function() {{
-            const timerSpan = document.getElementById('quiz-timer');
-            if (!timerSpan) return;
-            const endMillis = parseInt(timerSpan.dataset.end, 10);
-            if (isNaN(endMillis)) return;
-            function updateTimer() {{
-                const now = Date.now();
-                const diff = endMillis - now;
-                if (diff <= 0) {{
-                    timerSpan.textContent = '⏳ الوقت المتبقي: 00:00';
-                    const btn = document.getElementById('timeout-submit-btn');
-                    if (btn) btn.click();
-                    return;
-                }}
-                const mins = Math.floor(diff / 60000);
-                const secs = Math.floor((diff % 60000) / 1000);
-                timerSpan.textContent = `⏳ الوقت المتبقي: ${{mins.toString().padStart(2,'0')}}:${{secs.toString().padStart(2,'0')}}`;
-            }}
-            updateTimer();
-            setInterval(updateTimer, 1000);
-        }})();
-    </script>
-    """
-    st.markdown(timer_html, unsafe_allow_html=True)
+    # لم نعد نعرض المؤقت
     st.title(f"📝 {quiz['title']}")
     st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
     st.markdown("---")
@@ -996,13 +973,7 @@ def show_student_quiz(db: Database):
         auto_submit_quiz(db, quiz)
         st.session_state.quiz_phase = "finished"
         st.rerun()
-    st.markdown('<div style="display:none">', unsafe_allow_html=True)
-    if st.button("", key="timeout_submit_btn"):
-        if not st.session_state.quiz_submitted:
-            auto_submit_quiz(db, quiz)
-            st.session_state.quiz_phase = "finished"
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    # تمت إزالة الزر المخفي وعداد الوقت تماماً
 
 def auto_submit_quiz(db, quiz):
     questions = db.get_quiz_questions(quiz["quiz_id"])
