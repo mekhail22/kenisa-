@@ -1,7 +1,5 @@
 
-# Writing the complete fixed code - Part 1 (Imports and Setup)
-
-part1 = '''import streamlit as st
+import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
@@ -77,17 +75,6 @@ def get_jwt_secret():
         return st.secrets["sheets"]["jwt_secret"]
     except Exception:
         return DEFAULT_JWT_SECRET
-'''
-
-print("Part 1 written successfully")
-print(f"Length: {len(part1)} chars")
-
-# Part 2 - CSS Injection
-
-part2 = '''
-# =============================================================================
-# CSS محسّن (الشريط الجانبي يفتح من اليمين كطبقة منزلقة)
-# =============================================================================
 def inject_css():
     st.markdown("""
     <style>
@@ -307,17 +294,9 @@ def inject_css():
         }
     </style>
     """, unsafe_allow_html=True)
-'''
 
-print("Part 2 written successfully")
-print(f"Length: {len(part2)} chars")
 
-# Part 3 - SheetCache and Retry decorator
 
-part3 = '''
-# =============================================================================
-# SheetCache
-# =============================================================================
 class SheetCache:
     def __init__(self):
         if 'sheet_cache' not in st.session_state:
@@ -392,17 +371,8 @@ def retry_operation(max_retries=5, base_delay=2):
             return None
         return wrapper
     return decorator
-'''
 
-print("Part 3 written successfully")
-print(f"Length: {len(part3)} chars")
 
-# Part 4 - Database Class (FIXED with proper section name handling and Google Sheets fixes)
-
-part4 = '''
-# =============================================================================
-# Database Class - FIXED
-# =============================================================================
 class Database:
     def __init__(self, creds, spreadsheet_id):
         self.client = gspread.authorize(creds)
@@ -764,17 +734,10 @@ class Database:
         df = self.get_logs()
         df = df[df.log_id != log_id]
         self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
-'''
-
-print("Part 4 written successfully")
-print(f"Length: {len(part4)} chars")
 
 # Part 5 - JWT, Session, Telegram, Help Dialog
 
-part5 = '''
-# =============================================================================
-# JWT & Session Helpers
-# =============================================================================
+
 def generate_token(user: dict, secret: str) -> str:
     payload = {
         "user_id": user["user_id"],
@@ -930,17 +893,10 @@ def show_help_dialog():
                     st.balloons()
                 else:
                     st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
-'''
 
-print("Part 5 written successfully")
-print(f"Length: {len(part5)} chars")
 
-# Part 6 - Initialization and Login (FIXED)
 
-part6 = '''
-# =============================================================================
-# Initialization & Login
-# =============================================================================
+
 def show_initialization(db: Database):
     users = db.get_users()
     if users.empty:
@@ -1032,119 +988,10 @@ def show_login_page(db: Database, jwt_secret: str):
                                     st.rerun()
                             except Exception as e:
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
-'''
 
-print("Part 6 written successfully")
-print(f"Length: {len(part6)} chars")
 
-# Part 6 - Initialization and Login (FIXED)
 
-part6 = '''
-# =============================================================================
-# Initialization & Login
-# =============================================================================
-def show_initialization(db: Database):
-    users = db.get_users()
-    if users.empty:
-        st.markdown("<div class='card'><h2 style='text-align:center;'>🔧 لا يوجد مستخدمون بعد</h2></div>", unsafe_allow_html=True)
-        st.markdown("#### يرجى الضغط على الزر التالي لإنشاء مدير النظام الافتراضي:")
-        if st.button("🛠️ تهيئة النظام وإنشاء المسؤول الأول", type="primary", use_container_width=True, key="init_admin_btn"):
-            admin_data = {
-                "user_id": "admin-001", "username": "admin", "password": "admin123",
-                "role": "System Admin", "full_name": "مدير النظام",
-                "section_id": "", "phone": "0100000000", "email": "admin@church.com"
-            }
-            db.add_user(admin_data)
-            st.success("✅ تم إنشاء مدير النظام بنجاح!")
-            st.info("**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`")
-            time.sleep(2)
-            st.rerun()
-        st.stop()
 
-def show_login_page(db: Database, jwt_secret: str):
-    st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة</h1>", unsafe_allow_html=True)
-    show_initialization(db)
-    tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
-    with tab1:
-        with st.form("login_form"):
-            username = st.text_input("اسم المستخدم")
-            password = st.text_input("كلمة المرور", type="password")
-            if st.form_submit_button("تسجيل الدخول", use_container_width=True):
-                if not username or not password:
-                    st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
-                else:
-                    with st.spinner("جاري التحقق..."):
-                        users = db.get_users()
-                        user_row = users[users.username == username]
-                        if user_row.empty:
-                            st.error("اسم المستخدم غير موجود")
-                        else:
-                            user = user_row.iloc[0].to_dict()
-                            if password == user.get("password", ""):
-                                token = generate_token(user, jwt_secret)
-                                st.session_state.token = token
-                                st.session_state.user = user
-                                st.session_state.authenticated = True
-                                st.session_state.menu_choice = "🏠 لوحة التحكم"
-                                st.session_state.show_sidebar = True
-                                db.add_log(user["user_id"], "تسجيل الدخول")
-                                st.success("تم تسجيل الدخول بنجاح!")
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error("كلمة المرور غير صحيحة")
-    with tab2:
-        st.subheader("دخول الاختبار الإلكتروني")
-        with st.form("student_login_form"):
-            code = st.text_input("كود الاختبار", placeholder="مثال: GEN123")
-            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="مثال: QUIZ99")
-            if st.form_submit_button("بدء الاختبار", use_container_width=True):
-                if not code or not passwd:
-                    st.error("الرجاء إدخال الكود وكلمة المرور")
-                else:
-                    with st.spinner("جاري التحقق من الكود..."):
-                        quizzes = db.get_quizzes()
-                        quiz = quizzes[(quizzes.quiz_code == code) & (quizzes.password == passwd)]
-                        if quiz.empty:
-                            st.error("كود أو كلمة مرور خاطئة")
-                        else:
-                            quiz = quiz.iloc[0].to_dict()
-                            try:
-                                expiry = pd.to_datetime(quiz["expiry_date"])
-                                if expiry < datetime.now():
-                                    st.error("انتهت صلاحية هذا الاختبار")
-                                    db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
-                                elif quiz.get("is_active", "True") == "False":
-                                    st.error("هذا الاختبار غير نشط حالياً")
-                                else:
-                                    st.session_state.student_quiz = quiz
-                                    st.session_state.student_quiz_started = True
-                                    st.session_state.quiz_phase = "enter_name"
-                                    st.session_state.student_name = ""
-                                    st.session_state.student_id = ""
-                                    st.session_state.quiz_start_time = None
-                                    st.session_state.quiz_end_time = None
-                                    st.session_state.quiz_answers = {}
-                                    st.session_state.quiz_submitted = False
-                                    st.session_state.last_score = 0
-                                    st.session_state.current_attempt_id = None
-                                    st.session_state.last_saved_answers_str = ""
-                                    st.session_state.show_quiz_review = False
-                                    st.session_state.quiz_wrong_answers = []
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
-'''
-
-print("Part 6 written successfully")
-print(f"Length: {len(part6)} chars")
-
-# Part 8 - Sidebar Navigation
-
-part8 = '''
-# =============================================================================
-# Sidebar Navigation (محتوى الشريط الجانبي)
-# =============================================================================
 def show_sidebar_navigation(db: Database):
     with st.sidebar:
         st.markdown("## ⛪ كنيسة الشهيدة دميانة")
@@ -1208,17 +1055,11 @@ def show_sidebar_navigation(db: Database):
             logout(db)
 
     return current_choice
-'''
 
-print("Part 8 written successfully")
-print(f"Length: {len(part8)} chars")
 
 # Part 9 - Dashboard (FIXED with section names and top section scores)
 
-part9 = '''
-# =============================================================================
-# Dashboard - FIXED
-# =============================================================================
+
 def show_dashboard(db: Database):
     user = st.session_state.user
     role = user["role"]
@@ -1329,17 +1170,9 @@ def show_dashboard(db: Database):
         st.dataframe(urgent[["full_name", "اسم الفصل", "followup_date", "notes"]], use_container_width=True)
     else:
         st.info("كل البنات منتظمات.")
-'''
 
-print("Part 9 written successfully")
-print(f"Length: {len(part9)} chars")
 
-# Part 10 - User Management (FIXED with section names instead of IDs)
 
-part10 = '''
-# =============================================================================
-# إدارة المستخدمين - FIXED
-# =============================================================================
 def show_user_management(db: Database):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
     users = db.get_users()
@@ -1605,10 +1438,7 @@ def show_user_management(db: Database):
                     st.success("تم الحذف")
                     time.sleep(1)
                     st.rerun()
-'''
 
-print("Part 10 written successfully")
-print(f"Length: {len(part10)} chars")
 # =============================================================================
 # Attendance - FIXED
 # =============================================================================
