@@ -3,5 +3,5 @@ gspread
 google-auth
 pandas
 plotly
-PyJWT
+jwt
 requests
