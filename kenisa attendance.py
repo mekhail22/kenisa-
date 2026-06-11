@@ -756,9 +756,11 @@ def init_session():
         "show_sidebar": True,
         "open_help_dialog": False,
         "current_attempt_id": None,
-        "last_saved_answers_str": "",  # لتتبع آخر إجابات تم حفظها
-        "quiz_questions": None,        # لتخزين الأسئلة أثناء الامتحان
-        "show_review": False           # لاظهار مراجعة الأخطاء
+        "last_saved_answers_str": "",
+        "quiz_questions": None,
+        "show_review": False,
+        "data_errors": [],
+        "data_validated": False
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -831,6 +833,51 @@ def show_help_dialog():
                     st.balloons()
                 else:
                     st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
+
+# =============================================================================
+# Validation Function – فحص سلامة البيانات
+# =============================================================================
+def validate_data_integrity(db: Database):
+    """تفحص تكامل البيانات وترجع قائمة بالأخطاء"""
+    errors = []
+    students = db.get_students()
+    sections = db.get_sections()
+    users = db.get_users()
+
+    if not students.empty and not sections.empty:
+        valid_sections = set(sections["section_id"].tolist())
+        for _, row in students.iterrows():
+            sid = row["section_id"]
+            if pd.isna(sid) or str(sid).strip() == "":
+                errors.append(f"الطالبة {row['full_name']} ليس لديها فصل (section_id فارغ).")
+            elif str(sid).strip() not in valid_sections:
+                errors.append(f"الطالبة {row['full_name']} تنتمي لفصل غير موجود ({sid}).")
+    elif not students.empty and sections.empty:
+        errors.append("لا توجد فصول مسجلة، كل الطالبات بدون فصول.")
+
+    if not users.empty and not sections.empty:
+        valid_sections = set(sections["section_id"].tolist())
+        for _, row in users.iterrows():
+            if row["role"] in ["Teacher", "Service Manager"]:
+                sid = row.get("section_id", "")
+                if sid and str(sid).strip() not in valid_sections:
+                    errors.append(f"المستخدم {row['full_name']} (دور: {row['role']}) مرتبط بفصل غير موجود ({sid}).")
+    return errors
+
+def auto_fix_missing_sections(db: Database):
+    """إنشاء فصول تلقائيًا للـ section_id الموجودة في الطالبات وغير الموجودة في جدول الفصول"""
+    students = db.get_students()
+    sections = db.get_sections()
+    if students.empty:
+        return False
+    existing_ids = set(sections["section_id"].tolist()) if not sections.empty else set()
+    students_ids = students["section_id"].dropna().unique().tolist()
+    missing = [sid for sid in students_ids if sid and str(sid).strip() not in existing_ids]
+    if missing:
+        for sid in missing:
+            db.add_section({"section_id": str(sid), "section_name": f"فصل (معرف {sid[:8]})"})
+        return True
+    return False
 
 # =============================================================================
 # Initialization & Login
@@ -973,15 +1020,14 @@ def show_student_quiz(db: Database):
             format_func=lambda x: options_dict[x], index=None, placeholder="اختر اسمك..."
         )
         if selected_id is not None:
-            # إظهار الفصل الذي تنتمي إليه الطالبة
             student_row = active_students[active_students.student_id == selected_id].iloc[0]
             section_id = student_row["section_id"]
             sections_df = db.get_sections()
             if not sections_df.empty:
                 sec_name = sections_df[sections_df.section_id == section_id]["section_name"].values
-                section_name = sec_name[0] if len(sec_name) > 0 else "غير معروف"
+                section_name = sec_name[0] if len(sec_name) > 0 else "لم يتم تعيين فصل"
             else:
-                section_name = "غير معروف"
+                section_name = "لم يتم تعيين فصل"
             st.info(f"أنتِ في فصل: **{section_name}**")
         st.markdown("---")
         st.info("إذا لم تجد اسمك في القائمة، يرجى التواصل مع مشرف الخدمة لإضافتك.")
@@ -1018,14 +1064,13 @@ def show_student_quiz(db: Database):
             st.session_state.current_attempt_id = attempt_id
             st.session_state.quiz_answers = {}
             st.session_state.last_saved_answers_str = ""
-            st.session_state.quiz_questions = None   # سيتم تحميل الأسئلة في الصفحة التالية
+            st.session_state.quiz_questions = None
             st.session_state.show_review = False
             st.session_state.quiz_phase = "taking_quiz"
             st.rerun()
         return
 
     if st.session_state.quiz_phase == "taking_quiz":
-        # تحميل الأسئلة مرة واحدة وتخزينها في الجلسة
         if not st.session_state.get("quiz_questions"):
             questions_df = db.get_quiz_questions(quiz["quiz_id"])
             if questions_df.empty:
@@ -1066,11 +1111,10 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_submitted = True
             st.session_state.last_score = score
             st.session_state.quiz_phase = "finished"
-            st.session_state.show_review = False  # سيبدأ بواجهة النتيجة
+            st.session_state.show_review = False
             st.rerun()
         return
 
-    # عرض النتيجة وإمكانية مراجعة الأخطاء
     if st.session_state.quiz_phase == "finished":
         if not st.session_state.get("show_review", False):
             st.success("تم تسليم الاختبار بنجاح!")
@@ -1085,7 +1129,6 @@ def show_student_quiz(db: Database):
                 st.session_state.show_review = True
                 st.rerun()
             if st.button("إنهاء والعودة إلى الرئيسية", use_container_width=True, key="finish_no_review_btn"):
-                # تنظيف جميع الحقول المتعلقة بالامتحان
                 for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
                             "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers",
                             "quiz_submitted", "last_score", "current_attempt_id", "last_saved_answers_str",
@@ -1095,7 +1138,6 @@ def show_student_quiz(db: Database):
                 st.rerun()
         else:
             st.markdown("## مراجعة الإجابات")
-            # استخدام الأسئلة المخزنة مسبقاً أو تحميلها
             if not st.session_state.get("quiz_questions"):
                 questions_df = db.get_quiz_questions(quiz["quiz_id"])
                 if questions_df.empty:
@@ -1131,7 +1173,7 @@ def show_student_quiz(db: Database):
         return
 
 # =============================================================================
-# Sidebar Navigation (محتوى الشريط الجانبي)
+# Sidebar Navigation
 # =============================================================================
 def show_sidebar_navigation(db: Database):
     with st.sidebar:
@@ -1191,13 +1233,27 @@ def show_sidebar_navigation(db: Database):
     return current_choice
 
 # =============================================================================
-# Dashboard (أضفنا إحصائية أفضل فصل)
+# Dashboard (محسّنة مع عرض الأخطاء وزر الإصلاح)
 # =============================================================================
 def show_dashboard(db: Database):
     user = st.session_state.user
     role = user["role"]
     section_id = user.get("section_id", "")
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
+
+    # عرض أخطاء تكامل البيانات للمسؤولين
+    if role in ["System Admin", "Service Manager"] and st.session_state.get("data_errors"):
+        with st.expander("⚠️ تنبيهات هامة - أخطاء في البيانات", expanded=True):
+            for err in st.session_state.data_errors:
+                st.warning(err)
+            if st.button("🔧 إصلاح تلقائي (إنشاء الفصول الناقصة)", key="auto_fix_btn"):
+                if auto_fix_missing_sections(db):
+                    st.session_state.data_errors = validate_data_integrity(db)
+                    st.success("تم إنشاء الفصول الناقصة. سيتم تحديث الصفحة...")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.info("لا توجد فصول ناقصة لإصلاحها.")
 
     students = db.get_students()
     attendance = db.get_attendance()
@@ -1258,7 +1314,7 @@ def show_dashboard(db: Database):
     else:
         st.info("كل البنات منتظمات.")
 
-    # ----- إحصائية أفضل فصل في المسابقات (للمدراء فقط) -----
+    # إحصائية أفضل فصل في المسابقات (للمديرين)
     if role in ["System Admin", "Father Account", "Service Manager"]:
         st.markdown("---")
         st.subheader("🏆 أفضل فصل درجات في المسابقات")
@@ -1272,9 +1328,10 @@ def show_dashboard(db: Database):
                 merged["score"] = pd.to_numeric(merged["score"], errors="coerce").fillna(0)
                 section_scores = merged.groupby("section_id")["score"].mean().reset_index()
                 section_scores = section_scores.merge(sections_all[["section_id", "section_name"]], on="section_id", how="left")
-                top_section = section_scores.sort_values("score", ascending=False).iloc[0]
-                st.metric(f"أفضل فصل: {top_section['section_name']}", f"{top_section['score']:.1f} / 20 متوسط")
-                st.dataframe(section_scores.rename(columns={"section_name":"الفصل", "score":"متوسط الدرجات"}).set_index("الفصل"), use_container_width=True)
+                if not section_scores.empty:
+                    top_section = section_scores.sort_values("score", ascending=False).iloc[0]
+                    st.metric(f"أفضل فصل: {top_section['section_name']}", f"{top_section['score']:.1f} / 20 متوسط")
+                    st.dataframe(section_scores.rename(columns={"section_name":"الفصل", "score":"متوسط الدرجات"}).set_index("الفصل"), use_container_width=True)
 
 # =============================================================================
 # إدارة المستخدمين
@@ -1766,8 +1823,6 @@ def show_class_competition_scores(db: Database):
     else:
         class_results["اسم الطالبة"] = ""
 
-    # إضافة اسم الفصل (اختياري للمعلمة – فصلك معروف)
-    # لكن يمكن أن نبينه
     if not section_students.empty:
         sec_name = db.get_sections()
         if not sec_name.empty:
@@ -1981,14 +2036,12 @@ def show_quizzes(db: Database):
     sections_all = db.get_sections()
 
     if not results.empty:
-        # فلترة حسب الدور
         if "status" in results.columns:
             results = results[results["status"] == "submitted"]
         if role == "Teacher" and section_id and not students.empty:
             section_student_ids = students[students.section_id == section_id]["student_id"].tolist()
             results = results[results.student_id.isin(section_student_ids)]
 
-        # دمج مع أسماء الطالبات والفصول
         if not students.empty:
             results = results.merge(students[["student_id", "full_name", "section_id"]], on="student_id", how="left")
             results.rename(columns={"full_name": "اسم الطالبة", "section_id": "section_id"}, inplace=True)
@@ -1998,12 +2051,10 @@ def show_quizzes(db: Database):
         else:
             results["الفصل"] = ""
 
-        # إضافة اسم الاختبار
         if not quizzes.empty:
             results = results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
             results.rename(columns={"title": "المسابقة"}, inplace=True)
 
-        # تصفية حسب الاختبار
         quiz_ids = results["quiz_id"].unique().tolist()
         if quiz_ids:
             quiz_titles = quizzes[quizzes["quiz_id"].isin(quiz_ids)][["quiz_id", "title"]].drop_duplicates()
@@ -2130,6 +2181,11 @@ def main():
         st.session_state.open_help_dialog = True
         st.rerun()
 
+    # فحص تكامل البيانات مرة واحدة عند بدء التشغيل
+    if not st.session_state.get("data_validated") and st.session_state.get("authenticated") is False:
+        # سيتم تشغيل الفحص بعد تسجيل الدخول
+        pass
+
     if st.session_state.student_quiz_started:
         show_student_quiz(db)
     else:
@@ -2143,6 +2199,15 @@ def main():
                 time.sleep(2)
                 st.rerun()
                 return
+
+            # فحص تكامل البيانات بعد تسجيل الدخول (مرة واحدة)
+            if not st.session_state.get("data_validated"):
+                errors = validate_data_integrity(db)
+                st.session_state.data_errors = errors
+                st.session_state.data_validated = True
+                if errors and st.session_state.user["role"] in ["System Admin", "Service Manager"]:
+                    # سيتم عرضها في لوحة التحكم أو في أي صفحة من خلال dashboard لكن سنعرض تنبيهًا هنا
+                    pass  # سيظهر في dashboard
 
             if not st.session_state.show_sidebar:
                 st.markdown("""
