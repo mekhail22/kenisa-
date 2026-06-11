@@ -887,7 +887,7 @@ def show_help_dialog():
                     st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
 
 # =============================================================================
-# One-time section renaming helper
+# Automatic section fixing (runs once at startup)
 # =============================================================================
 DEFAULT_SECTION_NAMES = {
     "172bd1d5-9707-49f5-83cc-9b82f596230a": "فصل مارمينا والبابا كيرلس",
@@ -896,13 +896,32 @@ DEFAULT_SECTION_NAMES = {
     "aa692682-7340-40e0-b028-891a000ce437": "فصل الانبا ميخائيل"
 }
 
-def apply_default_section_names(db):
-    """تحديث أسماء الفصول للـ UUIDs المحددة إلى الأسماء العربية الصحيحة"""
-    updated = 0
+def auto_fix_sections(db):
+    """
+    تضمن وجود الفصول الأربعة الأساسية بأسمائها الصحيحة ومعرفات UUID المحددة.
+    إذا كان هناك صف بنفس الاسم لكن بمعرف آخر، يتم تصحيحه أو إضافته.
+    """
+    sections_df = db.get_sections()
     for sec_id, sec_name in DEFAULT_SECTION_NAMES.items():
-        db.update_section(sec_id, {"section_name": sec_name})
-        updated += 1
-    return updated
+        # ابحث عن الصف المطابق للمعرف
+        existing = sections_df[sections_df["section_id"] == sec_id] if not sections_df.empty else pd.DataFrame()
+        if existing.empty:
+            # لا يوجد صف بهذا المعرّف – نبحث عن صف بنفس الاسم
+            name_match = sections_df[sections_df["section_name"] == sec_name] if not sections_df.empty else pd.DataFrame()
+            if not name_match.empty:
+                # نأخذ أول صف مطابق ونحدّث معرّفه ليكون الصحيح
+                old_id = name_match.iloc[0]["section_id"]
+                db.update_section(old_id, {"section_id": sec_id, "section_name": sec_name})
+            else:
+                # لا يوجد لا معرّف ولا اسم – نضيفه جديداً
+                db.add_section({"section_id": sec_id, "section_name": sec_name})
+        else:
+            # الصف موجود، تأكد أن الاسم صحيح
+            current_name = existing.iloc[0]["section_name"]
+            if current_name != sec_name:
+                db.update_section(sec_id, {"section_name": sec_name})
+    # تحديث الكاش بعد التعديلات
+    db.cache.invalidate("Sections")
 
 # =============================================================================
 # Initialization & Login
@@ -1633,13 +1652,11 @@ def show_user_management(db):
                         time.sleep(1)
                         st.rerun()
 
-        with st.expander("🔧 تعيين أسماء الفصول الافتراضية"):
-            st.warning("سيتم تعيين الأسماء العربية الصحيحة للفصول التالية إذا كانت موجودة:")
-            for sec_id, sec_name in DEFAULT_SECTION_NAMES.items():
-                st.write(f"- `{sec_id}` → **{sec_name}**")
-            if st.button("تطبيق الأسماء الافتراضية", key="apply_default_sections"):
-                updated = apply_default_section_names(db)
-                st.success(f"تم تحديث {updated} فصل بنجاح.")
+        with st.expander("🔧 إعادة تعيين أسماء الفصول الافتراضية"):
+            st.warning("سيتم تصحيح أسماء الفصول الأربعة الأساسية إلى الأسماء العربية الصحيحة (في حالة وجودها).")
+            if st.button("تطبيق التصحيح التلقائي", key="apply_default_sections"):
+                auto_fix_sections(db)
+                st.success("تم تصحيح أسماء الفصول بنجاح.")
                 time.sleep(1)
                 st.rerun()
 
@@ -2204,6 +2221,10 @@ def main():
         st.error(f"❌ خطأ في الاتصال: {e}")
         st.stop()
     jwt_secret = get_jwt_secret()
+
+    # --- تصحيح أسماء الفصول تلقائياً عند بدء التشغيل ---
+    auto_fix_sections(db)
+
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
