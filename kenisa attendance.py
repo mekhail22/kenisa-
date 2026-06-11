@@ -3,7 +3,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 import json
 import random
@@ -18,6 +18,10 @@ from functools import wraps
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 CACHE_TTL_SECONDS = 120
+CAIRO_TZ = timezone(timedelta(hours=3), name='Africa/Cairo')  # توقيت مصر
+
+def get_cairo_now():
+    return datetime.now(CAIRO_TZ)
 
 st.set_page_config(
     page_title="نظام- كنيسة الشهيدة دميانة",
@@ -652,7 +656,7 @@ class Database:
             "student_name": student_name,
             "score": "",
             "total_marks": "20",
-            "submission_time": datetime.now().isoformat(),
+            "submission_time": get_cairo_now().isoformat(),
             "answers": "{}",
             "status": "started"
         }
@@ -666,7 +670,6 @@ class Database:
         return result_id
 
     def save_answers(self, result_id, answers_dict):
-        """تحديث حقل الإجابات فقط"""
         df = self._sheet_to_df("QuizResults")
         if df.empty:
             return
@@ -684,7 +687,7 @@ class Database:
         if len(idx) > 0:
             df.at[idx[0], "score"] = str(score)
             df.at[idx[0], "answers"] = answers_json
-            df.at[idx[0], "submission_time"] = datetime.now().isoformat()
+            df.at[idx[0], "submission_time"] = get_cairo_now().isoformat()
             df.at[idx[0], "status"] = "submitted"
             self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
                                                   "score", "total_marks", "submission_time", "answers", "status"])
@@ -702,7 +705,7 @@ class Database:
     def add_log(self, user_id, action, details=""):
         log = {
             "log_id": str(uuid.uuid4()),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": get_cairo_now().isoformat(),
             "user_id": user_id,
             "action": action,
             "details": details
@@ -723,7 +726,7 @@ def generate_token(user: dict, secret: str) -> str:
         "role": user["role"],
         "full_name": user["full_name"],
         "section_id": user.get("section_id", ""),
-        "exp": datetime.utcnow() + timedelta(hours=24)
+        "exp": datetime.utcnow() + timedelta(hours=24)  # UTC للتسجيل
     }
     return jwt.encode(payload, secret, algorithm="HS256")
 
@@ -838,7 +841,6 @@ def show_help_dialog():
 # Validation Function – فحص سلامة البيانات
 # =============================================================================
 def validate_data_integrity(db: Database):
-    """تفحص تكامل البيانات وترجع قائمة بالأخطاء"""
     errors = []
     students = db.get_students()
     sections = db.get_sections()
@@ -865,7 +867,6 @@ def validate_data_integrity(db: Database):
     return errors
 
 def auto_fix_missing_sections(db: Database):
-    """إنشاء فصول تلقائيًا للـ section_id الموجودة في الطالبات وغير الموجودة في جدول الفصول"""
     students = db.get_students()
     sections = db.get_sections()
     if students.empty:
@@ -950,7 +951,7 @@ def show_login_page(db: Database, jwt_secret: str):
                             quiz = quiz.iloc[0].to_dict()
                             try:
                                 expiry = pd.to_datetime(quiz["expiry_date"])
-                                if expiry < datetime.now():
+                                if expiry < get_cairo_now():
                                     st.error("انتهت صلاحية هذا الاختبار")
                                     db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
                                 elif quiz.get("is_active", "True") == "False":
@@ -1057,7 +1058,7 @@ def show_student_quiz(db: Database):
             selected_student = active_students[active_students["student_id"] == selected_id].iloc[0].to_dict()
             st.session_state.student_name = selected_student["full_name"]
             st.session_state.student_id = selected_id
-            st.session_state.quiz_start_time = datetime.now()
+            st.session_state.quiz_start_time = get_cairo_now()
             time_limit_seconds = int(quiz["time_limit_minutes"]) * 60
             st.session_state.quiz_end_time = st.session_state.quiz_start_time + timedelta(seconds=time_limit_seconds)
             attempt_id = db.start_quiz_attempt(quiz["quiz_id"], selected_id, st.session_state.student_name)
@@ -1071,6 +1072,18 @@ def show_student_quiz(db: Database):
         return
 
     if st.session_state.quiz_phase == "taking_quiz":
+        # التحقق من انتهاء الوقت
+        now = get_cairo_now()
+        if now > st.session_state.quiz_end_time:
+            st.warning("انتهى الوقت المخصص للامتحان. جاري تسليم إجاباتك تلقائياً...")
+            score = grade_attempt(db, quiz["quiz_id"], st.session_state.quiz_answers)
+            answers_json = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
+            db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
+            st.session_state.quiz_submitted = True
+            st.session_state.last_score = score
+            st.session_state.quiz_phase = "finished"
+            st.rerun()
+
         if not st.session_state.get("quiz_questions"):
             questions_df = db.get_quiz_questions(quiz["quiz_id"])
             if questions_df.empty:
@@ -1080,6 +1093,10 @@ def show_student_quiz(db: Database):
         else:
             questions_df = pd.DataFrame(st.session_state.quiz_questions)
 
+        remaining = st.session_state.quiz_end_time - now
+        remaining_min = int(remaining.total_seconds() // 60)
+        remaining_sec = int(remaining.total_seconds() % 60)
+        st.markdown(f"<div class='timer-box'>⏳ الوقت المتبقي: {remaining_min} دقيقة و {remaining_sec} ثانية</div>", unsafe_allow_html=True)
         st.title(f"📝 {quiz['title']}")
         st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
         st.markdown("---")
@@ -1111,7 +1128,6 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_submitted = True
             st.session_state.last_score = score
             st.session_state.quiz_phase = "finished"
-            st.session_state.show_review = False
             st.rerun()
         return
 
@@ -1267,7 +1283,7 @@ def show_dashboard(db: Database):
             followup = followup[followup.student_id.isin(students["student_id"])]
 
     total_students = len(students)
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = get_cairo_now().strftime("%Y-%m-%d")
     present_today = len(attendance[(attendance.date == today_str) & (attendance.status == "حاضر")]) if not attendance.empty else 0
     absent_today = len(attendance[(attendance.date == today_str) & (attendance.status == "غائب")]) if not attendance.empty else 0
     need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty else 0
@@ -1281,7 +1297,7 @@ def show_dashboard(db: Database):
     st.markdown("#### 📈 الحضور الأسبوعي")
     if not attendance.empty:
         attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
-        last_week = datetime.now() - timedelta(days=7)
+        last_week = get_cairo_now() - timedelta(days=7)
         recent = attendance[attendance.date >= last_week]
         if not recent.empty:
             fig = px.histogram(recent, x="date", color="status", barmode="group")
@@ -1294,7 +1310,7 @@ def show_dashboard(db: Database):
 
     st.markdown("#### 🏅 أكثر 5 طالبات غياباً هذا الشهر")
     if not attendance.empty:
-        month_start = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+        month_start = get_cairo_now().replace(day=1).strftime("%Y-%m-%d")
         month_att = attendance[(attendance.date >= month_start) & (attendance.status == "غائب")]
         if not month_att.empty:
             absent_counts = month_att.groupby("student_id").size().reset_index(name="أيام الغياب")
@@ -1599,7 +1615,7 @@ def show_attendance(db: Database):
     else:
         selected_section = st.selectbox("اختر الفصل", sections["section_id"],
                                format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0])
-    date = st.date_input("التاريخ", datetime.now())
+    date = st.date_input("التاريخ", get_cairo_now().date())
     date_str = date.strftime("%Y-%m-%d")
     students = db.get_students()
     section_students = students[students.section_id == selected_section] if not students.empty else pd.DataFrame()
@@ -1723,7 +1739,7 @@ def show_followup(db: Database):
         if st.form_submit_button("حفظ المتابعة"):
             db.add_followup_record({
                 "record_id": str(uuid.uuid4()), "student_id": student,
-                "teacher_id": user["user_id"], "followup_date": datetime.now().strftime("%Y-%m-%d"),
+                "teacher_id": user["user_id"], "followup_date": get_cairo_now().strftime("%Y-%m-%d"),
                 "followup_type": ftype, "notes": notes, "regularity_status": regularity
             })
             st.success("✅ تم تسجيل الافتقاد بنجاح")
@@ -1773,7 +1789,7 @@ def show_my_students(db: Database):
             if st.form_submit_button("حفظ المتابعة"):
                 db.add_followup_record({
                     "record_id": str(uuid.uuid4()), "student_id": selected,
-                    "teacher_id": user["user_id"], "followup_date": datetime.now().strftime("%Y-%m-%d"),
+                    "teacher_id": user["user_id"], "followup_date": get_cairo_now().strftime("%Y-%m-%d"),
                     "followup_type": ftype, "notes": notes, "regularity_status": regularity
                 })
                 st.success("✅ تمت المتابعة بنجاح")
@@ -1922,7 +1938,7 @@ def show_quizzes(db: Database):
             title = st.text_input("عنوان الاختبار*")
             num_questions = st.selectbox("عدد الأسئلة", [10, 20, 30], index=1)
             time_limit = st.number_input("الوقت (بالدقائق)", 1, 180, 15)
-            expiry = st.date_input("تاريخ الانتهاء", datetime.now() + timedelta(days=7))
+            expiry = st.date_input("تاريخ الانتهاء", get_cairo_now().date() + timedelta(days=7))
             if st.form_submit_button("إنشاء"):
                 if not title:
                     st.error("يرجى إدخال عنوان الاختبار")
@@ -2102,8 +2118,8 @@ def show_reports(db: Database):
     attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
     st.subheader("📅 تقرير الغياب الشهري")
     col1, col2 = st.columns(2)
-    month = col1.selectbox("الشهر", range(1,13), index=datetime.now().month-1)
-    year = col2.number_input("السنة", value=datetime.now().year, min_value=2020)
+    month = col1.selectbox("الشهر", range(1,13), index=get_cairo_now().month-1)
+    year = col2.number_input("السنة", value=get_cairo_now().year, min_value=2020)
     monthly = attendance[(attendance.date.dt.month == month) & (attendance.date.dt.year == year)]
     if not monthly.empty:
         summary = monthly.groupby(["student_id", "status"]).size().reset_index(name="count")
@@ -2181,11 +2197,6 @@ def main():
         st.session_state.open_help_dialog = True
         st.rerun()
 
-    # فحص تكامل البيانات مرة واحدة عند بدء التشغيل
-    if not st.session_state.get("data_validated") and st.session_state.get("authenticated") is False:
-        # سيتم تشغيل الفحص بعد تسجيل الدخول
-        pass
-
     if st.session_state.student_quiz_started:
         show_student_quiz(db)
     else:
@@ -2200,14 +2211,10 @@ def main():
                 st.rerun()
                 return
 
-            # فحص تكامل البيانات بعد تسجيل الدخول (مرة واحدة)
             if not st.session_state.get("data_validated"):
                 errors = validate_data_integrity(db)
                 st.session_state.data_errors = errors
                 st.session_state.data_validated = True
-                if errors and st.session_state.user["role"] in ["System Admin", "Service Manager"]:
-                    # سيتم عرضها في لوحة التحكم أو في أي صفحة من خلال dashboard لكن سنعرض تنبيهًا هنا
-                    pass  # سيظهر في dashboard
 
             if not st.session_state.show_sidebar:
                 st.markdown("""
