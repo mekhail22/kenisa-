@@ -18,7 +18,7 @@ from functools import wraps
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 CACHE_TTL_SECONDS = 120
-CAIRO_TZ = timezone(timedelta(hours=3), name='Africa/Cairo')  # توقيت مصر
+CAIRO_TZ = timezone(timedelta(hours=3), name='Africa/Cairo')
 
 def get_cairo_now():
     return datetime.now(CAIRO_TZ)
@@ -80,7 +80,7 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن (الشريط الجانبي يفتح من اليمين كطبقة منزلقة)
+# CSS محسّن
 # =============================================================================
 def inject_css():
     st.markdown("""
@@ -726,7 +726,7 @@ def generate_token(user: dict, secret: str) -> str:
         "role": user["role"],
         "full_name": user["full_name"],
         "section_id": user.get("section_id", ""),
-        "exp": datetime.utcnow() + timedelta(hours=24)  # UTC للتسجيل
+        "exp": datetime.utcnow() + timedelta(hours=24)
     }
     return jwt.encode(payload, secret, algorithm="HS256")
 
@@ -950,7 +950,9 @@ def show_login_page(db: Database, jwt_secret: str):
                         else:
                             quiz = quiz.iloc[0].to_dict()
                             try:
-                                expiry = pd.to_datetime(quiz["expiry_date"])
+                                # تحويل تاريخ الانتهاء إلى كائن واعي بتوقيت القاهرة
+                                expiry_naive = pd.to_datetime(quiz["expiry_date"]).to_pydatetime()
+                                expiry = expiry_naive.replace(tzinfo=CAIRO_TZ)
                                 if expiry < get_cairo_now():
                                     st.error("انتهت صلاحية هذا الاختبار")
                                     db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
@@ -1257,7 +1259,6 @@ def show_dashboard(db: Database):
     section_id = user.get("section_id", "")
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
 
-    # عرض أخطاء تكامل البيانات للمسؤولين
     if role in ["System Admin", "Service Manager"] and st.session_state.get("data_errors"):
         with st.expander("⚠️ تنبيهات هامة - أخطاء في البيانات", expanded=True):
             for err in st.session_state.data_errors:
@@ -1330,7 +1331,6 @@ def show_dashboard(db: Database):
     else:
         st.info("كل البنات منتظمات.")
 
-    # إحصائية أفضل فصل في المسابقات (للمديرين)
     if role in ["System Admin", "Father Account", "Service Manager"]:
         st.markdown("---")
         st.subheader("🏆 أفضل فصل درجات في المسابقات")
