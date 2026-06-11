@@ -887,6 +887,24 @@ def show_help_dialog():
                     st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
 
 # =============================================================================
+# One-time section renaming helper
+# =============================================================================
+DEFAULT_SECTION_NAMES = {
+    "172bd1d5-9707-49f5-83cc-9b82f596230a": "فصل مارمينا والبابا كيرلس",
+    "4b74397b-03e4-4333-b3ac-0919fa721243": "فصل الشهيده دميانه",
+    "1606a794-5261-4033-b290-e59eca740bdc": "فصل الشهيده فلومينا",
+    "aa692682-7340-40e0-b028-891a000ce437": "فصل الانبا ميخائيل"
+}
+
+def apply_default_section_names(db):
+    """تحديث أسماء الفصول للـ UUIDs المحددة إلى الأسماء العربية الصحيحة"""
+    updated = 0
+    for sec_id, sec_name in DEFAULT_SECTION_NAMES.items():
+        db.update_section(sec_id, {"section_name": sec_name})
+        updated += 1
+    return updated
+
+# =============================================================================
 # Initialization & Login
 # =============================================================================
 def show_initialization(db):
@@ -1600,6 +1618,31 @@ def show_user_management(db):
                         st.success("تمت الإضافة")
                         time.sleep(1)
                         st.rerun()
+        with st.expander("✏️ تعديل اسم فصل"):
+            if not sections.empty:
+                section_options = dict(zip(sections["section_id"], sections["section_name"]))
+                selected_sec_id = st.selectbox("اختر الفصل", options=list(section_options.keys()),
+                                               format_func=lambda x: section_options[x], key="rename_section_sel")
+                new_name = st.text_input("الاسم الجديد للفصل", value=section_options[selected_sec_id], key="rename_section_input")
+                if st.button("تحديث اسم الفصل", key="rename_section_btn"):
+                    if not new_name or new_name.strip() == "":
+                        st.error("الرجاء إدخال اسم صحيح")
+                    else:
+                        db.update_section(selected_sec_id, {"section_name": new_name.strip()})
+                        st.success("تم تغيير الاسم بنجاح")
+                        time.sleep(1)
+                        st.rerun()
+
+        with st.expander("🔧 تعيين أسماء الفصول الافتراضية"):
+            st.warning("سيتم تعيين الأسماء العربية الصحيحة للفصول التالية إذا كانت موجودة:")
+            for sec_id, sec_name in DEFAULT_SECTION_NAMES.items():
+                st.write(f"- `{sec_id}` → **{sec_name}**")
+            if st.button("تطبيق الأسماء الافتراضية", key="apply_default_sections"):
+                updated = apply_default_section_names(db)
+                st.success(f"تم تحديث {updated} فصل بنجاح.")
+                time.sleep(1)
+                st.rerun()
+
         with st.expander("🗑️ حذف فصل"):
             if not sections.empty:
                 del_options = dict(zip(sections["section_id"], sections["section_name"]))
