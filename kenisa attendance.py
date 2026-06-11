@@ -252,12 +252,6 @@ def inject_css():
         .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
         .content-area { padding: 0 1rem; }
 
-        .timer-container { text-align: center; margin: 1rem 0; }
-        .timer-box {
-            display: inline-block; background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white; padding: 0.8rem 2rem; border-radius: 15px;
-            font-size: 1.8rem; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
         .stDataFrame { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .streamlit-expanderHeader {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -950,7 +944,6 @@ def show_login_page(db: Database, jwt_secret: str):
                         else:
                             quiz = quiz.iloc[0].to_dict()
                             try:
-                                # تحويل تاريخ الانتهاء إلى كائن واعي بتوقيت القاهرة
                                 expiry_naive = pd.to_datetime(quiz["expiry_date"]).to_pydatetime()
                                 expiry = expiry_naive.replace(tzinfo=CAIRO_TZ)
                                 if expiry < get_cairo_now():
@@ -978,10 +971,9 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (مع التسليم التلقائي عند الخروج، وعرض الأخطاء)
+# Student Quiz Interface (بدون عرض الوقت المتبقي، مع التسليم التلقائي)
 # =============================================================================
 def grade_attempt(db, quiz_id, answers_dict):
-    """تصحيح الإجابات وإرجاع النتيجة"""
     questions = db.get_quiz_questions(quiz_id)
     if questions.empty:
         return 0
@@ -997,7 +989,6 @@ def grade_attempt(db, quiz_id, answers_dict):
     return score
 
 def save_current_answers(db):
-    """حفظ الإجابات الحالية في قاعدة البيانات إذا تغيرت"""
     if not st.session_state.current_attempt_id:
         return
     current_answers = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
@@ -1074,7 +1065,6 @@ def show_student_quiz(db: Database):
         return
 
     if st.session_state.quiz_phase == "taking_quiz":
-        # التحقق من انتهاء الوقت
         now = get_cairo_now()
         if now > st.session_state.quiz_end_time:
             st.warning("انتهى الوقت المخصص للامتحان. جاري تسليم إجاباتك تلقائياً...")
@@ -1095,10 +1085,6 @@ def show_student_quiz(db: Database):
         else:
             questions_df = pd.DataFrame(st.session_state.quiz_questions)
 
-        remaining = st.session_state.quiz_end_time - now
-        remaining_min = int(remaining.total_seconds() // 60)
-        remaining_sec = int(remaining.total_seconds() % 60)
-        st.markdown(f"<div class='timer-box'>⏳ الوقت المتبقي: {remaining_min} دقيقة و {remaining_sec} ثانية</div>", unsafe_allow_html=True)
         st.title(f"📝 {quiz['title']}")
         st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
         st.markdown("---")
@@ -1797,7 +1783,7 @@ def show_my_students(db: Database):
                 st.rerun()
 
 # =============================================================================
-# Class Competition Scores (Teacher Only) - مع تحسين الفصل بين الامتحانات
+# Class Competition Scores (Teacher Only)
 # =============================================================================
 def show_class_competition_scores(db: Database):
     st.markdown("<h2 class='main-header'>🏆 درجات مسابقات الفصل</h2>", unsafe_allow_html=True)
@@ -1923,7 +1909,7 @@ def show_class_competition_scores(db: Database):
         st.info("لا توجد نتائج مطابقة للبحث.")
 
 # =============================================================================
-# Quizzes (مع إدارة الاختبارات وعرض النتائج بشكل منفصل)
+# Quizzes
 # =============================================================================
 def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
@@ -2178,7 +2164,7 @@ def change_password(db: Database):
                 st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
 # =============================================================================
-# Main App (التحكم بانزلاق القائمة من اليمين)
+# Main App
 # =============================================================================
 def main():
     inject_css()
