@@ -80,11 +80,21 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن
+# CSS محسّن مع تثبيت المظهر الفاتح لمتصفح Safari والمتصفحات الداكنة
 # =============================================================================
 def inject_css():
     st.markdown("""
     <style>
+        html, body, .stApp {
+            color-scheme: light !important;
+        }
+        @media (prefers-color-scheme: dark) {
+            html, body, .stApp {
+                background-color: #f0f2f6 !important;
+                color: #1a1a2e !important;
+            }
+        }
+
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
         * { font-family: 'Cairo', sans-serif; }
         body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; }
@@ -901,8 +911,9 @@ def show_login_page(db: Database, jwt_secret: str):
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
         with st.form("login_form"):
-            username = st.text_input("اسم المستخدم")
-            password = st.text_input("كلمة المرور", type="password")
+            # تجاهل المسافات الزائدة في اسم المستخدم وكلمة المرور
+            username = st.text_input("اسم المستخدم").strip()
+            password = st.text_input("كلمة المرور", type="password").strip()
             if st.form_submit_button("تسجيل الدخول", use_container_width=True):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
@@ -930,8 +941,8 @@ def show_login_page(db: Database, jwt_secret: str):
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
         with st.form("student_login_form"):
-            code = st.text_input("كود الاختبار", placeholder="مثال: GEN123")
-            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="مثال: QUIZ99")
+            code = st.text_input("كود الاختبار", placeholder="مثال: GEN123").strip()
+            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="مثال: QUIZ99").strip()
             if st.form_submit_button("بدء الاختبار", use_container_width=True):
                 if not code or not passwd:
                     st.error("الرجاء إدخال الكود وكلمة المرور")
@@ -1336,7 +1347,7 @@ def show_dashboard(db: Database):
                     st.dataframe(section_scores.rename(columns={"section_name":"الفصل", "score":"متوسط الدرجات"}).set_index("الفصل"), use_container_width=True)
 
 # =============================================================================
-# إدارة المستخدمين
+# إدارة المستخدمين (مع تجاهل المسافات في إنشاء المستخدمين الجدد)
 # =============================================================================
 def show_user_management(db: Database):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
@@ -1354,9 +1365,9 @@ def show_user_management(db: Database):
         with st.expander("➕ إضافة مستخدم جديد"):
             with st.form("add_user_form"):
                 col1, col2 = st.columns(2)
-                username = col1.text_input("اسم المستخدم*")
+                username = col1.text_input("اسم المستخدم*").strip()
                 full_name = col2.text_input("الاسم الكامل*")
-                password = col1.text_input("كلمة المرور*", type="password")
+                password = col1.text_input("كلمة المرور*", type="password").strip()
                 role = col2.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"])
                 section_id = ""
                 if role in ["Service Manager", "Teacher"] and not sections.empty:
@@ -1427,8 +1438,8 @@ def show_user_management(db: Database):
             st.info("لا توجد مدرسات مسجلات.")
         with st.expander("➕ إضافة مدرسة جديدة"):
             with st.form("add_teacher_form"):
-                teacher_name = st.text_input("اسم المستخدم*")
-                password = st.text_input("كلمة المرور*", type="password")
+                teacher_name = st.text_input("اسم المستخدم*").strip()
+                password = st.text_input("كلمة المرور*", type="password").strip()
                 section_id = ""
                 if not sections.empty:
                     section_options = ["None"] + sections["section_id"].tolist()
@@ -2146,9 +2157,9 @@ def show_logs(db: Database):
 def change_password(db: Database):
     st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
     with st.form("change_password_form"):
-        old = st.text_input("كلمة المرور الحالية", type="password")
-        new = st.text_input("كلمة المرور الجديدة", type="password")
-        confirm = st.text_input("تأكيد كلمة المرور الجديدة", type="password")
+        old = st.text_input("كلمة المرور الحالية", type="password").strip()
+        new = st.text_input("كلمة المرور الجديدة", type="password").strip()
+        confirm = st.text_input("تأكيد كلمة المرور الجديدة", type="password").strip()
         if st.form_submit_button("تغيير كلمة المرور"):
             if not old or not new or not confirm:
                 st.error("الرجاء ملء جميع الحقول")
