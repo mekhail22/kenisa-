@@ -395,18 +395,39 @@ class Database:
         return ws
 
     def _sheet_to_df(self, sheet_name):
+        """قراءة البيانات من ورقة العمل ومعالجة تكرار رؤوس الأعمدة تلقائياً"""
         cached = self.cache.get(sheet_name)
         if cached is not None:
             return cached.copy()
         try:
             ws = self._get_or_create_worksheet(sheet_name, [])
-            data = ws.get_all_records()
-            if not data:
+            # استخدام get_all_values لتجنب خطأ تكرار العناوين
+            values = ws.get_all_values()
+            if not values or len(values) < 1:
                 df = pd.DataFrame()
             else:
-                df = pd.DataFrame(data)
+                raw_headers = values[0]
+                # جعل أسماء الأعمدة فريدة عن طريق إضافة لاحقة رقمية للمكرر
+                seen = {}
+                unique_headers = []
+                for h in raw_headers:
+                    if h in seen:
+                        seen[h] += 1
+                        unique_headers.append(f"{h}_{seen[h]}")
+                    else:
+                        seen[h] = 0
+                        unique_headers.append(h)
+                # الإبلاغ عن التكرار إن وجد
+                if any(count > 0 for count in seen.values()):
+                    st.warning(f"⚠️ تحتوي ورقة '{sheet_name}' على أعمدة مكررة وتم معالجتها تلقائياً. يُنصح بتصحيح الورقة.")
+
+                data_rows = values[1:]
+                df = pd.DataFrame(data_rows, columns=unique_headers)
+                # إزالة الأعمدة والصفوف الفارغة تماماً
                 df.dropna(how='all', axis=1, inplace=True)
+                df.dropna(how='all', inplace=True)
                 df = df.astype(object)
+
             self.cache.set(sheet_name, df.copy())
             return df
         except Exception as e:
