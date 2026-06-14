@@ -625,7 +625,17 @@ class Database:
         return self._sheet_to_df("FollowUp")
 
     def add_followup_record(self, record):
+        """إضافة سجل افتقاد مع التحقق من عدم وجود تكرار (نفس الطالبة، التاريخ، النوع)"""
         df = self.get_followup()
+        # تحقق من عدم وجود سجل مطابق مسبقاً
+        if not df.empty and "student_id" in df.columns and "followup_date" in df.columns and "followup_type" in df.columns:
+            duplicate = df[
+                (df.student_id == record["student_id"]) &
+                (df.followup_date == record["followup_date"]) &
+                (df.followup_type == record["followup_type"])
+            ]
+            if not duplicate.empty:
+                raise ValueError("⛔ تم تسجيل نفس الافتقاد مسبقاً لنفس الطالبة في نفس التاريخ ونفس النوع.")
         if df.empty:
             df = pd.DataFrame(columns=["record_id", "student_id", "teacher_id", "followup_date",
                                        "followup_type", "notes", "regularity_status"])
@@ -1771,7 +1781,7 @@ def show_attendance(db: Database):
             st.rerun()
 
 # =============================================================================
-# Follow-up
+# Follow-up (مع منع تكرار الافتقاد)
 # =============================================================================
 def show_followup(db: Database):
     st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
@@ -1828,17 +1838,20 @@ def show_followup(db: Database):
             notes = st.text_area("ملاحظات")
             regularity = st.selectbox("حالة الانتظام", ["منتظم", "متقطع", "منقطع"])
             if st.form_submit_button("حفظ المتابعة"):
-                db.add_followup_record({
-                    "record_id": str(uuid.uuid4()), "student_id": student,
-                    "teacher_id": user.get("user_id", ""), "followup_date": get_cairo_now().strftime("%Y-%m-%d"),
-                    "followup_type": ftype, "notes": notes, "regularity_status": regularity
-                })
-                st.success("✅ تم تسجيل الافتقاد بنجاح")
-                time.sleep(1)
-                st.rerun()
+                try:
+                    db.add_followup_record({
+                        "record_id": str(uuid.uuid4()), "student_id": student,
+                        "teacher_id": user.get("user_id", ""), "followup_date": get_cairo_now().strftime("%Y-%m-%d"),
+                        "followup_type": ftype, "notes": notes, "regularity_status": regularity
+                    })
+                    st.success("✅ تم تسجيل الافتقاد بنجاح")
+                    time.sleep(1)
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
 
 # =============================================================================
-# My Students
+# My Students (مع منع تكرار الافتقاد)
 # =============================================================================
 def show_my_students(db: Database):
     st.markdown("<h2 class='main-header'>👩‍🎓 طالباتي</h2>", unsafe_allow_html=True)
@@ -1880,14 +1893,17 @@ def show_my_students(db: Database):
                 notes = st.text_area("ملاحظات")
                 regularity = st.selectbox("حالة الانتظام", ["منتظم", "متقطع", "منقطع"])
                 if st.form_submit_button("حفظ المتابعة"):
-                    db.add_followup_record({
-                        "record_id": str(uuid.uuid4()), "student_id": selected,
-                        "teacher_id": user.get("user_id", ""), "followup_date": get_cairo_now().strftime("%Y-%m-%d"),
-                        "followup_type": ftype, "notes": notes, "regularity_status": regularity
-                    })
-                    st.success("✅ تمت المتابعة بنجاح")
-                    time.sleep(1)
-                    st.rerun()
+                    try:
+                        db.add_followup_record({
+                            "record_id": str(uuid.uuid4()), "student_id": selected,
+                            "teacher_id": user.get("user_id", ""), "followup_date": get_cairo_now().strftime("%Y-%m-%d"),
+                            "followup_type": ftype, "notes": notes, "regularity_status": regularity
+                        })
+                        st.success("✅ تمت المتابعة بنجاح")
+                        time.sleep(1)
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(str(e))
 
 # =============================================================================
 # Class Competition Scores (Teacher Only)
@@ -2009,6 +2025,7 @@ def show_class_competition_scores(db: Database):
             if "اسم الطالبة" in filtered_df.columns:
                 st.markdown("---")
                 st.subheader("🏆 ترتيب الطالبات")
+                # هنا score أصبح رقمي بالفعل
                 ranking = filtered_df.groupby("اسم الطالبة")["score"].sum().reset_index().sort_values("score", ascending=False)
                 ranking.index = range(1, len(ranking) + 1)
                 st.dataframe(ranking, use_container_width=True)
@@ -2016,7 +2033,7 @@ def show_class_competition_scores(db: Database):
         st.info("لا توجد نتائج مطابقة للبحث.")
 
 # =============================================================================
-# Quizzes
+# Quizzes (مع تصحيح تجميع الدرجات)
 # =============================================================================
 def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
@@ -2167,6 +2184,10 @@ def show_quizzes(db: Database):
             if "quiz_id" in results.columns:
                 results = results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
                 results.rename(columns={"title": "المسابقة"}, inplace=True)
+
+        # تحويل score إلى رقمي لتجنب دمج النصوص
+        if "score" in results.columns:
+            results["score"] = pd.to_numeric(results["score"], errors="coerce").fillna(0)
 
         if "quiz_id" in results.columns:
             quiz_ids = results["quiz_id"].unique().tolist()
