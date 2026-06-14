@@ -431,24 +431,52 @@ class Database:
             return pd.DataFrame()
 
     def _df_to_sheet(self, sheet_name, df, columns):
+        """
+        كتابة DataFrame إلى Google Sheet بشكل آمن يمنع فقدان البيانات.
+        يتم الاحتفاظ بنسخة احتياطية قبل الكتابة، وفي حال فشل التحديث يتم استرجاع النسخة السابقة.
+        """
         if not isinstance(df, pd.DataFrame):
             raise ValueError("df must be a DataFrame")
         if not isinstance(columns, list) or not columns:
             raise ValueError("columns must be a non-empty list")
+
         ws = self._get_or_create_worksheet(sheet_name, columns)
-        ws.clear()
-        if df.empty:
-            ws.update([columns])
-        else:
-            for col in columns:
-                if col not in df.columns:
-                    df[col] = ""
-            work_df = df[columns].copy()
-            work_df.fillna("", inplace=True)
-            work_df = work_df.astype(str)
-            values = [columns] + work_df.values.tolist()
+
+        # تجهيز البيانات المراد كتابتها
+        for col in columns:
+            if col not in df.columns:
+                df[col] = ""
+        work_df = df[columns].copy()
+        work_df.fillna("", inplace=True)
+        work_df = work_df.astype(str)
+        values = [columns] + work_df.values.tolist()
+        num_rows = len(values)
+
+        # --- نسخ احتياطي للبيانات الحالية ---
+        backup_df = None
+        try:
+            backup_df = self.cache.get(sheet_name)
+            if backup_df is None:
+                backup_df = self._sheet_to_df(sheet_name)
+        except Exception:
+            pass
+
+        # --- الكتابابة الفعلية مع استرجاع في حالة الفشل ---
+        try:
+            ws.resize(rows=num_rows, cols=len(columns))
             ws.update(values)
-        self.cache.invalidate(sheet_name)
+            self.cache.invalidate(sheet_name)
+        except Exception as e:
+            if backup_df is not None and not backup_df.empty:
+                try:
+                    st.warning("فشل حفظ البيانات، جاري استعادة النسخة السابقة...")
+                    self._df_to_sheet(sheet_name, backup_df, columns)
+                    self.cache.invalidate(sheet_name)
+                    raise Exception(f"تم استرجاع البيانات السابقة بسبب خطأ: {str(e)}")
+                except Exception as restore_error:
+                    raise Exception(f"فشل حفظ البيانات وفشل استرجاع النسخة الاحتياطية: {str(e)}")
+            else:
+                raise e
 
     @staticmethod
     def _safe_str(value):
