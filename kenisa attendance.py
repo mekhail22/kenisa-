@@ -911,7 +911,6 @@ def show_login_page(db: Database, jwt_secret: str):
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
         with st.form("login_form"):
-            # تجاهل المسافات الزائدة في اسم المستخدم وكلمة المرور
             username = st.text_input("اسم المستخدم").strip()
             password = st.text_input("كلمة المرور", type="password").strip()
             if st.form_submit_button("تسجيل الدخول", use_container_width=True):
@@ -1280,6 +1279,10 @@ def show_dashboard(db: Database):
         if not followup.empty and not students.empty:
             followup = followup[followup.student_id.isin(students["student_id"])]
 
+    # تحويل عمود التاريخ إلى datetime مبكراً (بدون توقيت زمني)
+    if not attendance.empty:
+        attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
+
     total_students = len(students)
     today_str = get_cairo_now().strftime("%Y-%m-%d")
     present_today = len(attendance[(attendance.date == today_str) & (attendance.status == "حاضر")]) if not attendance.empty else 0
@@ -1294,8 +1297,7 @@ def show_dashboard(db: Database):
 
     st.markdown("#### 📈 الحضور الأسبوعي")
     if not attendance.empty:
-        attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
-        last_week = get_cairo_now() - timedelta(days=7)
+        last_week = get_cairo_now().replace(tzinfo=None) - timedelta(days=7)   # naive datetime
         recent = attendance[attendance.date >= last_week]
         if not recent.empty:
             fig = px.histogram(recent, x="date", color="status", barmode="group")
