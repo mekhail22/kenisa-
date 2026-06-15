@@ -395,7 +395,6 @@ class Database:
         return ws
 
     def _sheet_to_df(self, sheet_name):
-        """قراءة البيانات من ورقة العمل ومعالجة تكرار رؤوس الأعمدة تلقائياً"""
         cached = self.cache.get(sheet_name)
         if cached is not None:
             return cached.copy()
@@ -431,10 +430,6 @@ class Database:
             return pd.DataFrame()
 
     def _df_to_sheet(self, sheet_name, df, columns):
-        """
-        كتابة DataFrame إلى Google Sheet بشكل آمن يمنع فقدان البيانات.
-        يتم الاحتفاظ بنسخة احتياطية قبل الكتابة، وفي حال فشل التحديث يتم استرجاع النسخة السابقة.
-        """
         if not isinstance(df, pd.DataFrame):
             raise ValueError("df must be a DataFrame")
         if not isinstance(columns, list) or not columns:
@@ -442,7 +437,6 @@ class Database:
 
         ws = self._get_or_create_worksheet(sheet_name, columns)
 
-        # تجهيز البيانات المراد كتابتها
         for col in columns:
             if col not in df.columns:
                 df[col] = ""
@@ -452,7 +446,6 @@ class Database:
         values = [columns] + work_df.values.tolist()
         num_rows = len(values)
 
-        # --- نسخ احتياطي للبيانات الحالية ---
         backup_df = None
         try:
             backup_df = self.cache.get(sheet_name)
@@ -461,7 +454,6 @@ class Database:
         except Exception:
             pass
 
-        # --- الكتابابة الفعلية مع استرجاع في حالة الفشل ---
         try:
             ws.resize(rows=num_rows, cols=len(columns))
             ws.update(values)
@@ -625,9 +617,7 @@ class Database:
         return self._sheet_to_df("FollowUp")
 
     def add_followup_record(self, record):
-        """إضافة سجل افتقاد مع التحقق من عدم وجود تكرار (نفس الطالبة، التاريخ، النوع)"""
         df = self.get_followup()
-        # تحقق من عدم وجود سجل مطابق مسبقاً
         if not df.empty and "student_id" in df.columns and "followup_date" in df.columns and "followup_type" in df.columns:
             duplicate = df[
                 (df.student_id == record["student_id"]) &
@@ -1301,18 +1291,18 @@ def show_sidebar_navigation(db: Database):
             "System Admin": [
                 "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "📋 الحضور", "💬 الافتقاد",
                 "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
-                "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
+                "📜 سجل العمليات", "🔒 تغيير كلمة المرور", "📜 شهادات"
             ],
             "Father Account": [
-                "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور", "📜 شهادات"
             ],
             "Service Manager": [
                 "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
-                "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور", "📜 شهادات"
             ],
             "Teacher": [
                 "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
-                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
+                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور", "📜 شهادات"
             ]
         }
         menu_items = menus.get(role, [])
@@ -2025,7 +2015,6 @@ def show_class_competition_scores(db: Database):
             if "اسم الطالبة" in filtered_df.columns:
                 st.markdown("---")
                 st.subheader("🏆 ترتيب الطالبات")
-                # هنا score أصبح رقمي بالفعل
                 ranking = filtered_df.groupby("اسم الطالبة")["score"].sum().reset_index().sort_values("score", ascending=False)
                 ranking.index = range(1, len(ranking) + 1)
                 st.dataframe(ranking, use_container_width=True)
@@ -2185,7 +2174,6 @@ def show_quizzes(db: Database):
                 results = results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
                 results.rename(columns={"title": "المسابقة"}, inplace=True)
 
-        # تحويل score إلى رقمي لتجنب دمج النصوص
         if "score" in results.columns:
             results["score"] = pd.to_numeric(results["score"], errors="coerce").fillna(0)
 
@@ -2302,6 +2290,58 @@ def change_password(db: Database):
                 st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
 # =============================================================================
+# صفحة الشهادات
+# =============================================================================
+def show_certificates():
+    st.markdown("<h2 class='main-header'>📜 شهادات التدريب</h2>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    certs = [
+        {
+            "img": "image1.png",
+            "title": "AI Basic: Overview of AI (CRA Training Program)",
+            "desc": "أنهيت تدريباً أساسياً في مبادئ الذكاء الاصطناعي، يشمل تاريخ الـ AI، المفاهيم الأساسية، الفرق بين Machine Learning و Deep Learning، والتطبيقات العملية بما في ذلك معالجة اللغة الطبيعية ورؤية الكمبيوتر. اكتسبت فهماً عملياً لأخلاقيات الـ AI، قيوده، وحالات الاستخدام الصناعية من خلال منهج أكاديمية Huawei ICT."
+        },
+        {
+            "img": "image2.png",
+            "title": "Cloud Basics: Development and Basic Concepts (CRA Training Program)",
+            "desc": "اكتسبت كفاءات أساسية في الحوسبة السحابية تشمل نماذج الخدمات السحابية (IaaS, PaaS, SaaS)، نماذج النشر (Public, Private, Hybrid)، وأساسيات منصة Huawei Cloud. طورت فهماً عملياً لمبادئ التطوير السحابي الحديث وبنية البنية التحتية المعاصرة."
+        },
+        {
+            "img": "image3.png",
+            "title": "Data Management and Analysis (CRA Training Program)",
+            "desc": "أنهيت تدريباً شاملاً في إدارة دورة حياة البيانات، يشمل حوكمة البيانات، ضمان الجودة، بنى التخزين، والمنهجيات التحليلية. اكتسبت خبرة عملية في سير عمل معالجة البيانات وأطر تقارير ذكاء الأعمال."
+        },
+        {
+            "img": "image4.png",
+            "title": "Development and Basic Concepts of Cloud Computing",
+            "desc": "طورت مهارات عملية في تطوير السحابة من خلال تدريب عملي في تصميم التطبيقات السحابية الأصلية، مفاهيم الـ Containerization، ونشر البنية التحتية القابلة للتطوير. اكتسبت معرفة عملية بممارسات DevOps الحديثة وتكامل الخدمات السحابية."
+        },
+        {
+            "img": "image5.png",
+            "title": "Overview of AI",
+            "desc": "بنيت فهماً شاملاً لمشهد الذكاء الاصطناعي، بما في ذلك أساسيات الشبكات العصبية، مجالات تطبيق الـ AI، واتجاهات التكنولوجيا الناشئة. أكملت تقييماً صارماً يُظهر معرفة استراتيجيات تنفيذ الـ AI وإمكانات تحول الصناعة."
+        },
+        {
+            "img": "image6.png",
+            "title": "IoT Basics: Internet of Things (CRA Training Program)",
+            "desc": "أنهيت تدريباً أساسياً في مبادئ إنترنت الأشياء، يشمل تاريخ وتطور الـ IoT، المعماريات الأساسية، البروتوكولات، والأمان. اكتسبت فهماً عملياً لتطبيقات الـ IoT في الصناعة والمدن الذكية من خلال منهج أكاديمية Huawei ICT."
+        }
+    ]
+
+    for cert in certs:
+        col_img, col_desc = st.columns([1, 2])
+        with col_img:
+            try:
+                st.image(cert["img"], use_column_width=True)
+            except Exception as e:
+                st.warning(f"صورة غير متوفرة: {cert['img']}")
+        with col_desc:
+            st.markdown(f"**{cert['title']}**")
+            st.markdown(cert["desc"])
+        st.markdown("---")
+
+# =============================================================================
 # Main App
 # =============================================================================
 def main():
@@ -2371,18 +2411,18 @@ def main():
                     "System Admin": [
                         "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "📋 الحضور", "💬 الافتقاد",
                         "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
-                        "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
+                        "📜 سجل العمليات", "🔒 تغيير كلمة المرور", "📜 شهادات"
                     ],
                     "Father Account": [
-                        "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                        "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور", "📜 شهادات"
                     ],
                     "Service Manager": [
                         "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
-                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور", "📜 شهادات"
                     ],
                     "Teacher": [
                         "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
-                        "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
+                        "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور", "📜 شهادات"
                     ]
                 }
                 menu_items = menus.get(role, [])
@@ -2420,6 +2460,8 @@ def main():
                     st.error("🚫 غير مصرح")
             elif choice == "🔒 تغيير كلمة المرور":
                 change_password(db)
+            elif choice == "📜 شهادات":
+                show_certificates()
             st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.get("open_help_dialog"):
