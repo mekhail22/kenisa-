@@ -23,6 +23,12 @@ CAIRO_TZ = timezone(timedelta(hours=3), name='Africa/Cairo')
 def get_cairo_now():
     return datetime.now(CAIRO_TZ)
 
+def format_cairo_time(dt):
+    """تنسيق وقت بتوقيت القاهرة بشكل مقروء"""
+    if dt is None:
+        return "غير متاح"
+    return dt.astimezone(CAIRO_TZ).strftime("%Y-%m-%d %I:%M:%S %p")
+
 st.set_page_config(
     page_title="نظام- كنيسة الشهيدة دميانة",
     page_icon="⛪",
@@ -395,6 +401,7 @@ class Database:
         return ws
 
     def _sheet_to_df(self, sheet_name):
+        """قراءة البيانات من ورقة العمل ومعالجة تكرار رؤوس الأعمدة تلقائياً"""
         cached = self.cache.get(sheet_name)
         if cached is not None:
             return cached.copy()
@@ -430,6 +437,10 @@ class Database:
             return pd.DataFrame()
 
     def _df_to_sheet(self, sheet_name, df, columns):
+        """
+        كتابة DataFrame إلى Google Sheet بشكل آمن يمنع فقدان البيانات.
+        يتم الاحتفاظ بنسخة احتياطية قبل الكتابة، وفي حال فشل التحديث يتم استرجاع النسخة السابقة.
+        """
         if not isinstance(df, pd.DataFrame):
             raise ValueError("df must be a DataFrame")
         if not isinstance(columns, list) or not columns:
@@ -437,6 +448,7 @@ class Database:
 
         ws = self._get_or_create_worksheet(sheet_name, columns)
 
+        # تجهيز البيانات المراد كتابتها
         for col in columns:
             if col not in df.columns:
                 df[col] = ""
@@ -446,6 +458,7 @@ class Database:
         values = [columns] + work_df.values.tolist()
         num_rows = len(values)
 
+        # --- نسخ احتياطي للبيانات الحالية ---
         backup_df = None
         try:
             backup_df = self.cache.get(sheet_name)
@@ -454,6 +467,7 @@ class Database:
         except Exception:
             pass
 
+        # --- الكتابابة الفعلية مع استرجاع في حالة الفشل ---
         try:
             ws.resize(rows=num_rows, cols=len(columns))
             ws.update(values)
@@ -617,7 +631,9 @@ class Database:
         return self._sheet_to_df("FollowUp")
 
     def add_followup_record(self, record):
+        """إضافة سجل افتقاد مع التحقق من عدم وجود تكرار (نفس الطالبة، التاريخ، النوع)"""
         df = self.get_followup()
+        # تحقق من عدم وجود سجل مطابق مسبقاً
         if not df.empty and "student_id" in df.columns and "followup_date" in df.columns and "followup_type" in df.columns:
             duplicate = df[
                 (df.student_id == record["student_id"]) &
@@ -831,6 +847,7 @@ def init_session():
         "student_id": "",
         "quiz_start_time": None,
         "quiz_end_time": None,
+        "quiz_submit_time": None,         # وقت التسليم الفعلي
         "quiz_answers": {},
         "quiz_submitted": False,
         "last_score": 0,
@@ -1055,6 +1072,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                     st.session_state.student_id = ""
                                     st.session_state.quiz_start_time = None
                                     st.session_state.quiz_end_time = None
+                                    st.session_state.quiz_submit_time = None
                                     st.session_state.quiz_answers = {}
                                     st.session_state.quiz_submitted = False
                                     st.session_state.last_score = 0
@@ -1140,6 +1158,7 @@ def show_student_quiz(db: Database):
                         db.submit_quiz_attempt(attempt["result_id"], score, json.dumps(saved_answers, ensure_ascii=False))
                         st.warning("تم تسليم محاولتك السابقة تلقائياً بناءً على ما قمت بحفظه.")
                         st.session_state.last_score = score
+                        st.session_state.quiz_submit_time = get_cairo_now()
                         st.session_state.quiz_phase = "finished"
                         st.session_state.quiz_submitted = True
                         st.rerun()
@@ -1172,6 +1191,7 @@ def show_student_quiz(db: Database):
             db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
             st.session_state.quiz_submitted = True
             st.session_state.last_score = score
+            st.session_state.quiz_submit_time = get_cairo_now()
             st.session_state.quiz_phase = "finished"
             st.rerun()
 
@@ -1214,6 +1234,7 @@ def show_student_quiz(db: Database):
             db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
             st.session_state.quiz_submitted = True
             st.session_state.last_score = score
+            st.session_state.quiz_submit_time = get_cairo_now()
             st.session_state.quiz_phase = "finished"
             st.rerun()
         return
@@ -1227,15 +1248,27 @@ def show_student_quiz(db: Database):
             else:
                 score_display = score
             st.info(f"نتيجتك: {score_display}/20")
+
+            # عرض أوقات البدء والتسليم
+            st.markdown("---")
+            st.markdown("#### ⏱️ معلومات الوقت")
+            col_t1, col_t2 = st.columns(2)
+            with col_t1:
+                st.write("**بداية الامتحان:**")
+                st.write(format_cairo_time(st.session_state.quiz_start_time))
+            with col_t2:
+                st.write("**نهاية الامتحان (التسليم):**")
+                st.write(format_cairo_time(st.session_state.quiz_submit_time))
+
             col_btn, _ = st.columns([2, 3])
             if col_btn.button("عرض الإجابات والأخطاء", use_container_width=True, key="show_review_btn"):
                 st.session_state.show_review = True
                 st.rerun()
             if st.button("إنهاء والعودة إلى الرئيسية", use_container_width=True, key="finish_no_review_btn"):
                 for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
-                            "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers",
-                            "quiz_submitted", "last_score", "current_attempt_id", "last_saved_answers_str",
-                            "quiz_questions", "show_review"]:
+                            "student_id", "quiz_start_time", "quiz_end_time", "quiz_submit_time",
+                            "quiz_answers", "quiz_submitted", "last_score", "current_attempt_id",
+                            "last_saved_answers_str", "quiz_questions", "show_review"]:
                     if key in st.session_state:
                         del st.session_state[key]
                 st.rerun()
@@ -1256,20 +1289,21 @@ def show_student_quiz(db: Database):
                     correct = str(q.get("correct_answer", "")).strip().lower()
                     student_ans = str(student_answers.get(qid, "")).strip().lower()
                     is_correct = (correct == student_ans)
+
                     st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
                     col1, col2 = st.columns(2)
-                    col1.write(f"إجابتك: {student_ans}")
-                    col2.write(f"الإجابة الصحيحة: {correct}")
+                    col1.write(f"📝 إجابتك: {student_ans if student_ans else 'لم تجب'}")
+                    col2.write(f"✅ الإجابة الصحيحة: {correct}")
                     if is_correct:
-                        st.success("✅ صحيح")
+                        st.success("✔️ صحيح")
                     else:
                         st.error("❌ خطأ")
                     st.markdown("---")
                 if st.button("إنهاء المراجعة والعودة إلى الرئيسية", use_container_width=True, key="finish_review_btn"):
                     for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
-                                "student_id", "quiz_start_time", "quiz_end_time", "quiz_answers",
-                                "quiz_submitted", "last_score", "current_attempt_id", "last_saved_answers_str",
-                                "quiz_questions", "show_review"]:
+                                "student_id", "quiz_start_time", "quiz_end_time", "quiz_submit_time",
+                                "quiz_answers", "quiz_submitted", "last_score", "current_attempt_id",
+                                "last_saved_answers_str", "quiz_questions", "show_review"]:
                         if key in st.session_state:
                             del st.session_state[key]
                     st.rerun()
