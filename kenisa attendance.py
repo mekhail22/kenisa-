@@ -401,7 +401,6 @@ class Database:
         return ws
 
     def _sheet_to_df(self, sheet_name):
-        """قراءة البيانات من ورقة العمل ومعالجة تكرار رؤوس الأعمدة تلقائياً"""
         cached = self.cache.get(sheet_name)
         if cached is not None:
             return cached.copy()
@@ -437,10 +436,6 @@ class Database:
             return pd.DataFrame()
 
     def _df_to_sheet(self, sheet_name, df, columns):
-        """
-        كتابة DataFrame إلى Google Sheet بشكل آمن يمنع فقدان البيانات.
-        يتم الاحتفاظ بنسخة احتياطية قبل الكتابة، وفي حال فشل التحديث يتم استرجاع النسخة السابقة.
-        """
         if not isinstance(df, pd.DataFrame):
             raise ValueError("df must be a DataFrame")
         if not isinstance(columns, list) or not columns:
@@ -448,7 +443,6 @@ class Database:
 
         ws = self._get_or_create_worksheet(sheet_name, columns)
 
-        # تجهيز البيانات المراد كتابتها
         for col in columns:
             if col not in df.columns:
                 df[col] = ""
@@ -458,7 +452,6 @@ class Database:
         values = [columns] + work_df.values.tolist()
         num_rows = len(values)
 
-        # --- نسخ احتياطي للبيانات الحالية ---
         backup_df = None
         try:
             backup_df = self.cache.get(sheet_name)
@@ -467,7 +460,6 @@ class Database:
         except Exception:
             pass
 
-        # --- الكتابابة الفعلية مع استرجاع في حالة الفشل ---
         try:
             ws.resize(rows=num_rows, cols=len(columns))
             ws.update(values)
@@ -631,9 +623,7 @@ class Database:
         return self._sheet_to_df("FollowUp")
 
     def add_followup_record(self, record):
-        """إضافة سجل افتقاد مع التحقق من عدم وجود تكرار (نفس الطالبة، التاريخ، النوع)"""
         df = self.get_followup()
-        # تحقق من عدم وجود سجل مطابق مسبقاً
         if not df.empty and "student_id" in df.columns and "followup_date" in df.columns and "followup_type" in df.columns:
             duplicate = df[
                 (df.student_id == record["student_id"]) &
@@ -704,7 +694,7 @@ class Database:
             return
         rdf = rdf[rdf.quiz_id != quiz_id]
         self._df_to_sheet("QuizResults", rdf, ["result_id", "quiz_id", "student_id", "student_name",
-                                               "score", "total_marks", "submission_time", "answers", "status"])
+                                               "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
     def get_quiz_questions(self, quiz_id):
         df = self._sheet_to_df("QuizQuestions")
@@ -740,6 +730,7 @@ class Database:
 
     def start_quiz_attempt(self, quiz_id, student_id, student_name):
         result_id = str(uuid.uuid4())
+        now_iso = get_cairo_now().isoformat()
         new_row = {
             "result_id": result_id,
             "quiz_id": quiz_id,
@@ -747,17 +738,18 @@ class Database:
             "student_name": student_name,
             "score": "",
             "total_marks": "20",
-            "submission_time": get_cairo_now().isoformat(),
+            "start_time": now_iso,          # وقت بدء الاختبار
+            "submission_time": now_iso,     # يُستخدم كوقت بدء مؤقت (يُحدَّث عند التسليم)
             "answers": "{}",
             "status": "started"
         }
         df = self._sheet_to_df("QuizResults")
         if df.empty:
             df = pd.DataFrame(columns=["result_id", "quiz_id", "student_id", "student_name",
-                                       "score", "total_marks", "submission_time", "answers", "status"])
+                                       "score", "total_marks", "start_time", "submission_time", "answers", "status"])
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                              "score", "total_marks", "submission_time", "answers", "status"])
+                                              "score", "total_marks", "start_time", "submission_time", "answers", "status"])
         return result_id
 
     def save_answers(self, result_id, answers_dict):
@@ -768,7 +760,7 @@ class Database:
         if len(idx) > 0:
             df.at[idx[0], "answers"] = json.dumps(answers_dict, ensure_ascii=False)
             self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                                  "score", "total_marks", "submission_time", "answers", "status"])
+                                                  "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
     def submit_quiz_attempt(self, result_id, score, answers_json):
         df = self._sheet_to_df("QuizResults")
@@ -778,10 +770,10 @@ class Database:
         if len(idx) > 0:
             df.at[idx[0], "score"] = str(score)
             df.at[idx[0], "answers"] = answers_json
-            df.at[idx[0], "submission_time"] = get_cairo_now().isoformat()
+            df.at[idx[0], "submission_time"] = get_cairo_now().isoformat()   # وقت التسليم
             df.at[idx[0], "status"] = "submitted"
             self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                                  "score", "total_marks", "submission_time", "answers", "status"])
+                                                  "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
     def delete_quiz_result(self, result_id):
         df = self._sheet_to_df("QuizResults")
@@ -789,7 +781,7 @@ class Database:
             return
         df = df[df.result_id != result_id]
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                              "score", "total_marks", "submission_time", "answers", "status"])
+                                              "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
     # --- Logs ---
     def get_logs(self):
@@ -847,7 +839,7 @@ def init_session():
         "student_id": "",
         "quiz_start_time": None,
         "quiz_end_time": None,
-        "quiz_submit_time": None,         # وقت التسليم الفعلي
+        "quiz_submit_time": None,
         "quiz_answers": {},
         "quiz_submitted": False,
         "last_score": 0,
@@ -1249,7 +1241,6 @@ def show_student_quiz(db: Database):
                 score_display = score
             st.info(f"نتيجتك: {score_display}/20")
 
-            # عرض أوقات البدء والتسليم
             st.markdown("---")
             st.markdown("#### ⏱️ معلومات الوقت")
             col_t1, col_t2 = st.columns(2)
@@ -1289,7 +1280,6 @@ def show_student_quiz(db: Database):
                     correct = str(q.get("correct_answer", "")).strip().lower()
                     student_ans = str(student_answers.get(qid, "")).strip().lower()
                     is_correct = (correct == student_ans)
-
                     st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
                     col1, col2 = st.columns(2)
                     col1.write(f"📝 إجابتك: {student_ans if student_ans else 'لم تجب'}")
@@ -2056,7 +2046,7 @@ def show_class_competition_scores(db: Database):
         st.info("لا توجد نتائج مطابقة للبحث.")
 
 # =============================================================================
-# Quizzes (مع تصحيح تجميع الدرجات)
+# Quizzes (مع إظهار أوقات البدء والتسليم لمدير النظام فقط)
 # =============================================================================
 def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
@@ -2227,7 +2217,37 @@ def show_quizzes(db: Database):
         if results.empty:
             st.info("لا توجد نتائج مطابقة للاختبار المحدد.")
         else:
-            display_cols = ["اسم الطالبة", "الفصل", "المسابقة", "score", "total_marks", "submission_time"]
+            # تجهيز الأعمدة الأساسية
+            base_cols = ["اسم الطالبة", "الفصل", "المسابقة", "score", "total_marks"]
+            if "submission_time" in results.columns:
+                base_cols.append("submission_time")
+            
+            # إذا كان المستخدم مدير النظام، أضف أعمدة الوقت الإضافية
+            if st.session_state.user.get("role") == "System Admin":
+                time_cols = []
+                if "start_time" in results.columns:
+                    # تحويل start_time إلى توقيت القاهرة للتنسيق
+                    try:
+                        results["بداية الاختبار"] = pd.to_datetime(results["start_time"]).apply(
+                            lambda x: format_cairo_time(x.replace(tzinfo=CAIRO_TZ)) if pd.notna(x) else ""
+                        )
+                        time_cols.append("بداية الاختبار")
+                    except:
+                        pass
+                if "submission_time" in results.columns:
+                    try:
+                        results["تسليم الاختبار"] = pd.to_datetime(results["submission_time"]).apply(
+                            lambda x: format_cairo_time(x.replace(tzinfo=CAIRO_TZ)) if pd.notna(x) else ""
+                        )
+                        time_cols.append("تسليم الاختبار")
+                    except:
+                        pass
+                display_cols = base_cols + time_cols
+            else:
+                display_cols = base_cols
+
+            # إزالة الأعمدة المكررة
+            display_cols = list(dict.fromkeys(display_cols))
             available = [c for c in display_cols if c in results.columns]
             st.dataframe(results[available], use_container_width=True)
 
