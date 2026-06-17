@@ -896,7 +896,6 @@ def logout(db=None):
             db.cache.flush_logs(db)
         except Exception:
             pass
-    # حذف جميع مفاتيح الجلسة بما فيها db_instance ليُعاد إنشاؤه لاحقاً
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
@@ -1283,7 +1282,7 @@ def show_student_quiz(db: Database):
         remaining_seconds = max(0, int(remaining.total_seconds()))
         mins, secs = divmod(remaining_seconds, 60)
 
-        # === تحسين عرض الوقت المتبقي داخل صندوق واضح ===
+        # عرض الوقت المتبقي خارج النموذج
         st.markdown(f"""
         <div style="
             text-align:center;
@@ -1304,27 +1303,38 @@ def show_student_quiz(db: Database):
         st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
         st.markdown("---")
 
-        for idx, row in questions_df.iterrows():
-            q = row.to_dict()
-            q_id = q.get("question_id", "")
-            st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
-            q_type = q.get("question_type", "")
-            prev_answer = st.session_state.quiz_answers.get(q_id, "")
-            if q_type in ["اختيار من متعدد", "صح وخطأ"]:
-                options = [q.get("option1", ""), q.get("option2", ""), q.get("option3", ""), q.get("option4", "")] if q_type == "اختيار من متعدد" else ["صح", "خطأ"]
-                options = [opt for opt in options if opt and str(opt).strip()]
-                if options:
-                    current_index = options.index(prev_answer) if prev_answer in options else None
-                    ans = st.radio("اختر الإجابة", options, key=f"q_{q_id}", index=current_index)
-                    new_answer = ans if ans else ""
-            else:
-                new_answer = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
-            if new_answer != prev_answer:
-                st.session_state.quiz_answers[q_id] = new_answer
-                save_current_answers(db)
-            st.markdown("---")
+        # ---- التعديل الأساسي: وضع الأسئلة داخل نموذج مع زر تسليم form_submit_button ----
+        with st.form("quiz_form", clear_on_submit=False):
+            for idx, row in questions_df.iterrows():
+                q = row.to_dict()
+                q_id = q.get("question_id", "")
+                st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
+                q_type = q.get("question_type", "")
+                prev_answer = st.session_state.quiz_answers.get(q_id, "")
+                if q_type in ["اختيار من متعدد", "صح وخطأ"]:
+                    options = [q.get("option1", ""), q.get("option2", ""), q.get("option3", ""), q.get("option4", "")] if q_type == "اختيار من متعدد" else ["صح", "خطأ"]
+                    options = [opt for opt in options if opt and str(opt).strip()]
+                    if options:
+                        current_index = options.index(prev_answer) if prev_answer in options else None
+                        # استخدام st.radio داخل النموذج، مع تحديث القيمة عبر st.session_state
+                        ans = st.radio("اختر الإجابة", options, key=f"q_{q_id}", index=current_index)
+                        new_answer = ans if ans else ""
+                    else:
+                        new_answer = prev_answer
+                else:
+                    new_answer = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
+                # تحديث الإجابات فورياً في st.session_state (حتى قبل التسليم)
+                if new_answer != prev_answer:
+                    st.session_state.quiz_answers[q_id] = new_answer
+                    # نستطيع الحفظ الفوري إذا أردنا (سيحدث أيضًا عند التسليم)
+                    save_current_answers(db)
+                st.markdown("---")
 
-        if st.button("تسليم الاختبار", type="primary", use_container_width=True, key="submit_quiz_btn"):
+            submitted = st.form_submit_button("تسليم الاختبار", type="primary", use_container_width=True)
+
+        # عند الضغط على تسليم
+        if submitted:
+            # نجمع الإجابات من st.session_state التي تم تحديثها أثناء تعبئة النموذج
             score = grade_attempt(db, quiz["quiz_id"], st.session_state.quiz_answers)
             answers_json = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
             db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
@@ -1333,6 +1343,7 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_submit_time = get_cairo_now()
             st.session_state.quiz_phase = "finished"
             st.rerun()
+        # ---------------------------------------------------------------
         return
 
     elif st.session_state.quiz_phase == "finished":
@@ -2503,7 +2514,7 @@ def main():
     inject_css()
     init_session()
 
-    # ---------- أهم تعديل: تخزين كائن Database في الجلسة لتجنب إعادة فتح جدول البيانات ----------
+    # تخزين كائن Database في الجلسة لتجنب إعادة فتح جدول البيانات
     if 'db_instance' not in st.session_state:
         try:
             creds = get_credentials()
@@ -2634,4 +2645,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
