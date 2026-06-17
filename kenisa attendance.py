@@ -1111,7 +1111,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (تم إصلاح مشكلة الجلسة)
+# Student Quiz Interface (تم إصلاح الجلسة و jwt)
 # =============================================================================
 def grade_attempt(db, quiz_id, answers_dict):
     questions = db.get_quiz_questions(quiz_id)
