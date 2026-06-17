@@ -3,6 +3,6 @@ gspread
 google-auth
 pandas
 plotly
-jwt
+PyJWT
 requests
 streamlit-autorefresh
