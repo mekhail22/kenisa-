@@ -395,7 +395,7 @@ class Database:
         now = time.time()
         with Database._lock:
             Database._request_times = [t for t in Database._request_times if now - t < 60]
-            if len(Database._request_times) >= 50:
+            if len(Database._request_times) >= 40:  # خفض الحد ليكون أكثر أماناً
                 sleep_time = 60 - (now - Database._request_times[0]) + 1
                 if sleep_time > 0:
                     time.sleep(sleep_time)
@@ -896,6 +896,7 @@ def logout(db=None):
             db.cache.flush_logs(db)
         except Exception:
             pass
+    # حذف جميع مفاتيح الجلسة بما فيها db_instance ليُعاد إنشاؤه لاحقاً
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
@@ -2501,13 +2502,16 @@ def show_certificates():
 def main():
     inject_css()
     init_session()
-    try:
-        creds = get_credentials()
-        db = Database(creds, get_spreadsheet_id())
-    except Exception as e:
-        st.error(f"❌ خطأ في الاتصال: {e}")
-        st.stop()
 
+    # ---------- أهم تعديل: تخزين كائن Database في الجلسة لتجنب إعادة فتح جدول البيانات ----------
+    if 'db_instance' not in st.session_state:
+        try:
+            creds = get_credentials()
+            st.session_state.db_instance = Database(creds, get_spreadsheet_id())
+        except Exception as e:
+            st.error(f"❌ خطأ في الاتصال: {e}")
+            st.stop()
+    db = st.session_state.db_instance
     jwt_secret = get_jwt_secret()
 
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
@@ -2630,3 +2634,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
