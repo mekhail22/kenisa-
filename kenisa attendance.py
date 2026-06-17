@@ -12,6 +12,7 @@ import jwt
 import time
 import requests
 from functools import wraps
+import threading
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -24,7 +25,6 @@ def get_cairo_now():
     return datetime.now(CAIRO_TZ)
 
 def format_cairo_time(dt):
-    """تنسيق وقت بتوقيت القاهرة بشكل مقروء"""
     if dt is None:
         return "غير متاح"
     return dt.astimezone(CAIRO_TZ).strftime("%Y-%m-%d %I:%M:%S %p")
@@ -352,7 +352,7 @@ class SheetCache:
                 st.warning(f"تعذر حفظ السجلات المؤقتة: {str(e)}")
 
 # =============================================================================
-# Retry decorator
+# Retry decorator (مع تحسين معالجة 429)
 # =============================================================================
 def retry_operation(max_retries=5, base_delay=2):
     def decorator(func):
@@ -382,9 +382,27 @@ def retry_operation(max_retries=5, base_delay=2):
     return decorator
 
 # =============================================================================
-# Database Class
+# Database Class (مع Rate Limiter)
 # =============================================================================
 class Database:
+    # Rate limiter: يسمح بـ 50 طلباً في الدقيقة
+    _request_times = []
+    _lock = threading.Lock()
+
+    @staticmethod
+    def _rate_limit():
+        """تأخير التنفيذ إذا تم تجاوز عدد الطلبات المسموح بها"""
+        now = time.time()
+        with Database._lock:
+            # تنظيف الطلبات القديمة (أكثر من 60 ثانية)
+            Database._request_times = [t for t in Database._request_times if now - t < 60]
+            if len(Database._request_times) >= 50:  # الحد المسموح 50 طلب/دقيقة
+                sleep_time = 60 - (now - Database._request_times[0]) + 1
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                Database._request_times = []
+            Database._request_times.append(time.time())
+
     def __init__(self, creds, spreadsheet_id):
         self.client = gspread.authorize(creds)
         self.spreadsheet = self.client.open_by_key(spreadsheet_id)
@@ -392,12 +410,14 @@ class Database:
 
     @retry_operation(max_retries=5, base_delay=2)
     def _get_or_create_worksheet(self, name, columns):
+        Database._rate_limit()
         try:
             ws = self.spreadsheet.worksheet(name)
         except gspread.WorksheetNotFound:
             ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(columns), 1))
             if columns:
                 ws.append_row(columns)
+        time.sleep(0.2)  # تأخير صغير لتخفيف الضغط
         return ws
 
     def _sheet_to_df(self, sheet_name):
@@ -405,8 +425,10 @@ class Database:
         if cached is not None:
             return cached.copy()
         try:
+            Database._rate_limit()
             ws = self._get_or_create_worksheet(sheet_name, [])
             values = ws.get_all_values()
+            time.sleep(0.2)
             if not values or len(values) < 1:
                 df = pd.DataFrame()
             else:
@@ -441,6 +463,7 @@ class Database:
         if not isinstance(columns, list) or not columns:
             raise ValueError("columns must be a non-empty list")
 
+        Database._rate_limit()
         ws = self._get_or_create_worksheet(sheet_name, columns)
 
         for col in columns:
@@ -463,6 +486,7 @@ class Database:
         try:
             ws.resize(rows=num_rows, cols=len(columns))
             ws.update(values)
+            time.sleep(0.2)
             self.cache.invalidate(sheet_name)
         except Exception as e:
             if backup_df is not None and not backup_df.empty:
@@ -618,7 +642,7 @@ class Database:
         df = df[df.record_id != record_id]
         self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
 
-    # --- FollowUp ---
+    # --- FollowUp (مع منع التكرار) ---
     def get_followup(self):
         return self._sheet_to_df("FollowUp")
 
@@ -719,7 +743,7 @@ class Database:
         self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type",
                                                 "option1", "option2", "option3", "option4", "correct_answer"])
 
-    # --- Quiz Results ---
+    # --- Quiz Results (بوقت البدء والتسليم) ---
     def get_quiz_results(self, quiz_id=None):
         df = self._sheet_to_df("QuizResults")
         if df.empty:
@@ -738,8 +762,8 @@ class Database:
             "student_name": student_name,
             "score": "",
             "total_marks": "20",
-            "start_time": now_iso,          # وقت بدء الاختبار
-            "submission_time": now_iso,     # يُستخدم كوقت بدء مؤقت (يُحدَّث عند التسليم)
+            "start_time": now_iso,
+            "submission_time": now_iso,
             "answers": "{}",
             "status": "started"
         }
@@ -770,7 +794,7 @@ class Database:
         if len(idx) > 0:
             df.at[idx[0], "score"] = str(score)
             df.at[idx[0], "answers"] = answers_json
-            df.at[idx[0], "submission_time"] = get_cairo_now().isoformat()   # وقت التسليم
+            df.at[idx[0], "submission_time"] = get_cairo_now().isoformat()
             df.at[idx[0], "status"] = "submitted"
             self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
                                                   "score", "total_marks", "start_time", "submission_time", "answers", "status"])
@@ -1077,7 +1101,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface
+# Student Quiz Interface (عداد الوقت الحقيقي)
 # =============================================================================
 def grade_attempt(db, quiz_id, answers_dict):
     questions = db.get_quiz_questions(quiz_id)
@@ -1183,7 +1207,7 @@ def show_student_quiz(db: Database):
             db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
             st.session_state.quiz_submitted = True
             st.session_state.last_score = score
-            st.session_state.quiz_submit_time = get_cairo_now()
+            st.session_state.quiz_submit_time = now
             st.session_state.quiz_phase = "finished"
             st.rerun()
 
@@ -1195,6 +1219,14 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_questions = questions_df.to_dict('records')
         else:
             questions_df = pd.DataFrame(st.session_state.quiz_questions)
+
+        remaining = st.session_state.quiz_end_time - now
+        remaining_seconds = max(0, int(remaining.total_seconds()))
+        mins, secs = divmod(remaining_seconds, 60)
+
+        st.markdown(f"## ⏳ الوقت المتبقي: {mins:02d}:{secs:02d}")
+
+        st.markdown(f'<meta http-equiv="refresh" content="30">', unsafe_allow_html=True)
 
         st.title(f"📝 {quiz.get('title', '')}")
         st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
@@ -1280,6 +1312,7 @@ def show_student_quiz(db: Database):
                     correct = str(q.get("correct_answer", "")).strip().lower()
                     student_ans = str(student_answers.get(qid, "")).strip().lower()
                     is_correct = (correct == student_ans)
+
                     st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
                     col1, col2 = st.columns(2)
                     col1.write(f"📝 إجابتك: {student_ans if student_ans else 'لم تجب'}")
@@ -1300,7 +1333,7 @@ def show_student_quiz(db: Database):
         return
 
 # =============================================================================
-# Sidebar Navigation
+# Sidebar Navigation (مع الشهادات)
 # =============================================================================
 def show_sidebar_navigation(db: Database):
     with st.sidebar:
@@ -2217,16 +2250,13 @@ def show_quizzes(db: Database):
         if results.empty:
             st.info("لا توجد نتائج مطابقة للاختبار المحدد.")
         else:
-            # تجهيز الأعمدة الأساسية
             base_cols = ["اسم الطالبة", "الفصل", "المسابقة", "score", "total_marks"]
             if "submission_time" in results.columns:
                 base_cols.append("submission_time")
-            
-            # إذا كان المستخدم مدير النظام، أضف أعمدة الوقت الإضافية
+
             if st.session_state.user.get("role") == "System Admin":
                 time_cols = []
                 if "start_time" in results.columns:
-                    # تحويل start_time إلى توقيت القاهرة للتنسيق
                     try:
                         results["بداية الاختبار"] = pd.to_datetime(results["start_time"]).apply(
                             lambda x: format_cairo_time(x.replace(tzinfo=CAIRO_TZ)) if pd.notna(x) else ""
@@ -2246,7 +2276,6 @@ def show_quizzes(db: Database):
             else:
                 display_cols = base_cols
 
-            # إزالة الأعمدة المكررة
             display_cols = list(dict.fromkeys(display_cols))
             available = [c for c in display_cols if c in results.columns]
             st.dataframe(results[available], use_container_width=True)
