@@ -395,7 +395,7 @@ class Database:
         now = time.time()
         with Database._lock:
             Database._request_times = [t for t in Database._request_times if now - t < 60]
-            if len(Database._request_times) >= 40:  # خفض الحد ليكون أكثر أماناً
+            if len(Database._request_times) >= 40:
                 sleep_time = 60 - (now - Database._request_times[0]) + 1
                 if sleep_time > 0:
                     time.sleep(sleep_time)
@@ -736,7 +736,7 @@ class Database:
         self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type",
                                                 "option1", "option2", "option3", "option4", "correct_answer"])
 
-    # --- Quiz Results (بوقت البدء والتسليم) ---
+    # --- Quiz Results ---
     def get_quiz_results(self, quiz_id=None):
         df = self._sheet_to_df("QuizResults")
         if df.empty:
@@ -1013,7 +1013,7 @@ def show_initialization(db: Database):
     if users.empty:
         st.markdown("<div class='card'><h2 style='text-align:center;'>🔧 لا يوجد مستخدمون بعد</h2></div>", unsafe_allow_html=True)
         st.markdown("#### يرجى الضغط على الزر التالي لإنشاء مدير النظام الافتراضي:")
-        if st.button("🛠️ تهيئة النظام وإنشاء المسؤول الأول", type="primary", use_container_width=True, key="init_admin_btn"):
+        if st.button("🛠️ تهيئة النظام وإنشاء المسؤول الأول", use_container_width=True, key="init_admin_btn"):
             admin_data = {
                 "user_id": "admin-001", "username": "admin", "password": "admin123",
                 "role": "System Admin", "full_name": "مدير النظام",
@@ -1111,7 +1111,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (تم إصلاح الجلسة و jwt)
+# Student Quiz Interface (إصلاح التسليم)
 # =============================================================================
 def grade_attempt(db, quiz_id, answers_dict):
     questions = db.get_quiz_questions(quiz_id)
@@ -1137,7 +1137,6 @@ def save_current_answers(db):
         st.session_state.last_saved_answers_str = current_answers
 
 def show_student_quiz(db: Database):
-    # التحقق من وجود رمز الحماية (مطلوب فقط للمراحل المتقدمة)
     if st.session_state.quiz_phase in ["taking_quiz", "finished"]:
         if not st.session_state.get("quiz_token"):
             st.error("انتهت جلسة الاختبار. يرجى إعادة الدخول.")
@@ -1160,10 +1159,8 @@ def show_student_quiz(db: Database):
                         del st.session_state[key]
                 st.stop()
 
-    # التحديث التلقائي حسب المرحلة (كل ثانية أثناء الامتحان)
     if st.session_state.quiz_phase == "taking_quiz":
-        # تحديث كل ثانية لضمان تحديث العد التنازلي بدقة
-        count = st_autorefresh(interval=1000, limit=100000, key="quiz_autorefresh")
+        count = st_autorefresh(interval=5000, limit=100000, key="quiz_autorefresh")
     elif st.session_state.quiz_phase == "finished":
         count = st_autorefresh(interval=5000, limit=1000, key="quiz_autorefresh")
     else:
@@ -1225,7 +1222,7 @@ def show_student_quiz(db: Database):
                     else:
                         st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك الدخول مرة أخرى.")
                         st.stop()
-        if st.button("بدء الاختبار", use_container_width=True, type="primary", disabled=(selected_id is None), key="start_quiz_btn"):
+        if st.button("بدء الاختبار", use_container_width=True, disabled=(selected_id is None), key="start_quiz_btn"):
             selected_student = active_students[active_students["student_id"] == selected_id].iloc[0].to_dict()
             st.session_state.student_name = selected_student["full_name"]
             st.session_state.student_id = selected_id
@@ -1282,7 +1279,6 @@ def show_student_quiz(db: Database):
         remaining_seconds = max(0, int(remaining.total_seconds()))
         mins, secs = divmod(remaining_seconds, 60)
 
-        # عرض الوقت المتبقي خارج النموذج
         st.markdown(f"""
         <div style="
             text-align:center;
@@ -1303,38 +1299,27 @@ def show_student_quiz(db: Database):
         st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
         st.markdown("---")
 
-        # ---- التعديل الأساسي: وضع الأسئلة داخل نموذج مع زر تسليم form_submit_button ----
-        with st.form("quiz_form", clear_on_submit=False):
-            for idx, row in questions_df.iterrows():
-                q = row.to_dict()
-                q_id = q.get("question_id", "")
-                st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
-                q_type = q.get("question_type", "")
-                prev_answer = st.session_state.quiz_answers.get(q_id, "")
-                if q_type in ["اختيار من متعدد", "صح وخطأ"]:
-                    options = [q.get("option1", ""), q.get("option2", ""), q.get("option3", ""), q.get("option4", "")] if q_type == "اختيار من متعدد" else ["صح", "خطأ"]
-                    options = [opt for opt in options if opt and str(opt).strip()]
-                    if options:
-                        current_index = options.index(prev_answer) if prev_answer in options else None
-                        # استخدام st.radio داخل النموذج، مع تحديث القيمة عبر st.session_state
-                        ans = st.radio("اختر الإجابة", options, key=f"q_{q_id}", index=current_index)
-                        new_answer = ans if ans else ""
-                    else:
-                        new_answer = prev_answer
-                else:
-                    new_answer = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
-                # تحديث الإجابات فورياً في st.session_state (حتى قبل التسليم)
-                if new_answer != prev_answer:
-                    st.session_state.quiz_answers[q_id] = new_answer
-                    # نستطيع الحفظ الفوري إذا أردنا (سيحدث أيضًا عند التسليم)
-                    save_current_answers(db)
-                st.markdown("---")
+        for idx, row in questions_df.iterrows():
+            q = row.to_dict()
+            q_id = q.get("question_id", "")
+            st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
+            q_type = q.get("question_type", "")
+            prev_answer = st.session_state.quiz_answers.get(q_id, "")
+            if q_type in ["اختيار من متعدد", "صح وخطأ"]:
+                options = [q.get("option1", ""), q.get("option2", ""), q.get("option3", ""), q.get("option4", "")] if q_type == "اختيار من متعدد" else ["صح", "خطأ"]
+                options = [opt for opt in options if opt and str(opt).strip()]
+                if options:
+                    current_index = options.index(prev_answer) if prev_answer in options else None
+                    ans = st.radio("اختر الإجابة", options, key=f"q_{q_id}", index=current_index)
+                    new_answer = ans if ans else ""
+            else:
+                new_answer = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
+            if new_answer != prev_answer:
+                st.session_state.quiz_answers[q_id] = new_answer
+                save_current_answers(db)
+            st.markdown("---")
 
-            submitted = st.form_submit_button("تسليم الاختبار", type="primary", use_container_width=True)
-
-        # عند الضغط على تسليم
-        if submitted:
-            # نجمع الإجابات من st.session_state التي تم تحديثها أثناء تعبئة النموذج
+        if st.button("تسليم الاختبار", use_container_width=True, key="submit_quiz_btn"):
             score = grade_attempt(db, quiz["quiz_id"], st.session_state.quiz_answers)
             answers_json = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
             db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
@@ -1343,7 +1328,6 @@ def show_student_quiz(db: Database):
             st.session_state.quiz_submit_time = get_cairo_now()
             st.session_state.quiz_phase = "finished"
             st.rerun()
-        # ---------------------------------------------------------------
         return
 
     elif st.session_state.quiz_phase == "finished":
@@ -1431,18 +1415,18 @@ def show_sidebar_navigation(db: Database):
             "System Admin": [
                 "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "📋 الحضور", "💬 الافتقاد",
                 "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
-                "📜 سجل العمليات", "🔒 تغيير كلمة المرور", "📜 شهادات"
+                "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
             ],
             "Father Account": [
-                "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور", "📜 شهادات"
+                "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
             ],
             "Service Manager": [
                 "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
-                "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور", "📜 شهادات"
+                "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
             ],
             "Teacher": [
                 "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
-                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور", "📜 شهادات"
+                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
             ]
         }
         menu_items = menus.get(role, [])
@@ -1911,7 +1895,7 @@ def show_attendance(db: Database):
             st.rerun()
 
 # =============================================================================
-# Follow-up (مع منع تكرار الافتقاد)
+# Follow-up
 # =============================================================================
 def show_followup(db: Database):
     st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
@@ -1981,7 +1965,7 @@ def show_followup(db: Database):
                     st.error(str(e))
 
 # =============================================================================
-# My Students (مع منع تكرار الافتقاد)
+# My Students
 # =============================================================================
 def show_my_students(db: Database):
     st.markdown("<h2 class='main-header'>👩‍🎓 طالباتي</h2>", unsafe_allow_html=True)
@@ -2162,7 +2146,7 @@ def show_class_competition_scores(db: Database):
         st.info("لا توجد نتائج مطابقة للبحث.")
 
 # =============================================================================
-# Quizzes (مع إظهار أوقات البدء والتسليم لمدير النظام فقط)
+# Quizzes
 # =============================================================================
 def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
@@ -2456,65 +2440,12 @@ def change_password(db: Database):
                 st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
 # =============================================================================
-# صفحة الشهادات
-# =============================================================================
-def show_certificates():
-    st.markdown("<h2 class='main-header'>📜 شهادات التدريب</h2>", unsafe_allow_html=True)
-    st.markdown("---")
-
-    certs = [
-        {
-            "img": "image1.png",
-            "title": "AI Basic: Overview of AI (CRA Training Program)",
-            "desc": "أنهيت تدريباً أساسياً في مبادئ الذكاء الاصطناعي، يشمل تاريخ الـ AI، المفاهيم الأساسية، الفرق بين Machine Learning و Deep Learning، والتطبيقات العملية بما في ذلك معالجة اللغة الطبيعية ورؤية الكمبيوتر. اكتسبت فهماً عملياً لأخلاقيات الـ AI، قيوده، وحالات الاستخدام الصناعية من خلال منهج أكاديمية Huawei ICT."
-        },
-        {
-            "img": "image2.png",
-            "title": "Cloud Basics: Development and Basic Concepts (CRA Training Program)",
-            "desc": "اكتسبت كفاءات أساسية في الحوسبة السحابية تشمل نماذج الخدمات السحابية (IaaS, PaaS, SaaS)، نماذج النشر (Public, Private, Hybrid)، وأساسيات منصة Huawei Cloud. طورت فهماً عملياً لمبادئ التطوير السحابي الحديث وبنية البنية التحتية المعاصرة."
-        },
-        {
-            "img": "image3.png",
-            "title": "Data Management and Analysis (CRA Training Program)",
-            "desc": "أنهيت تدريباً شاملاً في إدارة دورة حياة البيانات، يشمل حوكمة البيانات، ضمان الجودة، بنى التخزين، والمنهجيات التحليلية. اكتسبت خبرة عملية في سير عمل معالجة البيانات وأطر تقارير ذكاء الأعمال."
-        },
-        {
-            "img": "image4.png",
-            "title": "Development and Basic Concepts of Cloud Computing",
-            "desc": "طورت مهارات عملية في تطوير السحابة من خلال تدريب عملي في تصميم التطبيقات السحابية الأصلية، مفاهيم الـ Containerization، ونشر البنية التحتية القابلة للتطوير. اكتسبت معرفة عملية بممارسات DevOps الحديثة وتكامل الخدمات السحابية."
-        },
-        {
-            "img": "image5.png",
-            "title": "Overview of AI",
-            "desc": "بنيت فهماً شاملاً لمشهد الذكاء الاصطناعي، بما في ذلك أساسيات الشبكات العصبية، مجالات تطبيق الـ AI، واتجاهات التكنولوجيا الناشئة. أكملت تقييماً صارماً يُظهر معرفة استراتيجيات تنفيذ الـ AI وإمكانات تحول الصناعة."
-        },
-        {
-            "img": "image6.png",
-            "title": "IoT Basics: Internet of Things (CRA Training Program)",
-            "desc": "أنهيت تدريباً أساسياً في مبادئ إنترنت الأشياء، يشمل تاريخ وتطور الـ IoT، المعماريات الأساسية، البروتوكولات، والأمان. اكتسبت فهماً عملياً لتطبيقات الـ IoT في الصناعة والمدن الذكية من خلال منهج أكاديمية Huawei ICT."
-        }
-    ]
-
-    for cert in certs:
-        col_img, col_desc = st.columns([1, 2])
-        with col_img:
-            try:
-                st.image(cert["img"], use_column_width=True)
-            except Exception as e:
-                st.warning(f"صورة غير متوفرة: {cert['img']}")
-        with col_desc:
-            st.markdown(f"**{cert['title']}**")
-            st.markdown(cert["desc"])
-        st.markdown("---")
-
-# =============================================================================
 # Main App
 # =============================================================================
 def main():
     inject_css()
     init_session()
 
-    # تخزين كائن Database في الجلسة لتجنب إعادة فتح جدول البيانات
     if 'db_instance' not in st.session_state:
         try:
             creds = get_credentials()
@@ -2580,18 +2511,18 @@ def main():
                     "System Admin": [
                         "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "📋 الحضور", "💬 الافتقاد",
                         "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
-                        "📜 سجل العمليات", "🔒 تغيير كلمة المرور", "📜 شهادات"
+                        "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
                     ],
                     "Father Account": [
-                        "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور", "📜 شهادات"
+                        "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
                     ],
                     "Service Manager": [
                         "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
-                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور", "📜 شهادات"
+                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
                     ],
                     "Teacher": [
                         "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
-                        "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور", "📜 شهادات"
+                        "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
                     ]
                 }
                 menu_items = menus.get(role, [])
@@ -2629,8 +2560,6 @@ def main():
                     st.error("🚫 غير مصرح")
             elif choice == "🔒 تغيير كلمة المرور":
                 change_password(db)
-            elif choice == "📜 شهادات":
-                show_certificates()
             st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.get("open_help_dialog"):
