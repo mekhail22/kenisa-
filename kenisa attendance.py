@@ -1160,9 +1160,12 @@ def show_student_quiz(db: Database):
                         del st.session_state[key]
                 st.stop()
 
-    # التحديث التلقائي كل 60 ثانية للمراحل التي تحتاج ذلك
-    if st.session_state.quiz_phase in ["taking_quiz", "finished"]:
-        count = st_autorefresh(interval=60000, limit=1000, key="quiz_autorefresh")
+    # التحديث التلقائي حسب المرحلة (كل ثانية أثناء الامتحان)
+    if st.session_state.quiz_phase == "taking_quiz":
+        # تحديث كل ثانية لضمان تحديث العد التنازلي بدقة
+        count = st_autorefresh(interval=1000, limit=100000, key="quiz_autorefresh")
+    elif st.session_state.quiz_phase == "finished":
+        count = st_autorefresh(interval=5000, limit=1000, key="quiz_autorefresh")
     else:
         count = 0
 
@@ -1275,36 +1278,26 @@ def show_student_quiz(db: Database):
         else:
             questions_df = pd.DataFrame(st.session_state.quiz_questions)
 
-        # مؤقت حي باستخدام JavaScript
-        end_time_cairo = st.session_state.quiz_end_time
-        end_time_utc = end_time_cairo.astimezone(timezone.utc)
-        end_timestamp_ms = int(end_time_utc.timestamp() * 1000)
+        remaining = st.session_state.quiz_end_time - now
+        remaining_seconds = max(0, int(remaining.total_seconds()))
+        mins, secs = divmod(remaining_seconds, 60)
 
-        timer_html = f"""
-        <div style="text-align:center; margin:1.5rem 0;">
-            <div style="font-size:1.2rem; margin-bottom:0.5rem;">⏳ الوقت المتبقي</div>
-            <div id="live-timer" style="font-size:3rem; font-weight:800; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
-                --:--
-            </div>
+        # === تحسين عرض الوقت المتبقي داخل صندوق واضح ===
+        st.markdown(f"""
+        <div style="
+            text-align:center;
+            font-size: 1.8rem;
+            font-weight: bold;
+            padding: 1rem 2rem;
+            margin: 1rem 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(102,126,234,0.4);
+        ">
+            ⏳ الوقت المتبقي: {mins:02d}:{secs:02d}
         </div>
-        <script>
-            const endTime = {end_timestamp_ms};
-            function updateTimer() {{
-                const now = Date.now();
-                const remaining = endTime - now;
-                if (remaining <= 0) {{
-                    document.getElementById("live-timer").innerText = "00:00";
-                    return;
-                }}
-                const mins = Math.floor(remaining / 60000);
-                const secs = Math.floor((remaining % 60000) / 1000);
-                document.getElementById("live-timer").innerText = mins.toString().padStart(2, '0') + ":" + secs.toString().padStart(2, '0');
-            }}
-            setInterval(updateTimer, 1000);
-            updateTimer();
-        </script>
-        """
-        st.components.html(timer_html, height=120)
+        """, unsafe_allow_html=True)
 
         st.title(f"📝 {quiz.get('title', '')}")
         st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
