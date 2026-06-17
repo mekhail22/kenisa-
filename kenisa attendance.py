@@ -302,6 +302,10 @@ def inject_css():
             }
             .main-header { font-size: 1.6rem; margin-top: 110px; }
         }
+        iframe[title="st_components.html"] {
+            border: none !important;
+            background: transparent !important;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1137,6 +1141,7 @@ def save_current_answers(db):
         st.session_state.last_saved_answers_str = current_answers
 
 def show_student_quiz(db: Database):
+    # إزالة st_autorefresh و الاعتماد على مؤقت JavaScript خالص
     if st.session_state.quiz_phase in ["taking_quiz", "finished"]:
         if not st.session_state.get("quiz_token"):
             st.error("انتهت جلسة الاختبار. يرجى إعادة الدخول.")
@@ -1159,12 +1164,9 @@ def show_student_quiz(db: Database):
                         del st.session_state[key]
                 st.stop()
 
-    if st.session_state.quiz_phase == "taking_quiz":
-        count = st_autorefresh(interval=5000, limit=100000, key="quiz_autorefresh")
-    elif st.session_state.quiz_phase == "finished":
-        count = st_autorefresh(interval=5000, limit=1000, key="quiz_autorefresh")
-    else:
-        count = 0
+    # لا حاجة للـ autorefresh بعد الآن
+    # if st.session_state.quiz_phase == "taking_quiz":
+    #     count = st_autorefresh(interval=5000, limit=100000, key="quiz_autorefresh")
 
     quiz = st.session_state.student_quiz
     if st.session_state.quiz_phase == "enter_name":
@@ -1275,25 +1277,71 @@ def show_student_quiz(db: Database):
         else:
             questions_df = pd.DataFrame(st.session_state.quiz_questions)
 
-        remaining = st.session_state.quiz_end_time - now
-        remaining_seconds = max(0, int(remaining.total_seconds()))
-        mins, secs = divmod(remaining_seconds, 60)
-
-        st.markdown(f"""
-        <div style="
-            text-align:center;
-            font-size: 1.8rem;
-            font-weight: bold;
-            padding: 1rem 2rem;
-            margin: 1rem 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 15px;
-            box-shadow: 0 4px 12px rgba(102,126,234,0.4);
-        ">
-            ⏳ الوقت المتبقي: {mins:02d}:{secs:02d}
-        </div>
+        # إضافة الكود الخاص بمراقبة الرسائل من المؤقت
+        st.markdown("""
+        <script>
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'QUIZ_TIME_UP') {
+                var buttons = document.querySelectorAll('button');
+                for (var i=0; i<buttons.length; i++) {
+                    if (buttons[i].innerText.includes('تسليم الاختبار')) {
+                        buttons[i].click();
+                        break;
+                    }
+                }
+            }
+        });
+        </script>
         """, unsafe_allow_html=True)
+
+        # عرض المؤقت باستخدام مكون HTML يعمل بالكامل على المتصفح
+        end_time_iso = st.session_state.quiz_end_time.isoformat()
+        countdown_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <style>
+        body {{
+            font-family: 'Cairo', sans-serif;
+            margin: 0; padding: 0;
+            display: flex; justify-content: center; align-items: center;
+            height: 100%; background: transparent;
+        }}
+        #timer {{
+            font-size: 1.8rem; font-weight: bold;
+            padding: 1rem 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(102,126,234,0.4);
+            text-align: center;
+        }}
+        </style>
+        </head>
+        <body>
+        <div id="timer">⏳ الوقت المتبقي: <span id="time"></span></div>
+        <script>
+        var endTime = new Date("{end_time_iso}").getTime();
+        function update() {{
+            var now = new Date().getTime();
+            var dist = endTime - now;
+            if (dist <= 0) {{
+                document.getElementById('time').innerHTML = "00:00";
+                parent.postMessage({{type: "QUIZ_TIME_UP"}}, "*");
+                clearInterval(intervalId);
+                return;
+            }}
+            var mins = Math.floor((dist % (1000*60*60)) / (1000*60));
+            var secs = Math.floor((dist % (1000*60)) / 1000);
+            document.getElementById('time').innerHTML = (mins<10?'0'+mins:mins) + ":" + (secs<10?'0'+secs:secs);
+        }}
+        update();
+        var intervalId = setInterval(update, 1000);
+        </script>
+        </body>
+        </html>
+        """
+        st.components.v1.html(countdown_html, height=80, scrolling=False)
 
         st.title(f"📝 {quiz.get('title', '')}")
         st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
