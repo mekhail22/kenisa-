@@ -1160,9 +1160,9 @@ def show_student_quiz(db: Database):
                         del st.session_state[key]
                 st.stop()
 
-    # التحديث التلقائي كل 30 ثانية للمراحل التي تحتاج ذلك
+    # التحديث التلقائي كل 60 ثانية للمراحل التي تحتاج ذلك
     if st.session_state.quiz_phase in ["taking_quiz", "finished"]:
-        count = st_autorefresh(interval=30000, limit=1000, key="quiz_autorefresh")
+        count = st_autorefresh(interval=60000, limit=1000, key="quiz_autorefresh")
     else:
         count = 0
 
@@ -1275,10 +1275,36 @@ def show_student_quiz(db: Database):
         else:
             questions_df = pd.DataFrame(st.session_state.quiz_questions)
 
-        remaining = st.session_state.quiz_end_time - now
-        remaining_seconds = max(0, int(remaining.total_seconds()))
-        mins, secs = divmod(remaining_seconds, 60)
-        st.markdown(f"## ⏳ الوقت المتبقي: {mins:02d}:{secs:02d}")
+        # مؤقت حي باستخدام JavaScript
+        end_time_cairo = st.session_state.quiz_end_time
+        end_time_utc = end_time_cairo.astimezone(timezone.utc)
+        end_timestamp_ms = int(end_time_utc.timestamp() * 1000)
+
+        timer_html = f"""
+        <div style="text-align:center; margin:1.5rem 0;">
+            <div style="font-size:1.2rem; margin-bottom:0.5rem;">⏳ الوقت المتبقي</div>
+            <div id="live-timer" style="font-size:3rem; font-weight:800; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+                --:--
+            </div>
+        </div>
+        <script>
+            const endTime = {end_timestamp_ms};
+            function updateTimer() {{
+                const now = Date.now();
+                const remaining = endTime - now;
+                if (remaining <= 0) {{
+                    document.getElementById("live-timer").innerText = "00:00";
+                    return;
+                }}
+                const mins = Math.floor(remaining / 60000);
+                const secs = Math.floor((remaining % 60000) / 1000);
+                document.getElementById("live-timer").innerText = mins.toString().padStart(2, '0') + ":" + secs.toString().padStart(2, '0');
+            }}
+            setInterval(updateTimer, 1000);
+            updateTimer();
+        </script>
+        """
+        st.components.html(timer_html, height=120)
 
         st.title(f"📝 {quiz.get('title', '')}")
         st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
