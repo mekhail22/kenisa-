@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
@@ -1112,7 +1111,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (محمية ضد الخروج)
+# Student Quiz Interface (تم إصلاح مشكلة الجلسة)
 # =============================================================================
 def grade_attempt(db, quiz_id, answers_dict):
     questions = db.get_quiz_questions(quiz_id)
@@ -1138,25 +1137,34 @@ def save_current_answers(db):
         st.session_state.last_saved_answers_str = current_answers
 
 def show_student_quiz(db: Database):
-    # التحقق من رمز الحماية
-    if st.session_state.get("quiz_token"):
-        token_data = verify_quiz_token(st.session_state.quiz_token)
-        if token_data is None:
-            st.error("انتهت صلاحية جلسة الامتحان. يرجى إعادة الدخول.")
+    # التحقق من وجود رمز الحماية (مطلوب فقط للمراحل المتقدمة)
+    if st.session_state.quiz_phase in ["taking_quiz", "finished"]:
+        if not st.session_state.get("quiz_token"):
+            st.error("انتهت جلسة الاختبار. يرجى إعادة الدخول.")
+            for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
+                        "student_id", "quiz_start_time", "quiz_end_time", "quiz_submit_time",
+                        "quiz_token", "quiz_answers", "quiz_submitted", "last_score",
+                        "current_attempt_id", "last_saved_answers_str", "quiz_questions", "show_review"]:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.stop()
-    else:
-        if st.session_state.get("student_quiz") and st.session_state.get("student_id"):
-            token = generate_quiz_token(
-                st.session_state.student_quiz.get("quiz_id", ""),
-                st.session_state.student_id
-            )
-            st.session_state.quiz_token = token
         else:
-            st.error("جلسة غير صالحة.")
-            st.stop()
+            token_data = verify_quiz_token(st.session_state.quiz_token)
+            if token_data is None:
+                st.error("انتهت صلاحية جلسة الاختبار. يرجى إعادة الدخول.")
+                for key in ["student_quiz", "student_quiz_started", "quiz_phase", "student_name",
+                            "student_id", "quiz_start_time", "quiz_end_time", "quiz_submit_time",
+                            "quiz_token", "quiz_answers", "quiz_submitted", "last_score",
+                            "current_attempt_id", "last_saved_answers_str", "quiz_questions", "show_review"]:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.stop()
 
-    # التحديث التلقائي كل 30 ثانية
-    count = st_autorefresh(interval=30000, limit=1000, key="quiz_autorefresh")
+    # التحديث التلقائي كل 30 ثانية للمراحل التي تحتاج ذلك
+    if st.session_state.quiz_phase in ["taking_quiz", "finished"]:
+        count = st_autorefresh(interval=30000, limit=1000, key="quiz_autorefresh")
+    else:
+        count = 0
 
     quiz = st.session_state.student_quiz
     if st.session_state.quiz_phase == "enter_name":
@@ -1208,6 +1216,8 @@ def show_student_quiz(db: Database):
                         st.session_state.quiz_submit_time = get_cairo_now()
                         st.session_state.quiz_phase = "finished"
                         st.session_state.quiz_submitted = True
+                        token = generate_quiz_token(quiz["quiz_id"], selected_id)
+                        st.session_state.quiz_token = token
                         st.rerun()
                     else:
                         st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك الدخول مرة أخرى.")
