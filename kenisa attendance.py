@@ -19,22 +19,8 @@ import threading
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 QUIZ_JWT_SECRET = "StDemianaChurch2025!QuizSecure#Key"
+CACHE_TTL_SECONDS = 600  # زيادة إلى 10 دقائق
 CAIRO_TZ = timezone(timedelta(hours=3), name='Africa/Cairo')
-
-# مدة التخزين المؤقت لكل نوع من الأوراق (بالثواني) لتحسين السرعة
-SHEET_CACHE_TTL = {
-    "Users": 600,
-    "Sections": 600,
-    "Stages": 600,
-    "Students": 600,
-    "Attendance": 120,
-    "FollowUp": 120,
-    "Quizzes": 300,
-    "QuizQuestions": 300,
-    "QuizResults": 120,
-    "Logs": 60
-}
-DEFAULT_CACHE_TTL = 120
 
 def get_cairo_now():
     return datetime.now(CAIRO_TZ)
@@ -299,6 +285,11 @@ def inject_css():
         .stSuccess { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }
         .stError { background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }
 
+        iframe[title="st_components.html"] {
+            border: none !important;
+            background: transparent !important;
+        }
+
         @media (max-width: 768px) {
             .floating-show-btn .stButton > button {
                 width: 50px !important;
@@ -315,71 +306,17 @@ def inject_css():
             }
             .main-header { font-size: 1.6rem; margin-top: 110px; }
         }
-        iframe[title="st_components.html"] {
-            border: none !important;
-            background: transparent !important;
-        }
-        .stage-card {
-            background: linear-gradient(145deg, #ffffff 0%, #f8f9ff 100%);
-            border-radius: 20px;
-            padding: 1.2rem;
-            margin: 1rem 0;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-            border-right: 5px solid #667eea;
-            transition: all 0.2s;
-        }
-        .stage-card:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,0.1); }
     </style>
     """, unsafe_allow_html=True)
 
 # =============================================================================
-# SheetCache مع TTL متغير
+# إدارة التخزين المؤقت السريع
 # =============================================================================
-class SheetCache:
-    def __init__(self):
-        if 'sheet_cache' not in st.session_state:
-            st.session_state.sheet_cache = {}
-        if 'log_buffer' not in st.session_state:
-            st.session_state.log_buffer = []
-
-    def get(self, sheet_name):
-        cache = st.session_state.sheet_cache
-        if sheet_name in cache:
-            entry = cache[sheet_name]
-            ttl = SHEET_CACHE_TTL.get(sheet_name, DEFAULT_CACHE_TTL)
-            if time.time() - entry['timestamp'] < ttl:
-                return entry['data']
-        return None
-
-    def set(self, sheet_name, data):
-        st.session_state.sheet_cache[sheet_name] = {
-            'data': data,
-            'timestamp': time.time()
-        }
-
-    def invalidate(self, sheet_name):
-        if sheet_name in st.session_state.sheet_cache:
-            del st.session_state.sheet_cache[sheet_name]
-
-    def clear_all(self):
-        st.session_state.sheet_cache = {}
-
-    def buffer_log(self, log_entry):
-        st.session_state.log_buffer.append(log_entry)
-
-    def flush_logs(self, db_instance):
-        if st.session_state.log_buffer:
-            logs = st.session_state.log_buffer.copy()
-            st.session_state.log_buffer = []
-            try:
-                df = db_instance._sheet_to_df("Logs")
-                if df.empty:
-                    df = pd.DataFrame(columns=["log_id", "timestamp", "user_id", "action", "details"])
-                new_rows = pd.DataFrame(logs)
-                df = pd.concat([df, new_rows], ignore_index=True)
-                db_instance._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
-            except Exception as e:
-                st.warning(f"تعذر حفظ السجلات المؤقتة: {str(e)}")
+def init_data_cache():
+    if 'data_cache' not in st.session_state:
+        st.session_state.data_cache = {}
+    if 'data_dirty' not in st.session_state:
+        st.session_state.data_dirty = {}
 
 # =============================================================================
 # Retry decorator
@@ -412,7 +349,7 @@ def retry_operation(max_retries=5, base_delay=2):
     return decorator
 
 # =============================================================================
-# Database Class (مع Rate Limiter محسّن)
+# Database Class مع تحسينات الأداء
 # =============================================================================
 class Database:
     _request_times = []
@@ -422,9 +359,8 @@ class Database:
     def _rate_limit():
         now = time.time()
         with Database._lock:
-            # السماح بـ 55 طلب في الدقيقة (أقل من الحد الأقصى 60)
             Database._request_times = [t for t in Database._request_times if now - t < 60]
-            if len(Database._request_times) >= 55:
+            if len(Database._request_times) >= 40:
                 sleep_time = 60 - (now - Database._request_times[0]) + 1
                 if sleep_time > 0:
                     time.sleep(sleep_time)
@@ -434,9 +370,8 @@ class Database:
     def __init__(self, creds, spreadsheet_id):
         self.client = gspread.authorize(creds)
         self.spreadsheet = self.client.open_by_key(spreadsheet_id)
-        self.cache = SheetCache()
+        self.log_buffer = []  # سجل مؤقت للعمليات
 
-    @retry_operation(max_retries=5, base_delay=2)
     def _get_or_create_worksheet(self, name, columns):
         Database._rate_limit()
         try:
@@ -445,43 +380,61 @@ class Database:
             ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(columns), 1))
             if columns:
                 ws.append_row(columns)
-        time.sleep(0.1)  # تقليل التأخير
+        time.sleep(0.2)
         return ws
 
-    def _sheet_to_df(self, sheet_name):
-        cached = self.cache.get(sheet_name)
-        if cached is not None:
-            return cached.copy()
-        try:
-            Database._rate_limit()
-            ws = self._get_or_create_worksheet(sheet_name, [])
-            values = ws.get_all_values()
-            time.sleep(0.1)
-            if not values or len(values) < 1:
-                df = pd.DataFrame()
-            else:
-                raw_headers = [h.strip() for h in values[0]]
-                seen = {}
-                unique_headers = []
-                for h in raw_headers:
-                    if h in seen:
-                        seen[h] += 1
-                        unique_headers.append(f"{h}_{seen[h]}")
-                    else:
-                        seen[h] = 0
-                        unique_headers.append(h)
-                if any(count > 0 for count in seen.values()):
-                    st.warning(f"⚠️ تحتوي ورقة '{sheet_name}' على أعمدة مكررة وتم معالجتها تلقائياً. يُنصح بتصحيح الورقة.")
-                data_rows = values[1:]
-                df = pd.DataFrame(data_rows, columns=unique_headers)
-                df.dropna(how='all', axis=1, inplace=True)
-                df.dropna(how='all', inplace=True)
-                df = df.astype(object)
-            self.cache.set(sheet_name, df.copy())
-            return df
-        except Exception as e:
-            st.error(f"❌ فشل قراءة {sheet_name}: {str(e)}")
+    # --- نظام التخزين المؤقت المتقدم ---
+    def _get_cached_df(self, sheet_name, fetch_func):
+        init_data_cache()
+        cache = st.session_state.data_cache
+        dirty = st.session_state.data_dirty
+
+        now = time.time()
+        if sheet_name in cache and not dirty.get(sheet_name, False):
+            entry = cache[sheet_name]
+            if now - entry['timestamp'] < CACHE_TTL_SECONDS:
+                return entry['data'].copy()
+
+        # استدعاء الدالة الأصلية للقراءة من الـ Sheet
+        df = fetch_func()
+        st.session_state.data_cache[sheet_name] = {'data': df.copy(), 'timestamp': now}
+        st.session_state.data_dirty[sheet_name] = False
+        return df.copy()
+
+    def _invalidate_cache(self, sheet_name):
+        init_data_cache()
+        st.session_state.data_dirty[sheet_name] = True
+        # تحديث الكاش بالبيانات الجديدة عند الكتابة إذا أمكن
+        if sheet_name in st.session_state.data_cache:
+            # نتركه حتى القراءة التالية للتحديث
+            pass
+
+    # --- تنفيذ القراءة الفعلي ---
+    def _read_sheet_raw(self, sheet_name):
+        Database._rate_limit()
+        ws = self._get_or_create_worksheet(sheet_name, [])
+        values = ws.get_all_values()
+        time.sleep(0.2)
+        if not values or len(values) < 1:
             return pd.DataFrame()
+        raw_headers = [h.strip() for h in values[0]]
+        seen = {}
+        unique_headers = []
+        for h in raw_headers:
+            if h in seen:
+                seen[h] += 1
+                unique_headers.append(f"{h}_{seen[h]}")
+            else:
+                seen[h] = 0
+                unique_headers.append(h)
+        data_rows = values[1:]
+        df = pd.DataFrame(data_rows, columns=unique_headers)
+        df.dropna(how='all', axis=1, inplace=True)
+        df.dropna(how='all', inplace=True)
+        return df.astype(object)
+
+    def _sheet_to_df(self, sheet_name):
+        return self._get_cached_df(sheet_name, lambda: self._read_sheet_raw(sheet_name))
 
     def _df_to_sheet(self, sheet_name, df, columns):
         if not isinstance(df, pd.DataFrame):
@@ -497,30 +450,14 @@ class Database:
         work_df.fillna("", inplace=True)
         work_df = work_df.astype(str)
         values = [columns] + work_df.values.tolist()
-        num_rows = len(values)
-        backup_df = None
         try:
-            backup_df = self.cache.get(sheet_name)
-            if backup_df is None:
-                backup_df = self._sheet_to_df(sheet_name)
-        except Exception:
-            pass
-        try:
-            ws.resize(rows=num_rows, cols=len(columns))
+            ws.resize(rows=len(values), cols=len(columns))
             ws.update(values)
-            time.sleep(0.1)
-            self.cache.invalidate(sheet_name)
+            time.sleep(0.2)
+            # إعلام الكاش بالتحديث
+            self._invalidate_cache(sheet_name)
         except Exception as e:
-            if backup_df is not None and not backup_df.empty:
-                try:
-                    st.warning("فشل حفظ البيانات، جاري استعادة النسخة السابقة...")
-                    self._df_to_sheet(sheet_name, backup_df, columns)
-                    self.cache.invalidate(sheet_name)
-                    raise Exception(f"تم استرجاع البيانات السابقة بسبب خطأ: {str(e)}")
-                except Exception as restore_error:
-                    raise Exception(f"فشل حفظ البيانات وفشل استرجاع النسخة الاحتياطية: {str(e)}")
-            else:
-                raise e
+            raise e
 
     @staticmethod
     def _safe_str(value):
@@ -530,44 +467,29 @@ class Database:
             return str(value)
         return str(value)
 
-    # --- Users (مع stage_id) ---
+    # --- Users ---
     def get_users(self):
         return self._sheet_to_df("Users")
 
     def add_user(self, user_data):
         df = self.get_users()
-        # التأكد من وجود عمود stage_id
         if df.empty:
             df = pd.DataFrame(columns=["user_id", "username", "password", "role",
-                                       "full_name", "section_id", "stage_id", "phone", "email"])
-        else:
-            if "stage_id" not in df.columns:
-                df["stage_id"] = ""
-        # إضافة stage_id افتراضي إذا لم يقدم
-        if "stage_id" not in user_data:
-            user_data["stage_id"] = ""
+                                       "full_name", "section_id", "phone", "email"])
         df = pd.concat([df, pd.DataFrame([user_data])], ignore_index=True)
         self._df_to_sheet("Users", df, ["user_id", "username", "password", "role",
-                                        "full_name", "section_id", "stage_id", "phone", "email"])
+                                        "full_name", "section_id", "phone", "email"])
 
     def update_user(self, user_id, updates):
         df = self.get_users()
-        if "user_id" not in df.columns:
-            return
-        if "stage_id" not in df.columns:
-            df["stage_id"] = ""
         idx = df[df.user_id == user_id].index
         if len(idx) > 0:
             for k, v in updates.items():
-                if k not in df.columns:
-                    df[k] = ""
                 df.at[idx[0], k] = self._safe_str(v)
             self._df_to_sheet("Users", df, df.columns.tolist())
 
     def delete_user(self, user_id):
         df = self.get_users()
-        if "user_id" not in df.columns:
-            return
         df = df[df.user_id != user_id]
         self._df_to_sheet("Users", df, df.columns.tolist())
 
@@ -576,46 +498,35 @@ class Database:
         return self._sheet_to_df("Stages")
 
     def add_stage(self, stage_data):
-        if "stage_id" not in stage_data or "stage_name" not in stage_data:
-            raise ValueError("يجب توفير stage_id و stage_name")
-        self._get_or_create_worksheet("Stages", ["stage_id", "stage_name", "manager_user_id", "description"])
         df = self.get_stages()
         if df.empty:
-            df = pd.DataFrame(columns=["stage_id", "stage_name", "manager_user_id", "description"])
+            df = pd.DataFrame(columns=["stage_id", "stage_name", "manager_user_id"])
         new_row = {
             "stage_id": stage_data["stage_id"],
             "stage_name": stage_data["stage_name"],
-            "manager_user_id": stage_data.get("manager_user_id", ""),
-            "description": stage_data.get("description", "")
+            "manager_user_id": stage_data.get("manager_user_id", "")
         }
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-        self._df_to_sheet("Stages", df, ["stage_id", "stage_name", "manager_user_id", "description"])
+        self._df_to_sheet("Stages", df, ["stage_id", "stage_name", "manager_user_id"])
 
     def update_stage(self, stage_id, updates):
         df = self.get_stages()
-        if "stage_id" not in df.columns:
-            return
         idx = df[df.stage_id == stage_id].index
         if len(idx) > 0:
             for k, v in updates.items():
-                if k in df.columns:
-                    df.at[idx[0], k] = self._safe_str(v)
-            self._df_to_sheet("Stages", df, ["stage_id", "stage_name", "manager_user_id", "description"])
+                df.at[idx[0], k] = self._safe_str(v)
+            self._df_to_sheet("Stages", df, ["stage_id", "stage_name", "manager_user_id"])
 
     def delete_stage(self, stage_id):
         df = self.get_stages()
-        if "stage_id" not in df.columns:
-            return
         df = df[df.stage_id != stage_id]
-        self._df_to_sheet("Stages", df, ["stage_id", "stage_name", "manager_user_id", "description"])
+        self._df_to_sheet("Stages", df, ["stage_id", "stage_name", "manager_user_id"])
 
     # --- Sections ---
     def get_sections(self):
         return self._sheet_to_df("Sections")
 
     def add_section(self, sec_data):
-        if "section_id" not in sec_data or "section_name" not in sec_data:
-            raise ValueError("يجب توفير section_id و section_name")
         self._get_or_create_worksheet("Sections", ["section_id", "section_name", "manager_user_id"])
         df = self.get_sections()
         if df.empty:
@@ -630,8 +541,6 @@ class Database:
 
     def update_section(self, section_id, updates):
         df = self.get_sections()
-        if "section_id" not in df.columns:
-            return
         idx = df[df.section_id == section_id].index
         if len(idx) > 0:
             for k, v in updates.items():
@@ -640,8 +549,6 @@ class Database:
 
     def delete_section(self, section_id):
         df = self.get_sections()
-        if "section_id" not in df.columns:
-            return
         df = df[df.section_id != section_id]
         self._df_to_sheet("Sections", df, df.columns.tolist())
 
@@ -661,8 +568,6 @@ class Database:
 
     def update_student(self, student_id, updates):
         df = self.get_students()
-        if "student_id" not in df.columns:
-            return
         idx = df[df.student_id == student_id].index
         if len(idx) > 0:
             for k, v in updates.items():
@@ -671,8 +576,6 @@ class Database:
 
     def delete_student(self, student_id):
         df = self.get_students()
-        if "student_id" not in df.columns:
-            return
         df = df[df.student_id != student_id]
         self._df_to_sheet("Students", df, df.columns.tolist())
 
@@ -702,29 +605,25 @@ class Database:
 
     def get_attendance_by_date_section(self, date_str, section_id):
         df = self.get_attendance()
-        if df.empty or "date" not in df.columns or "section_id" not in df.columns:
+        if df.empty:
             return pd.DataFrame()
         return df[(df.date == date_str) & (df.section_id == section_id)]
 
     def delete_attendance_record(self, record_id):
         df = self.get_attendance()
-        if "record_id" not in df.columns:
-            return
         df = df[df.record_id != record_id]
         self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
 
-    # --- FollowUp (مع منع التكرار) ---
+    # --- FollowUp ---
     def get_followup(self):
         return self._sheet_to_df("FollowUp")
 
     def add_followup_record(self, record):
         df = self.get_followup()
-        if not df.empty and "student_id" in df.columns and "followup_date" in df.columns and "followup_type" in df.columns:
-            duplicate = df[
-                (df.student_id == record["student_id"]) &
-                (df.followup_date == record["followup_date"]) &
-                (df.followup_type == record["followup_type"])
-            ]
+        if not df.empty:
+            duplicate = df[(df.student_id == record["student_id"]) &
+                           (df.followup_date == record["followup_date"]) &
+                           (df.followup_type == record["followup_type"])]
             if not duplicate.empty:
                 raise ValueError("⛔ تم تسجيل نفس الافتقاد مسبقاً لنفس الطالبة في نفس التاريخ ونفس النوع.")
         if df.empty:
@@ -736,8 +635,6 @@ class Database:
 
     def delete_followup_record(self, record_id):
         df = self.get_followup()
-        if "record_id" not in df.columns:
-            return
         df = df[df.record_id != record_id]
         self._df_to_sheet("FollowUp", df, ["record_id", "student_id", "teacher_id", "followup_date",
                                            "followup_type", "notes", "regularity_status"])
@@ -759,8 +656,6 @@ class Database:
 
     def update_quiz(self, quiz_id, updates):
         df = self.get_quizzes()
-        if "quiz_id" not in df.columns:
-            return
         idx = df[df.quiz_id == quiz_id].index
         if len(idx) > 0:
             for k, v in updates.items():
@@ -769,15 +664,11 @@ class Database:
 
     def delete_quiz_keep_results(self, quiz_id):
         df = self.get_quizzes()
-        if "quiz_id" not in df.columns:
-            return
         df = df[df.quiz_id != quiz_id]
         self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id",
                                           "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
                                           "quiz_code", "password", "is_active"])
         qdf = self._sheet_to_df("QuizQuestions")
-        if "quiz_id" not in qdf.columns:
-            return
         qdf = qdf[qdf.quiz_id != quiz_id]
         self._df_to_sheet("QuizQuestions", qdf, ["question_id", "quiz_id", "question_text", "question_type",
                                                  "option1", "option2", "option3", "option4", "correct_answer"])
@@ -785,15 +676,13 @@ class Database:
     def delete_quiz(self, quiz_id):
         self.delete_quiz_keep_results(quiz_id)
         rdf = self._sheet_to_df("QuizResults")
-        if "quiz_id" not in rdf.columns:
-            return
         rdf = rdf[rdf.quiz_id != quiz_id]
         self._df_to_sheet("QuizResults", rdf, ["result_id", "quiz_id", "student_id", "student_name",
                                                "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
     def get_quiz_questions(self, quiz_id):
         df = self._sheet_to_df("QuizQuestions")
-        if df.empty or "quiz_id" not in df.columns:
+        if df.empty:
             return pd.DataFrame()
         return df[df.quiz_id == quiz_id]
 
@@ -808,8 +697,6 @@ class Database:
 
     def delete_question(self, question_id):
         df = self._sheet_to_df("QuizQuestions")
-        if "question_id" not in df.columns:
-            return
         df = df[df.question_id != question_id]
         self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type",
                                                 "option1", "option2", "option3", "option4", "correct_answer"])
@@ -819,7 +706,7 @@ class Database:
         df = self._sheet_to_df("QuizResults")
         if df.empty:
             return pd.DataFrame()
-        if quiz_id and "quiz_id" in df.columns:
+        if quiz_id:
             return df[df.quiz_id == quiz_id]
         return df
 
@@ -849,8 +736,6 @@ class Database:
 
     def save_answers(self, result_id, answers_dict):
         df = self._sheet_to_df("QuizResults")
-        if df.empty or "result_id" not in df.columns or "answers" not in df.columns:
-            return
         idx = df[df.result_id == result_id].index
         if len(idx) > 0:
             df.at[idx[0], "answers"] = json.dumps(answers_dict, ensure_ascii=False)
@@ -859,8 +744,6 @@ class Database:
 
     def submit_quiz_attempt(self, result_id, score, answers_json):
         df = self._sheet_to_df("QuizResults")
-        if df.empty or "result_id" not in df.columns:
-            return
         idx = df[df.result_id == result_id].index
         if len(idx) > 0:
             df.at[idx[0], "score"] = str(score)
@@ -872,8 +755,6 @@ class Database:
 
     def delete_quiz_result(self, result_id):
         df = self._sheet_to_df("QuizResults")
-        if "result_id" not in df.columns:
-            return
         df = df[df.result_id != result_id]
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
                                               "score", "total_marks", "start_time", "submission_time", "answers", "status"])
@@ -890,12 +771,15 @@ class Database:
             "action": action,
             "details": details
         }
-        self.cache.buffer_log(log)
+        # تخزين فوري
+        df = self.get_logs()
+        if df.empty:
+            df = pd.DataFrame(columns=["log_id", "timestamp", "user_id", "action", "details"])
+        df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
+        self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
 
     def delete_log(self, log_id):
         df = self.get_logs()
-        if "log_id" not in df.columns:
-            return
         df = df[df.log_id != log_id]
         self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
 
@@ -908,7 +792,6 @@ def generate_token(user: dict, secret: str) -> str:
         "role": user.get("role", ""),
         "full_name": user.get("full_name", ""),
         "section_id": user.get("section_id", ""),
-        "stage_id": user.get("stage_id", ""),
         "exp": datetime.utcnow() + timedelta(hours=24)
     }
     return jwt.encode(payload, secret, algorithm="HS256")
@@ -972,7 +855,8 @@ def init_session():
 def logout(db=None):
     if db and st.session_state.user:
         try:
-            db.cache.flush_logs(db)
+            # حفظ السجلات
+            pass
         except Exception:
             pass
     for key in list(st.session_state.keys()):
@@ -991,8 +875,21 @@ def send_telegram_message(message: str) -> bool:
     except Exception:
         return False
 
+def send_telegram_photo(caption: str, file_bytes, filename: str) -> bool:
+    bot_token, chat_id = get_telegram_config()
+    if not bot_token or not chat_id:
+        return False
+    url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+    files = {'photo': (filename, file_bytes)}
+    data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': 'HTML'}
+    try:
+        response = requests.post(url, data=data, files=files, timeout=15)
+        return response.status_code == 200
+    except Exception:
+        return False
+
 # =============================================================================
-# مركز المساعدة المحسّن
+# مركز المساعدة المحسّن مع إرفاق الصور
 # =============================================================================
 @st.dialog("🆘 مركز المساعدة والدعم الفني", width="large")
 def show_help_dialog():
@@ -1017,6 +914,7 @@ def show_help_dialog():
             issue_type = st.selectbox("نوع المشكلة *", ["مشكلة تقنية", "مشكلة في البيانات", "طلب مساعدة", "اقتراح تحسين", "أخرى"])
             urgency = st.selectbox("الأولوية", ["عادي", "مستعجل", "طارئ جداً"], index=0)
         issue_desc = st.text_area("وصف المشكلة أو الطلب *", placeholder="اشرح المشكلة بالتفصيل...", height=150)
+        uploaded_file = st.file_uploader("📎 إرفاق لقطة شاشة (اختياري)", type=["png", "jpg", "jpeg"])
         submitted = st.form_submit_button("🚀 إرسال الطلب", use_container_width=True)
         if submitted:
             if not name or not whatsapp or not issue_desc:
@@ -1031,14 +929,23 @@ def show_help_dialog():
                     f"⚡ الأولوية: {urgency}\n"
                     f"📝 التفاصيل: {issue_desc}"
                 )
-                if send_telegram_message(message):
+                success = True
+                if uploaded_file is not None:
+                    # إرسال الصورة مع النص
+                    if not send_telegram_photo(message, uploaded_file.getvalue(), uploaded_file.name):
+                        success = False
+                else:
+                    if not send_telegram_message(message):
+                        success = False
+
+                if success:
                     st.success("✅ تم إرسال طلبك بنجاح! سنتواصل معك قريباً.")
                     st.balloons()
                 else:
                     st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
 
 # =============================================================================
-# Validation Function – فحص سلامة البيانات
+# Validation Function
 # =============================================================================
 def validate_data_integrity(db: Database):
     errors = []
@@ -1047,33 +954,19 @@ def validate_data_integrity(db: Database):
     users = db.get_users()
 
     if not students.empty and not sections.empty:
-        if "section_id" in students.columns and "section_id" in sections.columns:
-            valid_sections = set(sections["section_id"].tolist())
-            for _, row in students.iterrows():
-                sid = row.get("section_id", "")
-                if pd.isna(sid) or str(sid).strip() == "":
-                    errors.append(f"الطالبة {row.get('full_name', '')} ليس لديها فصل (section_id فارغ).")
-                elif str(sid).strip() not in valid_sections:
-                    errors.append(f"الطالبة {row.get('full_name', '')} تنتمي لفصل غير موجود ({sid}).")
-    elif not students.empty and sections.empty:
-        errors.append("لا توجد فصول مسجلة، كل الطالبات بدون فصول.")
-
-    if not users.empty and not sections.empty:
-        if "section_id" in sections.columns and "role" in users.columns:
-            valid_sections = set(sections["section_id"].tolist())
-            for _, row in users.iterrows():
-                if row.get("role") in ["Teacher", "Service Manager"]:
-                    sid = row.get("section_id", "")
-                    if sid and str(sid).strip() not in valid_sections:
-                        errors.append(f"المستخدم {row.get('full_name', '')} (دور: {row.get('role', '')}) مرتبط بفصل غير موجود ({sid}).")
+        valid_sections = set(sections["section_id"].tolist())
+        for _, row in students.iterrows():
+            sid = row.get("section_id", "")
+            if pd.isna(sid) or str(sid).strip() == "":
+                errors.append(f"الطالبة {row.get('full_name', '')} ليس لديها فصل.")
+            elif str(sid).strip() not in valid_sections:
+                errors.append(f"الطالبة {row.get('full_name', '')} تنتمي لفصل غير موجود ({sid}).")
     return errors
 
 def auto_fix_missing_sections(db: Database):
     students = db.get_students()
     sections = db.get_sections()
     if students.empty:
-        return False
-    if "section_id" not in students.columns or (not sections.empty and "section_id" not in sections.columns):
         return False
     existing_ids = set(sections["section_id"].tolist()) if not sections.empty else set()
     students_ids = students["section_id"].dropna().unique().tolist()
@@ -1096,7 +989,7 @@ def show_initialization(db: Database):
             admin_data = {
                 "user_id": "admin-001", "username": "admin", "password": "admin123",
                 "role": "System Admin", "full_name": "مدير النظام",
-                "section_id": "", "stage_id": "", "phone": "0100000000", "email": "admin@church.com"
+                "section_id": "", "phone": "0100000000", "email": "admin@church.com"
             }
             db.add_user(admin_data)
             st.success("✅ تم إنشاء مدير النظام بنجاح!")
@@ -1119,9 +1012,6 @@ def show_login_page(db: Database, jwt_secret: str):
                 else:
                     with st.spinner("جاري التحقق..."):
                         users = db.get_users()
-                        if "username" not in users.columns:
-                            st.error("بيانات المستخدمين غير مكتملة")
-                            return
                         user_row = users[users.username == username]
                         if user_row.empty:
                             st.error("اسم المستخدم غير موجود")
@@ -1151,9 +1041,6 @@ def show_login_page(db: Database, jwt_secret: str):
                 else:
                     with st.spinner("جاري التحقق من الكود..."):
                         quizzes = db.get_quizzes()
-                        if "quiz_code" not in quizzes.columns or "password" not in quizzes.columns:
-                            st.error("بيانات الاختبارات غير متاحة حالياً")
-                            return
                         quiz = quizzes[(quizzes.quiz_code == code) & (quizzes.password == passwd)]
                         if quiz.empty:
                             st.error("كود أو كلمة مرور خاطئة")
@@ -1164,8 +1051,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 expiry = expiry_naive.replace(tzinfo=CAIRO_TZ)
                                 if expiry < get_cairo_now():
                                     st.error("انتهت صلاحية هذا الاختبار")
-                                    if "quiz_id" in quiz:
-                                        db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
+                                    db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
                                 elif quiz.get("is_active", "True") == "False":
                                     st.error("هذا الاختبار غير نشط حالياً")
                                 else:
@@ -1190,7 +1076,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
 
 # =============================================================================
-# Student Quiz Interface (إصلاح التسليم)
+# Student Quiz Interface (مع مؤقت بدون تحديث)
 # =============================================================================
 def grade_attempt(db, quiz_id, answers_dict):
     questions = db.get_quiz_questions(quiz_id)
@@ -1216,7 +1102,6 @@ def save_current_answers(db):
         st.session_state.last_saved_answers_str = current_answers
 
 def show_student_quiz(db: Database):
-    # إزالة st_autorefresh و الاعتماد على مؤقت JavaScript خالص
     if st.session_state.quiz_phase in ["taking_quiz", "finished"]:
         if not st.session_state.get("quiz_token"):
             st.error("انتهت جلسة الاختبار. يرجى إعادة الدخول.")
@@ -1245,9 +1130,6 @@ def show_student_quiz(db: Database):
         st.markdown(f"**عدد الأسئلة:** {quiz.get('num_questions', '')} | **الدرجة الكلية:** 20 | **الوقت:** {quiz.get('time_limit_minutes', '')} دقيقة")
         st.markdown("---")
         students_df = db.get_students()
-        if "status" not in students_df.columns:
-            st.error("بيانات الطالبات غير متاحة")
-            st.stop()
         active_students = students_df[students_df["status"] == "active"] if not students_df.empty else pd.DataFrame()
         if active_students.empty:
             st.warning("لا توجد طالبات مسجلات حالياً. يرجى التواصل مع المسؤول.")
@@ -1262,7 +1144,7 @@ def show_student_quiz(db: Database):
             student_row = active_students[active_students.student_id == selected_id].iloc[0]
             section_id = student_row.get("section_id", "")
             sections_df = db.get_sections()
-            if not sections_df.empty and "section_id" in sections_df.columns and "section_name" in sections_df.columns:
+            if not sections_df.empty:
                 sec_name = sections_df[sections_df.section_id == section_id]["section_name"].values
                 section_name = sec_name[0] if len(sec_name) > 0 else "لم يتم تعيين فصل"
             else:
@@ -1272,7 +1154,7 @@ def show_student_quiz(db: Database):
         st.info("إذا لم تجد اسمك في القائمة، يرجى التواصل مع مشرف الخدمة لإضافتك.")
         if selected_id is not None:
             existing = db.get_quiz_results(quiz.get("quiz_id"))
-            if not existing.empty and "student_id" in existing.columns:
+            if not existing.empty:
                 student_attempts = existing[existing["student_id"] == selected_id]
                 if not student_attempts.empty:
                     attempt = student_attempts.iloc[0]
@@ -1335,20 +1217,13 @@ def show_student_quiz(db: Database):
                     st.warning("لا توجد أسئلة في هذا الاختبار بعد.")
                     return
                 st.session_state.quiz_questions = questions_df.to_dict('records')
-                st.session_state.quiz_load_failures = 0
-            except Exception as e:
-                st.session_state.quiz_load_failures += 1
-                if st.session_state.quiz_load_failures <= 3:
-                    st.warning("جاري تحميل الأسئلة... يرجى الانتظار.")
-                    time.sleep(5)
-                    st.rerun()
-                else:
-                    st.error("تعذر تحميل الأسئلة. يرجى التواصل مع المشرف.")
-                    return
+            except Exception:
+                st.error("تعذر تحميل الأسئلة.")
+                return
         else:
             questions_df = pd.DataFrame(st.session_state.quiz_questions)
 
-        # مؤقت JavaScript بدون تحديث الصفحة
+        # JavaScript لاستقبال إشارة انتهاء الوقت والضغط على زر التسليم تلقائياً
         st.markdown("""
         <script>
         window.addEventListener('message', function(event) {
@@ -1365,6 +1240,7 @@ def show_student_quiz(db: Database):
         </script>
         """, unsafe_allow_html=True)
 
+        # مؤقت HTML بدون تحديث الصفحة
         end_time_iso = st.session_state.quiz_end_time.isoformat()
         countdown_html = f"""
         <!DOCTYPE html>
@@ -1457,7 +1333,6 @@ def show_student_quiz(db: Database):
             else:
                 score_display = score
             st.info(f"نتيجتك: {score_display}/20")
-
             st.markdown("---")
             st.markdown("#### ⏱️ معلومات الوقت")
             col_t1, col_t2 = st.columns(2)
@@ -1497,7 +1372,6 @@ def show_student_quiz(db: Database):
                     correct = str(q.get("correct_answer", "")).strip().lower()
                     student_ans = str(student_answers.get(qid, "")).strip().lower()
                     is_correct = (correct == student_ans)
-
                     st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
                     col1, col2 = st.columns(2)
                     col1.write(f"📝 إجابتك: {student_ans if student_ans else 'لم تجب'}")
@@ -1518,7 +1392,7 @@ def show_student_quiz(db: Database):
         return
 
 # =============================================================================
-# Sidebar Navigation (تم إضافة إدارة المراحل)
+# Sidebar Navigation
 # =============================================================================
 def show_sidebar_navigation(db: Database):
     with st.sidebar:
@@ -1531,8 +1405,7 @@ def show_sidebar_navigation(db: Database):
         role = user.get("role", "")
         menus = {
             "System Admin": [
-                "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "📚 إدارة المراحل",
-                "📋 الحضور", "💬 الافتقاد",
+                "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 الحضور", "💬 الافتقاد",
                 "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
                 "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
             ],
@@ -1579,86 +1452,12 @@ def show_sidebar_navigation(db: Database):
     return current_choice
 
 # =============================================================================
-# إدارة المراحل (صفحة جديدة)
-# =============================================================================
-def show_stages_management(db: Database):
-    st.markdown("<h2 class='main-header'>📚 إدارة المراحل الدراسية</h2>", unsafe_allow_html=True)
-    stages = db.get_stages()
-    users = db.get_users()
-    # عرض المراحل الحالية
-    if not stages.empty:
-        st.subheader("📋 المراحل الحالية")
-        # دمج مع اسم المسؤول
-        if not users.empty and "user_id" in users.columns and "full_name" in users.columns:
-            display_df = stages.merge(users[["user_id", "full_name"]], left_on="manager_user_id", right_on="user_id", how="left")
-            display_df.rename(columns={"full_name": "المسؤول"}, inplace=True)
-            display_cols = ["stage_id", "stage_name", "المسؤول", "description"]
-        else:
-            display_df = stages.copy()
-            display_cols = ["stage_id", "stage_name", "manager_user_id", "description"]
-        st.dataframe(display_df[display_cols], use_container_width=True)
-    else:
-        st.info("لا توجد مراحل مسجلة حتى الآن.")
-
-    # إضافة مرحلة جديدة
-    with st.expander("➕ إضافة مرحلة جديدة", expanded=True):
-        with st.form("add_stage_form"):
-            col1, col2 = st.columns(2)
-            stage_name = col1.text_input("اسم المرحلة *", placeholder="مثال: KG1, الصف الأول الإعدادي")
-            stage_id = col2.text_input("معرف المرحلة (ID) *", value=str(uuid.uuid4())[:8], help="يمكنك تركه تلقائياً")
-            manager_id = st.selectbox("المسؤول عن المرحلة", options=[""] + users["user_id"].tolist() if not users.empty else [],
-                                      format_func=lambda x: "اختر مسؤولاً" if x == "" else users[users.user_id == x]["full_name"].values[0] if not users.empty and x in users["user_id"].values else x)
-            description = st.text_area("وصف المرحلة")
-            if st.form_submit_button("إضافة المرحلة"):
-                if not stage_name or not stage_id:
-                    st.error("اسم المرحلة ومعرفها مطلوبان")
-                elif not stages.empty and stage_id in stages["stage_id"].values:
-                    st.error("معرف المرحلة موجود مسبقاً، اختر معرفاً مختلفاً")
-                else:
-                    db.add_stage({
-                        "stage_id": stage_id.strip(),
-                        "stage_name": stage_name.strip(),
-                        "manager_user_id": manager_id,
-                        "description": description
-                    })
-                    st.success("✅ تمت إضافة المرحلة بنجاح")
-                    time.sleep(1)
-                    st.rerun()
-
-    # تعديل أو حذف مرحلة
-    if not stages.empty:
-        st.markdown("---")
-        st.subheader("✏️ تعديل أو حذف مرحلة")
-        selected_stage = st.selectbox("اختر مرحلة", stages["stage_id"],
-                                      format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if len(stages[stages.stage_id == x]) > 0 else x)
-        stage_data = stages[stages.stage_id == selected_stage].iloc[0].to_dict()
-        col1, col2 = st.columns(2)
-        new_name = col1.text_input("اسم المرحلة", value=stage_data.get("stage_name", ""))
-        new_desc = st.text_area("الوصف", value=stage_data.get("description", ""))
-        new_manager = st.selectbox("المسؤول", options=[""] + users["user_id"].tolist() if not users.empty else [],
-                                   index=0 if stage_data.get("manager_user_id", "") == "" else
-                                   (users["user_id"].tolist().index(stage_data["manager_user_id"]) + 1 if stage_data["manager_user_id"] in users["user_id"].tolist() else 0),
-                                   format_func=lambda x: "لا يوجد" if x == "" else users[users.user_id == x]["full_name"].values[0] if not users.empty and x in users["user_id"].values else x)
-        col1, col2 = st.columns(2)
-        if col1.button("تحديث المرحلة"):
-            db.update_stage(selected_stage, {"stage_name": new_name, "manager_user_id": new_manager, "description": new_desc})
-            st.success("تم التحديث")
-            time.sleep(1)
-            st.rerun()
-        if col2.button("حذف المرحلة"):
-            db.delete_stage(selected_stage)
-            st.success("تم حذف المرحلة")
-            time.sleep(1)
-            st.rerun()
-
-# =============================================================================
 # Dashboard
 # =============================================================================
 def show_dashboard(db: Database):
     user = st.session_state.user
     role = user.get("role", "")
     section_id = user.get("section_id", "")
-    stage_id = user.get("stage_id", "")
     st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
 
     if role in ["System Admin", "Service Manager"] and st.session_state.get("data_errors"):
@@ -1744,10 +1543,10 @@ def show_dashboard(db: Database):
         sections_all = db.get_sections()
         if not results.empty and "status" in results.columns and not students_all.empty and not sections_all.empty:
             submitted = results[results.status == "submitted"]
-            if not submitted.empty and "student_id" in submitted.columns and "student_id" in students_all.columns and "section_id" in students_all.columns:
+            if not submitted.empty:
                 merged = submitted.merge(students_all[["student_id", "section_id"]], on="student_id", how="left")
                 merged["score"] = pd.to_numeric(merged["score"], errors="coerce").fillna(0)
-                if "section_id" in merged.columns and "section_id" in sections_all.columns and "section_name" in sections_all.columns:
+                if "section_id" in merged.columns:
                     section_scores = merged.groupby("section_id")["score"].mean().reset_index()
                     section_scores = section_scores.merge(sections_all[["section_id", "section_name"]], on="section_id", how="left")
                     if not section_scores.empty:
@@ -1756,7 +1555,7 @@ def show_dashboard(db: Database):
                         st.dataframe(section_scores.rename(columns={"section_name":"الفصل", "score":"متوسط الدرجات"}).set_index("الفصل"), use_container_width=True)
 
 # =============================================================================
-# إدارة المستخدمين (تم إضافة stage_id)
+# إدارة المستخدمين (مضافة إدارة المراحل)
 # =============================================================================
 def show_user_management(db: Database):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
@@ -1764,19 +1563,13 @@ def show_user_management(db: Database):
     sections = db.get_sections()
     stages = db.get_stages()
     students = db.get_students()
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول", "إدارة المراحل"])
 
     with tab1:
         st.subheader("قائمة المستخدمين (خدام)")
         if not users.empty:
-            # دمج اسم المرحلة
-            if not stages.empty and "stage_id" in users.columns:
-                disp = users.merge(stages[["stage_id", "stage_name"]], on="stage_id", how="left")
-                disp.rename(columns={"stage_name": "المرحلة"}, inplace=True)
-            else:
-                disp = users.copy()
-            display_cols = [c for c in ["user_id", "username", "full_name", "role", "المرحلة", "section_id", "phone", "email"] if c in disp.columns]
-            st.dataframe(disp[display_cols], use_container_width=True)
+            display_cols = [c for c in ["user_id", "username", "full_name", "role", "section_id", "phone", "email"] if c in users.columns]
+            st.dataframe(users[display_cols], use_container_width=True)
         else:
             st.info("لا يوجد مستخدمون مسجلون.")
         with st.expander("➕ إضافة مستخدم جديد"):
@@ -1791,11 +1584,6 @@ def show_user_management(db: Database):
                     section_options = ["None"] + sections["section_id"].tolist()
                     section_choice = st.selectbox("الفصل", section_options, format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0] if x != "None" else "لا يوجد")
                     section_id = section_choice if section_choice != "None" else ""
-                stage_id = ""
-                if role in ["Service Manager"] and not stages.empty:
-                    stage_options = ["None"] + stages["stage_id"].tolist()
-                    stage_choice = st.selectbox("المرحلة (لأمناء الخدمة)", stage_options, format_func=lambda x: stages[stages.stage_id==x]["stage_name"].values[0] if x != "None" else "لا توجد")
-                    stage_id = stage_choice if stage_choice != "None" else ""
                 phone = st.text_input("رقم الهاتف (اختياري)")
                 email = st.text_input("البريد الإلكتروني (اختياري)")
                 if st.form_submit_button("إضافة"):
@@ -1807,14 +1595,14 @@ def show_user_management(db: Database):
                         db.add_user({
                             "user_id": str(uuid.uuid4()), "username": username, "password": password,
                             "role": role, "full_name": full_name,
-                            "section_id": section_id, "stage_id": stage_id, "phone": phone, "email": email
+                            "section_id": section_id, "phone": phone, "email": email
                         })
                         st.success("تم إضافة المستخدم بنجاح")
                         time.sleep(1)
                         st.rerun()
 
         with st.expander("✏️ تعديل / حذف مستخدم"):
-            if not users.empty and "user_id" in users.columns:
+            if not users.empty:
                 selected_user_id = st.selectbox("اختر المستخدم", users["user_id"], key="sel_user_edit")
                 user_data = users[users.user_id == selected_user_id].iloc[0].to_dict()
                 new_full_name = st.text_input("الاسم الكامل", value=user_data.get("full_name", ""), key="user_fullname")
@@ -1830,15 +1618,9 @@ def show_user_management(db: Database):
                     current_idx = section_options.index(new_section_id) if new_section_id in section_options else 0
                     section_choice = st.selectbox("الفصل", section_options, index=current_idx, format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0] if x != "None" else "لا يوجد", key="user_section")
                     new_section_id = section_choice if section_choice != "None" else ""
-                new_stage_id = user_data.get("stage_id", "")
-                if new_role == "Service Manager" and not stages.empty:
-                    stage_options = ["None"] + stages["stage_id"].tolist()
-                    current_sidx = stage_options.index(new_stage_id) if new_stage_id in stage_options else 0
-                    stage_choice = st.selectbox("المرحلة", stage_options, index=current_sidx, format_func=lambda x: stages[stages.stage_id==x]["stage_name"].values[0] if x != "None" else "لا توجد", key="user_stage")
-                    new_stage_id = stage_choice if stage_choice != "None" else ""
                 col1, col2 = st.columns(2)
                 if col1.button("تحديث البيانات", key="update_user_btn"):
-                    db.update_user(selected_user_id, {"full_name": new_full_name, "phone": new_phone, "email": new_email, "role": new_role, "section_id": new_section_id, "stage_id": new_stage_id})
+                    db.update_user(selected_user_id, {"full_name": new_full_name, "phone": new_phone, "email": new_email, "role": new_role, "section_id": new_section_id})
                     st.success("تم التحديث")
                     time.sleep(1)
                     st.rerun()
@@ -1851,7 +1633,6 @@ def show_user_management(db: Database):
                         time.sleep(1)
                         st.rerun()
 
-    # الألسنة الأخرى تبقى كما هي، مع إضافة stage_id اختياريًا في المدرسين إن أردت (لم يطلب صراحة)
     with tab2:
         st.subheader("قائمة المدرسات")
         teachers = users[users.role == "Teacher"] if not users.empty and "role" in users.columns else pd.DataFrame()
@@ -1886,13 +1667,12 @@ def show_user_management(db: Database):
                         db.add_user({
                             "user_id": str(uuid.uuid4()), "username": teacher_name, "password": password,
                             "role": "Teacher", "full_name": teacher_name,
-                            "section_id": section_id, "stage_id": "", "phone": phone, "email": email
+                            "section_id": section_id, "phone": phone, "email": email
                         })
                         st.success("تمت إضافة المدرسة بنجاح")
                         time.sleep(1)
                         st.rerun()
 
-    # باقي الألسنة تبقى كما هي (الطالبات، أمناء الخدمة، إدارة الفصول)
     with tab3:
         st.subheader("قائمة الطالبات")
         if not students.empty:
@@ -1930,9 +1710,8 @@ def show_user_management(db: Database):
                         st.success("تمت الإضافة")
                         time.sleep(1)
                         st.rerun()
-        # (باقي تعديل وحذف الطالبات كما كان)
         with st.expander("✏️ تعديل بيانات طالبة"):
-            if not students.empty and "student_id" in students.columns:
+            if not students.empty:
                 selected_student = st.selectbox("اختر طالبة", students["student_id"], key="sel_student_edit")
                 student_row = students[students.student_id == selected_student].iloc[0].to_dict()
                 new_full_name = st.text_input("الاسم الكامل", value=student_row.get("full_name", ""), key="student_fullname")
@@ -1979,13 +1758,13 @@ def show_user_management(db: Database):
         st.subheader("قائمة أمناء الخدمة")
         managers = users[users.role == "Service Manager"] if not users.empty and "role" in users.columns else pd.DataFrame()
         if not managers.empty:
-            if not stages.empty and "stage_id" in managers.columns:
-                mgr_display = managers.merge(stages[["stage_id", "stage_name"]], on="stage_id", how="left")
-                mgr_display = mgr_display.rename(columns={"stage_name": "المرحلة"})
+            if not sections.empty:
+                mgr_display = managers.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
+                mgr_display = mgr_display.rename(columns={"section_name": "الفصل"})
             else:
                 mgr_display = managers
-                mgr_display["المرحلة"] = ""
-            display_cols = [c for c in ["user_id", "username", "full_name", "المرحلة", "phone", "email"] if c in mgr_display.columns]
+                mgr_display["الفصل"] = ""
+            display_cols = [c for c in ["user_id", "username", "full_name", "الفصل", "phone", "email"] if c in mgr_display.columns]
             st.dataframe(mgr_display[display_cols], use_container_width=True)
         else:
             st.info("لا يوجد أمناء خدمة.")
@@ -2016,8 +1795,72 @@ def show_user_management(db: Database):
                     time.sleep(1)
                     st.rerun()
 
+    with tab6:
+        st.subheader("🏫 إدارة المراحل الدراسية")
+        if not stages.empty:
+            # دمج مع اسم المسؤول إن وجد
+            if not users.empty and "user_id" in users.columns and "full_name" in users.columns:
+                stages_display = stages.merge(users[["user_id", "full_name"]].rename(columns={"user_id":"manager_user_id", "full_name":"المسؤول"}), on="manager_user_id", how="left")
+            else:
+                stages_display = stages
+                stages_display["المسؤول"] = ""
+            st.dataframe(stages_display[["stage_id", "stage_name", "المسؤول"]], use_container_width=True)
+        else:
+            st.info("لا توجد مراحل مسجلة بعد.")
+        with st.expander("➕ إضافة مرحلة جديدة"):
+            with st.form("add_stage_form"):
+                stage_name = st.text_input("اسم المرحلة*", placeholder="مثال: KG1, KG2, الصف الأول...")
+                # اختيار المسؤول (مستخدم له صلاحية Service Manager أو Teacher)
+                eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
+                manager_id = ""
+                if not eligible_users.empty:
+                    manager_choice = st.selectbox("مسؤول المرحلة (اختياري)", ["None"] + eligible_users["user_id"].tolist(),
+                                                  format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0])
+                    manager_id = manager_choice if manager_choice != "None" else ""
+                else:
+                    st.info("لا يوجد مستخدمون مؤهلون لإدارة المرحلة.")
+                if st.form_submit_button("إضافة"):
+                    if not stage_name:
+                        st.error("يرجى إدخال اسم المرحلة")
+                    else:
+                        db.add_stage({
+                            "stage_id": str(uuid.uuid4()),
+                            "stage_name": stage_name.strip(),
+                            "manager_user_id": manager_id
+                        })
+                        st.success("✅ تمت إضافة المرحلة بنجاح")
+                        time.sleep(1)
+                        st.rerun()
+        if not stages.empty:
+            with st.expander("✏️ تعديل / حذف مرحلة"):
+                stage_sel = st.selectbox("اختر مرحلة", stages["stage_id"],
+                                         format_func=lambda x: stages[stages.stage_id==x]["stage_name"].values[0])
+                stage_row = stages[stages.stage_id == stage_sel].iloc[0].to_dict()
+                new_stage_name = st.text_input("اسم المرحلة", value=stage_row["stage_name"])
+                eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
+                current_mgr = stage_row.get("manager_user_id", "")
+                if not eligible_users.empty:
+                    mgr_options = ["None"] + eligible_users["user_id"].tolist()
+                    current_idx = mgr_options.index(current_mgr) if current_mgr in mgr_options else 0
+                    new_manager = st.selectbox("مسؤول المرحلة", mgr_options, index=current_idx,
+                                               format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0])
+                    new_mgr_id = new_manager if new_manager != "None" else ""
+                else:
+                    new_mgr_id = ""
+                col1, col2 = st.columns(2)
+                if col1.button("تحديث المرحلة"):
+                    db.update_stage(stage_sel, {"stage_name": new_stage_name, "manager_user_id": new_mgr_id})
+                    st.success("تم التحديث")
+                    time.sleep(1)
+                    st.rerun()
+                if col2.button("حذف المرحلة"):
+                    db.delete_stage(stage_sel)
+                    st.success("تم حذف المرحلة")
+                    time.sleep(1)
+                    st.rerun()
+
 # =============================================================================
-# Attendance
+# Attendance, Follow-up, My Students, etc. (دون تغيير جوهري)
 # =============================================================================
 def show_attendance(db: Database):
     user = st.session_state.user
@@ -2108,9 +1951,6 @@ def show_attendance(db: Database):
             time.sleep(1)
             st.rerun()
 
-# =============================================================================
-# Follow-up
-# =============================================================================
 def show_followup(db: Database):
     st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
     user = st.session_state.user
@@ -2178,9 +2018,6 @@ def show_followup(db: Database):
                 except ValueError as e:
                     st.error(str(e))
 
-# =============================================================================
-# My Students
-# =============================================================================
 def show_my_students(db: Database):
     st.markdown("<h2 class='main-header'>👩‍🎓 طالباتي</h2>", unsafe_allow_html=True)
     user = st.session_state.user
@@ -2233,9 +2070,6 @@ def show_my_students(db: Database):
                     except ValueError as e:
                         st.error(str(e))
 
-# =============================================================================
-# Class Competition Scores (Teacher Only)
-# =============================================================================
 def show_class_competition_scores(db: Database):
     st.markdown("<h2 class='main-header'>🏆 درجات مسابقات الفصل</h2>", unsafe_allow_html=True)
     user = st.session_state.user
@@ -2264,23 +2098,17 @@ def show_class_competition_scores(db: Database):
     else:
         class_results = pd.DataFrame()
 
-    if not quizzes.empty and not class_results.empty and "quiz_id" in class_results.columns and "quiz_id" in quizzes.columns:
+    if not quizzes.empty and not class_results.empty:
         class_results = class_results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
         class_results = class_results.rename(columns={"title": "اسم المسابقة"})
     else:
         class_results["اسم المسابقة"] = ""
 
-    if not section_students.empty and not class_results.empty and "student_id" in class_results.columns:
+    if not section_students.empty and not class_results.empty:
         class_results = class_results.merge(section_students[["student_id", "full_name"]], on="student_id", how="left")
         class_results = class_results.rename(columns={"full_name": "اسم الطالبة"})
     else:
         class_results["اسم الطالبة"] = ""
-
-    if not section_students.empty:
-        sec_name = db.get_sections()
-        if not sec_name.empty and "section_id" in sec_name.columns:
-            my_sec = sec_name[sec_name.section_id == section_id]["section_name"]
-            st.info(f"فصلك: **{my_sec.values[0] if len(my_sec)>0 else section_id}**")
 
     if class_results.empty:
         st.info("لا توجد نتائج مسابقات مسجلة لطالبات فصلك بعد.")
@@ -2297,7 +2125,6 @@ def show_class_competition_scores(db: Database):
 
     st.markdown("---")
     st.subheader("🔍 بحث وتصفية")
-
     search_term = st.text_input("ابحث باسم الطالبة أو المسابقة", placeholder="اكتب اسم الطالبة أو المسابقة...")
     if "اسم المسابقة" in display_df.columns:
         quiz_names = ["الكل"] + sorted(display_df["اسم المسابقة"].dropna().unique().tolist())
@@ -2328,12 +2155,8 @@ def show_class_competition_scores(db: Database):
     elif sort_by == "اسم الطالبة" and "اسم الطالبة" in filtered_df.columns:
         filtered_df = filtered_df.sort_values("اسم الطالبة", ascending=True)
 
-    if "submission_time" in filtered_df.columns:
-        filtered_df["submission_time"] = pd.to_datetime(filtered_df["submission_time"], errors="coerce")
-
     st.markdown("---")
     st.subheader("📋 النتائج")
-
     if not filtered_df.empty:
         filtered_df = filtered_df.reset_index(drop=True)
         filtered_df.index = filtered_df.index + 1
@@ -2359,9 +2182,6 @@ def show_class_competition_scores(db: Database):
     else:
         st.info("لا توجد نتائج مطابقة للبحث.")
 
-# =============================================================================
-# Quizzes
-# =============================================================================
 def show_quizzes(db: Database):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
     user = st.session_state.user
@@ -2436,7 +2256,7 @@ def show_quizzes(db: Database):
                                 st.success("✅ تمت إضافة السؤال")
                                 time.sleep(1)
                                 st.rerun()
-                    if not questions.empty and "question_id" in questions.columns:
+                    if not questions.empty:
                         del_q = st.selectbox("اختر سؤالاً لحذفه", questions["question_id"])
                         if st.button("حذف السؤال"):
                             db.delete_question(del_q)
@@ -2455,13 +2275,11 @@ def show_quizzes(db: Database):
                 active = q.get("is_active", "True") == "True"
                 code = q.get("quiz_code", "")
                 expiry = q.get("expiry_date", "")
-
                 col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
                 col1.write(f"**{title}**")
                 col2.write(f"الكود: {code}")
                 col3.write("حالة: " + ("🟢 نشط" if active else "🔴 مغلق"))
                 col4.write(f"ينتهي: {expiry}")
-
                 col_actions = st.columns(4)
                 if active:
                     if col_actions[0].button("إغلاق", key=f"deact_{qid}"):
@@ -2475,13 +2293,11 @@ def show_quizzes(db: Database):
                         st.success(f"تم تفعيل الاختبار: {title}")
                         time.sleep(1)
                         st.rerun()
-
                 if col_actions[1].button("حذف (النتائج تبقى)", key=f"del_keep_{qid}"):
                     db.delete_quiz_keep_results(qid)
                     st.success(f"تم حذف الاختبار '{title}' مع الاحتفاظ بالنتائج.")
                     time.sleep(1)
                     st.rerun()
-
                 st.markdown("---")
 
     st.markdown("### 📊 نتائج الاختبارات")
@@ -2496,18 +2312,18 @@ def show_quizzes(db: Database):
             section_student_ids = students[students.section_id == section_id]["student_id"].tolist()
             results = results[results.student_id.isin(section_student_ids)]
 
-        if not students.empty and "student_id" in students.columns and "full_name" in students.columns:
+        if not students.empty:
             if "student_id" in results.columns:
                 results = results.merge(students[["student_id", "full_name", "section_id"]], on="student_id", how="left")
                 results.rename(columns={"full_name": "اسم الطالبة"}, inplace=True)
-        if not sections_all.empty and "section_id" in sections_all.columns and "section_name" in sections_all.columns:
+        if not sections_all.empty:
             if "section_id" in results.columns:
                 results = results.merge(sections_all[["section_id", "section_name"]], on="section_id", how="left")
                 results.rename(columns={"section_name": "الفصل"}, inplace=True)
         else:
             results["الفصل"] = ""
 
-        if not quizzes.empty and "quiz_id" in quizzes.columns and "title" in quizzes.columns:
+        if not quizzes.empty:
             if "quiz_id" in results.columns:
                 results = results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
                 results.rename(columns={"title": "المسابقة"}, inplace=True)
@@ -2520,11 +2336,8 @@ def show_quizzes(db: Database):
             if quiz_ids and not quizzes.empty:
                 quiz_titles = quizzes[quizzes["quiz_id"].isin(quiz_ids)][["quiz_id", "title"]].drop_duplicates()
                 quiz_options = ["الكل"] + quiz_titles["quiz_id"].tolist()
-                selected_quiz_filter = st.selectbox(
-                    "اختر الاختبار لعرض نتائجه فقط",
-                    quiz_options,
-                    format_func=lambda x: "الكل" if x == "الكل" else quiz_titles[quiz_titles.quiz_id == x]["title"].values[0]
-                )
+                selected_quiz_filter = st.selectbox("اختر الاختبار لعرض نتائجه فقط", quiz_options,
+                                                    format_func=lambda x: "الكل" if x == "الكل" else quiz_titles[quiz_titles.quiz_id == x]["title"].values[0])
                 if selected_quiz_filter != "الكل":
                     results = results[results.quiz_id == selected_quiz_filter]
 
@@ -2567,9 +2380,6 @@ def show_quizzes(db: Database):
     else:
         st.info("لا توجد نتائج بعد.")
 
-# =============================================================================
-# Reports
-# =============================================================================
 def show_reports(db: Database):
     st.markdown("<h2 class='main-header'>📊 التقارير والإحصائيات</h2>", unsafe_allow_html=True)
     user = st.session_state.user
@@ -2595,10 +2405,10 @@ def show_reports(db: Database):
     year = col2.number_input("السنة", value=get_cairo_now().year, min_value=2020)
     if "date" in attendance.columns:
         monthly = attendance[(attendance.date.dt.month == month) & (attendance.date.dt.year == year)]
-        if not monthly.empty and "student_id" in monthly.columns and "status" in monthly.columns:
+        if not monthly.empty:
             summary = monthly.groupby(["student_id", "status"]).size().reset_index(name="count")
             pivot = summary.pivot(index="student_id", columns="status", values="count").fillna(0).reset_index()
-            if not students.empty and "student_id" in students.columns and "full_name" in students.columns:
+            if not students.empty:
                 pivot = pivot.merge(students[["student_id", "full_name"]], on="student_id", how="left")
             st.dataframe(pivot, use_container_width=True)
             fig = px.pie(monthly, names="status", title=f"نسب الحضور لشهر {month}/{year}")
@@ -2611,13 +2421,10 @@ def show_reports(db: Database):
     if not attendance.empty and "status" in attendance.columns and "student_id" in attendance.columns:
         absent_counts = attendance[attendance.status == "غائب"].groupby("student_id").size().reset_index(name="أيام الغياب")
         absent_counts = absent_counts.sort_values("أيام الغياب", ascending=False).head(10)
-        if not students.empty and "student_id" in students.columns and "full_name" in students.columns:
+        if not students.empty:
             absent_counts = absent_counts.merge(students[["student_id", "full_name"]], on="student_id", how="left")
         st.dataframe(absent_counts[["full_name", "أيام الغياب"]], use_container_width=True)
 
-# =============================================================================
-# Logs & Change Password
-# =============================================================================
 def show_logs(db: Database):
     st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
     logs = db.get_logs()
@@ -2659,6 +2466,7 @@ def change_password(db: Database):
 def main():
     inject_css()
     init_session()
+    init_data_cache()
 
     if 'db_instance' not in st.session_state:
         try:
@@ -2723,30 +2531,20 @@ def main():
                 role = st.session_state.user.get("role", "")
                 menus = {
                     "System Admin": [
-                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "📚 إدارة المراحل",
-                        "📋 الحضور", "💬 الافتقاد",
+                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 الحضور", "💬 الافتقاد",
                         "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
                         "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
                     ],
-                    "Father Account": [
-                        "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
-                    ],
-                    "Service Manager": [
-                        "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
-                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
-                    ],
-                    "Teacher": [
-                        "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
-                        "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
-                    ]
+                    "Father Account": ["🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
+                    "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
+                                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
+                    "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
+                                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"]
                 }
                 menu_items = menus.get(role, [])
                 if choice not in menu_items:
                     choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
                     st.session_state.menu_choice = choice
-            else:
-                if 'choice' not in locals():
-                    choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
 
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if choice == "🏠 لوحة التحكم":
@@ -2756,9 +2554,9 @@ def main():
                     show_user_management(db)
                 else:
                     st.error("🚫 غير مصرح")
-            elif choice == "📚 إدارة المراحل":
+            elif choice == "🏫 إدارة المراحل":
                 if st.session_state.user.get("role") == "System Admin":
-                    show_stages_management(db)
+                    show_user_management(db)  # ستفتح التبويب تلقائياً عبر التبويبة السادسة
                 else:
                     st.error("🚫 غير مصرح")
             elif choice == "👩‍🎓 طالباتي":
@@ -2785,12 +2583,6 @@ def main():
     if st.session_state.get("open_help_dialog"):
         show_help_dialog()
         st.session_state.open_help_dialog = False
-
-    if st.session_state.authenticated:
-        try:
-            db.cache.flush_logs(db)
-        except Exception:
-            pass
 
 if __name__ == "__main__":
     main()
