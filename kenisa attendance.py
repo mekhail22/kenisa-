@@ -170,42 +170,6 @@ def inject_css():
         transform: translateY(-2px);
     }
 
-    /* KPI Cards */
-    .kpi-card {
-        background: var(--surface);
-        border-radius: var(--radius-card);
-        padding: 1.5rem 1rem;
-        box-shadow: var(--shadow-card);
-        margin-bottom: 1rem;
-        border: 1px solid var(--border);
-        transition: var(--transition);
-        text-align: center;
-    }
-    .kpi-card:hover {
-        box-shadow: var(--shadow-hover);
-        transform: translateY(-2px);
-    }
-    .kpi-icon {
-        font-size: 2rem;
-        margin-bottom: 0.5rem;
-    }
-    .kpi-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: #0f172a;
-        margin-bottom: 0.2rem;
-    }
-    .kpi-title {
-        font-size: 0.9rem;
-        color: #64748b;
-        margin-bottom: 0.2rem;
-    }
-    .kpi-sub {
-        font-size: 0.8rem;
-        color: #10b981;
-        font-weight: 600;
-    }
-
     /* عناوين */
     .main-header {
         font-size: 1.8rem;
@@ -280,13 +244,6 @@ def inject_css():
         text-align: center;
         margin-bottom: 1rem;
     }
-
-    /* Grade badges */
-    .grade-excellent { color: #059669; background: #d1fae5; padding: 2px 8px; border-radius: 12px; font-weight: 700; font-size: 0.85rem; }
-    .grade-verygood { color: #2563eb; background: #dbeafe; padding: 2px 8px; border-radius: 12px; font-weight: 700; font-size: 0.85rem; }
-    .grade-good { color: #d97706; background: #fef3c7; padding: 2px 8px; border-radius: 12px; font-weight: 700; font-size: 0.85rem; }
-    .grade-pass { color: #ea580c; background: #ffedd5; padding: 2px 8px; border-radius: 12px; font-weight: 700; font-size: 0.85rem; }
-    .grade-fail { color: #dc2626; background: #fee2e2; padding: 2px 8px; border-radius: 12px; font-weight: 700; font-size: 0.85rem; }
 
     @media (max-width: 768px) {
         .floating-show-btn .stButton > button {
@@ -970,6 +927,37 @@ def auto_fix_missing_sections(db: Database):
     return len(missing) > 0
 
 # =============================================================================
+# دالة تصنيف الدرجات
+# =============================================================================
+def get_grade_category(score):
+    try:
+        s = float(score)
+    except:
+        return "غير معروف"
+    if s >= 18:
+        return "ممتاز ⭐"
+    elif s >= 15:
+        return "جيد جداً 👍"
+    elif s >= 12:
+        return "جيد ✓"
+    elif s >= 10:
+        return "مقبول"
+    else:
+        return "راسب ⚠️"
+
+def get_grade_color(category):
+    if "ممتاز" in category:
+        return "#10b981"
+    elif "جيد جداً" in category:
+        return "#3b82f6"
+    elif "جيد" in category:
+        return "#f59e0b"
+    elif "مقبول" in category:
+        return "#8b5cf6"
+    else:
+        return "#ef4444"
+
+# =============================================================================
 # التهيئة وتسجيل الدخول
 # =============================================================================
 def show_initialization(db: Database):
@@ -1239,7 +1227,9 @@ def show_student_quiz(db: Database):
             st.success("تم تسليم الاختبار بنجاح!")
             score = st.session_state.last_score
             score_display = int(score) if isinstance(score, float) and score.is_integer() else score
-            st.info(f"نتيجتك: {score_display}/20")
+            category = get_grade_category(score)
+            color = get_grade_color(category)
+            st.markdown(f"<h2 style='text-align:center; color:{color};'>نتيجتك: {score_display}/20 — {category}</h2>", unsafe_allow_html=True)
             st.markdown("---")
             col_t1, col_t2 = st.columns(2)
             with col_t1:
@@ -1380,6 +1370,7 @@ def kpi_cards(db: Database):
     section_id = user.get("section_id", "")
     students = db.get_students()
     attendance = db.get_attendance()
+    followup = db.get_followup()
     users = db.get_users()
 
     if role in ["Teacher", "Service Manager"] and section_id:
@@ -1387,49 +1378,43 @@ def kpi_cards(db: Database):
             students = students[students.section_id == section_id]
         if not attendance.empty and "section_id" in attendance.columns:
             attendance = attendance[attendance.section_id == section_id]
+        if not followup.empty and not students.empty:
+            followup = followup[followup.student_id.isin(students["student_id"])]
 
     total_students = len(students)
     today = get_cairo_now().strftime("%Y-%m-%d")
     present_today = len(attendance[(attendance.date == today) & (attendance.status == "حاضر")]) if not attendance.empty else 0
     absent_today = len(attendance[(attendance.date == today) & (attendance.status == "غائب")]) if not attendance.empty else 0
+    need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty else 0
     total_users = len(users)
 
+    # تحديد البطاقات حسب الدور
+    if role in ["System Admin", "Father Account"]:
+        cards = [
+            ("👩‍🎓", "إجمالي الطالبات", total_students, "العدد الكلي"),
+            ("✅", "الحضور اليوم", present_today, "نشط"),
+            ("❌", "الغياب اليوم", absent_today, "يحتاج متابعة"),
+            ("👥", "المستخدمين", total_users, "خدام ومدرسين")
+        ]
+    else:
+        cards = [
+            ("👩‍🎓", "إجمالي الطالبات", total_students, "العدد الكلي"),
+            ("✅", "الحضور اليوم", present_today, "نشط"),
+            ("❌", "الغياب اليوم", absent_today, "يحتاج متابعة"),
+            ("⚠️", "منقطعات", need_follow, "بحاجة افتقاد")
+        ]
+
     cols = st.columns(4)
-    cards = [
-        ("👩‍🎓", "عدد الطالبات", total_students, "العدد الكلي"),
-        ("✅", "الحضور اليوم", present_today, "نشط"),
-        ("❌", "الغياب اليوم", absent_today, "يحتاج متابعة"),
-        ("👥", "المستخدمين", total_users, "خدام ومدرسين")
-    ]
     for i, (icon, title, value, sub) in enumerate(cards):
         with cols[i]:
             st.markdown(f"""
-            <div class='kpi-card'>
-                <div class='kpi-icon'>{icon}</div>
-                <div class='kpi-value'>{value}</div>
-                <div class='kpi-title'>{title}</div>
-                <div class='kpi-sub'>{sub}</div>
+            <div class='custom-card' style='text-align: center;'>
+                <div style='font-size: 2rem;'>{icon}</div>
+                <div style='font-size: 1.8rem; font-weight: 700; color: #0f172a;'>{value}</div>
+                <div style='font-size: 0.9rem; color: #64748b;'>{title}</div>
+                <div style='font-size: 0.8rem; color: #10b981;'>{sub}</div>
             </div>
             """, unsafe_allow_html=True)
-
-# =============================================================================
-# دالة التصنيف
-# =============================================================================
-def get_score_category(score):
-    try:
-        s = float(score)
-        if s >= 18:
-            return ("ممتاز", "grade-excellent")
-        elif s >= 15:
-            return ("جيد جداً", "grade-verygood")
-        elif s >= 12:
-            return ("جيد", "grade-good")
-        elif s >= 10:
-            return ("مقبول", "grade-pass")
-        else:
-            return ("ضعيف", "grade-fail")
-    except:
-        return ("غير معروف", "grade-fail")
 
 # =============================================================================
 # جميع صفحات التطبيق (مع التسجيل المفصل)
@@ -1469,13 +1454,6 @@ def show_dashboard(db: Database):
 
     if not attendance.empty and "date" in attendance.columns:
         attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
-
-    # إحصائيات إضافية للوحة التحكم
-    total_students = len(students)
-    today_str = get_cairo_now().strftime("%Y-%m-%d")
-    present_today = len(attendance[(attendance.date == today_str) & (attendance.status == "حاضر")]) if not attendance.empty else 0
-    absent_today = len(attendance[(attendance.date == today_str) & (attendance.status == "غائب")]) if not attendance.empty else 0
-    need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty else 0
 
     st.markdown("---")
     st.subheader("📈 الحضور الأسبوعي")
@@ -1645,6 +1623,30 @@ def show_user_management(db: Database):
             st.dataframe(students_display[display_cols], use_container_width=True)
         else:
             st.info("لا توجد طالبات مسجلة.")
+
+        # ===== عرض درجات وترتيب الطالبات (جديد) =====
+        st.markdown("---")
+        st.subheader("🏆 ترتيب الطالبات بالدرجات")
+        results = db.get_quiz_results()
+        if not results.empty and not students.empty:
+            submitted = results[results.status == "submitted"]
+            if not submitted.empty:
+                merged = submitted.merge(students[["student_id", "full_name", "section_id"]], on="student_id", how="left")
+                if not sections.empty:
+                    merged = merged.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
+                merged["score"] = pd.to_numeric(merged["score"], errors="coerce").fillna(0)
+                merged["التصنيف"] = merged["score"].apply(get_grade_category)
+                # ترتيب تنازلي
+                merged = merged.sort_values("score", ascending=False)
+                merged["الترتيب"] = range(1, len(merged) + 1)
+                display_cols_rank = ["الترتيب", "full_name", "score", "التصنيف"]
+                if "section_name" in merged.columns:
+                    display_cols_rank.append("section_name")
+                st.dataframe(merged[display_cols_rank].rename(columns={"full_name": "الطالبة", "score": "الدرجة", "section_name": "الفصل"}), use_container_width=True)
+            else:
+                st.info("لا توجد نتائج مسابقة مُسلّمة بعد.")
+        else:
+            st.info("لا توجد بيانات كافية لعرض الترتيب.")
 
         with st.expander("➕ إضافة طالبة جديدة"):
             with st.form("add_student_form"):
@@ -1833,6 +1835,7 @@ def show_attendance(db: Database):
     else:
         selected_section = st.selectbox("اختر الفصل", sections["section_id"],
                                format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0])
+        section_name = sections[sections.section_id == selected_section]["section_name"].values[0]
     date = st.date_input("التاريخ", get_cairo_now().date())
     date_str = date.strftime("%Y-%m-%d")
     students = db.get_students()
@@ -2029,7 +2032,7 @@ def show_quizzes(db: Database):
                     st.rerun()
                 st.markdown("---")
 
-    st.markdown("### 📊 نتائج الاختبارات مع الترتيب والتصنيف")
+    st.markdown("### 📊 نتائج الاختبارات")
     results = db.get_quiz_results()
     students = db.get_students()
     sections_all = db.get_sections()
@@ -2051,20 +2054,24 @@ def show_quizzes(db: Database):
             results.rename(columns={"title": "المسابقة"}, inplace=True)
         if "score" in results.columns:
             results["score"] = pd.to_numeric(results["score"], errors="coerce").fillna(0)
-        
-        # ترتيب وتصنيف
-        results = results.sort_values("score", ascending=False)
+
+        # ===== ترتيب وتصنيف الدرجات (جديد) =====
+        results["التصنيف"] = results["score"].apply(get_grade_category)
+        sort_desc = st.checkbox("🔽 ترتيب الدرجات تنازلياً (من الأعلى للأقل)", key="sort_admin_quizzes")
+        if sort_desc:
+            results = results.sort_values("score", ascending=False)
         results["الترتيب"] = range(1, len(results) + 1)
-        results[["التصنيف", "css_class"]] = results["score"].apply(lambda x: pd.Series(get_score_category(x)))
-        
-        # عرض مخصص مع التصنيف الملون
-        st.dataframe(results[["الترتيب", "اسم الطالبة", "المسابقة", "الفصل", "score", "التصنيف"]].rename(columns={"score": "الدرجة"}), use_container_width=True)
-        
-        # ملخص التصنيفات
-        st.markdown("---")
-        st.subheader("📊 ملخص التصنيفات")
-        summary = results.groupby("التصنيف").size().reset_index(name="عدد الطالبات")
-        st.dataframe(summary, use_container_width=True, hide_index=True)
+
+        # إعادة ترتيب الأعمدة للعرض
+        display_cols = ["الترتيب", "اسم الطالبة", "score", "التصنيف", "المسابقة"]
+        if "الفصل" in results.columns:
+            display_cols.append("الفصل")
+        if "submission_time" in results.columns:
+            display_cols.append("submission_time")
+
+        st.dataframe(results[display_cols].rename(columns={"score": "الدرجة", "submission_time": "وقت التسليم"}), use_container_width=True)
+    else:
+        st.info("لا توجد نتائج اختبارات.")
 
 def show_reports(db: Database):
     render_header()
@@ -2220,44 +2227,35 @@ def show_class_competition_scores(db: Database):
         return
     if "score" in class_results.columns:
         class_results["score"] = pd.to_numeric(class_results["score"], errors="coerce").fillna(0)
-    
-    # ترتيب تنازلي
-    class_results = class_results.sort_values("score", ascending=False)
+
+    # ===== ترتيب وتصنيف الدرجات (جديد) =====
+    class_results["التصنيف"] = class_results["score"].apply(get_grade_category)
+    sort_desc = st.checkbox("🔽 ترتيب الدرجات تنازلياً (من الأعلى للأقل)", key="sort_teacher_scores")
+    if sort_desc:
+        class_results = class_results.sort_values("score", ascending=False)
     class_results["الترتيب"] = range(1, len(class_results) + 1)
-    
-    # تصنيف الدرجات
-    class_results[["التصنيف", "css_class"]] = class_results["score"].apply(lambda x: pd.Series(get_score_category(x)))
-    
-    # عرض الجدول
-    st.subheader("📊 درجات المسابقات - ترتيب وتصنيف")
-    
-    # عرض مخصص مع ألوان التصنيف
-    display_df = class_results[["الترتيب", "اسم الطالبة", "اسم المسابقة", "score", "التصنيف"]].rename(columns={"score": "الدرجة"})
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
-    
-    # ملخص إحصائي
+
+    # عرض البطاقات الملونة حسب التصنيف
+    st.subheader("📊 توزيع التصنيفات")
+    cat_counts = class_results["التصنيف"].value_counts().reset_index()
+    cat_counts.columns = ["التصنيف", "العدد"]
+    cols = st.columns(len(cat_counts))
+    for i, row in cat_counts.iterrows():
+        color = get_grade_color(row["التصنيف"])
+        with cols[i]:
+            st.markdown(f"""
+            <div style='text-align:center; padding:1rem; background:{color}15; border:2px solid {color}; border-radius:12px;'>
+                <div style='font-size:1.5rem; font-weight:700; color:{color};'>{row['العدد']}</div>
+                <div style='font-size:0.9rem; color:#475569;'>{row['التصنيف']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
     st.markdown("---")
-    col1, col2, col3 = st.columns(3)
-    avg_score = class_results["score"].mean()
-    max_score = class_results["score"].max()
-    min_score = class_results["score"].min()
-    col1.metric("متوسط الدرجات", f"{avg_score:.1f}/20")
-    col2.metric("أعلى درجة", f"{max_score:.1f}/20")
-    col3.metric("أقل درجة", f"{min_score:.1f}/20")
-    
-    # توزيع التصنيفات
-    st.markdown("---")
-    st.subheader("📈 توزيع التصنيفات")
-    grade_summary = class_results.groupby("التصنيف").size().reset_index(name="عدد الطالبات")
-    st.dataframe(grade_summary, use_container_width=True, hide_index=True)
-    
-    # رسم بياني للدرجات
-    fig = px.bar(class_results, x="اسم الطالبة", y="score", color="التصنيف",
-                 title="درجات الطالبات حسب الترتيب",
-                 labels={"score": "الدرجة", "اسم الطالبة": "الطالبة"},
-                 color_discrete_map={"ممتاز": "#059669", "جيد جداً": "#2563eb", "جيد": "#d97706", "مقبول": "#ea580c", "ضعيف": "#dc2626"})
-    fig.update_layout(xaxis_tickangle=-45)
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("📋 تفاصيل الدرجات")
+    display_cols = ["الترتيب", "اسم الطالبة", "score", "التصنيف", "اسم المسابقة"]
+    if "submission_time" in class_results.columns:
+        display_cols.append("submission_time")
+    st.dataframe(class_results[display_cols].rename(columns={"score": "الدرجة", "submission_time": "وقت التسليم"}), use_container_width=True)
 
 # =============================================================================
 # التطبيق الرئيسي
