@@ -1339,11 +1339,16 @@ def kpi_cards(db: Database):
     attendance = db.get_attendance()
     users = db.get_users()
 
+    # تصفية حسب القسم
     if role in ["Teacher", "Service Manager"] and section_id:
         if not students.empty and "section_id" in students.columns:
             students = students[students.section_id == section_id]
         if not attendance.empty and "section_id" in attendance.columns:
             attendance = attendance[attendance.section_id == section_id]
+
+    # تحويل التاريخ
+    if not attendance.empty and "date" in attendance.columns:
+        attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
 
     total_students = len(students)
     today = get_cairo_now().strftime("%Y-%m-%d")
@@ -1396,7 +1401,7 @@ def show_dashboard(db: Database):
                 else:
                     st.info("لا توجد فصول ناقصة لإصلاحها.")
 
-    # تصفية البيانات حسب الصلاحية
+    # تصفية حسب الفصل للصلاحيات المحدودة
     if role in ["Teacher", "Service Manager"] and section_id:
         if not students.empty:
             students = students[students.section_id == section_id]
@@ -2151,6 +2156,17 @@ def show_class_competition_scores(db: Database):
     if "score" in class_results.columns:
         class_results["score"] = pd.to_numeric(class_results["score"], errors="coerce").fillna(0)
     st.dataframe(class_results, use_container_width=True)
+
+    # --- زر ترتيب الدرجات وعرض المراكز ---
+    if st.button("🏆 عرض ترتيب الطالبات حسب مجموع الدرجات", use_container_width=True):
+        if "اسم الطالبة" in class_results.columns and "score" in class_results.columns:
+            total_scores = class_results.groupby("اسم الطالبة")["score"].sum().reset_index()
+            total_scores = total_scores.sort_values("score", ascending=False)
+            total_scores["الترتيب"] = range(1, len(total_scores) + 1)
+            total_scores = total_scores[["الترتيب", "اسم الطالبة", "score"]].rename(columns={"score": "مجموع الدرجات"})
+            st.dataframe(total_scores, use_container_width=True)
+        else:
+            st.warning("بيانات الدرجات غير مكتملة.")
 
 # =============================================================================
 # التطبيق الرئيسي
