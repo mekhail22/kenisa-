@@ -2442,7 +2442,7 @@ def show_user_management(db: Database):
                     db.delete_section(del_sec)
                     st.success("تم الحذف")
                     time.sleep(1)
-                        st.rerun()
+                    st.rerun()  # تم تصحيح المسافة البادئة هنا
 
     with tab6:
         st.subheader("🏫 إدارة المراحل الدراسية")
