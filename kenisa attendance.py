@@ -87,134 +87,29 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن بمعايير WCAG 2.1 AA ومناسب لكبار السن
+# CSS محسّن مع تثبيت المظهر الفاتح
 # =============================================================================
 def inject_css():
     st.markdown("""
     <style>
-        /* ============================================
-           CSS Variables - Design System
-           ============================================ */
-        :root {
-            --primary-color: #1a56db;
-            --primary-hover: #1e429f;
-            --primary-gradient: linear-gradient(135deg, #1a56db 0%, #7c3aed 100%);
-            --primary-gradient-hover: linear-gradient(135deg, #1e429f 0%, #6d28d9 100%);
-            --text-color: #111827;
-            --text-muted: #374151;
-            --bg-color: #f3f4f6;
-            --card-bg: #ffffff;
-            --sidebar-bg: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
-            --border-color: #9ca3af;
-            --focus-ring: #2563eb;
-            --success-color: #047857;
-            --success-bg: #d1fae5;
-            --error-color: #b91c1c;
-            --error-bg: #fee2e2;
-            --warning-color: #92400e;
-            --warning-bg: #fef3c7;
-            --info-color: #1e40af;
-            --info-bg: #dbeafe;
-            --font-family: 'Cairo', 'Segoe UI', 'Tahoma', sans-serif;
-            --font-size-base: 18px;
-            --font-size-lg: 20px;
-            --font-size-xl: 26px;
-            --font-size-2xl: 32px;
-            --space-xs: 0.5rem;
-            --space-sm: 0.75rem;
-            --space-md: 1.25rem;
-            --space-lg: 2rem;
-            --space-xl: 3rem;
-            --radius: 14px;
-            --radius-lg: 20px;
-            --min-touch: 48px;
-            --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
-            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.15), 0 2px 4px -1px rgba(0,0,0,0.1);
-            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.15), 0 4px 6px -2px rgba(0,0,0,0.1);
-        }
-
-        /* ============================================
-           Base & Reset
-           ============================================ */
         html, body, .stApp {
             color-scheme: light !important;
-            font-family: var(--font-family) !important;
-            font-size: var(--font-size-base) !important;
-            color: var(--text-color) !important;
-            background-color: var(--bg-color) !important;
         }
-
         @media (prefers-color-scheme: dark) {
             html, body, .stApp {
-                background-color: var(--bg-color) !important;
-                color: var(--text-color) !important;
+                background-color: #f0f2f6 !important;
+                color: #1a1a2e !important;
             }
         }
 
-        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
-
-        * { 
-            font-family: var(--font-family) !important; 
-            box-sizing: border-box;
-        }
-
-        body { 
-            direction: rtl; 
-            text-align: right; 
-            line-height: 1.6;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        .stApp { 
-            background: var(--bg-color) !important; 
-        }
-
-        /* Hide Streamlit default chrome */
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+        * { font-family: 'Cairo', sans-serif; }
+        body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; }
+        .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
         header[data-testid="stHeader"] { display: none !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
 
-        /* ============================================
-           Focus & Accessibility
-           ============================================ */
-        *:focus-visible {
-            outline: 3px solid var(--focus-ring) !important;
-            outline-offset: 3px !important;
-            border-radius: 4px !important;
-        }
-
-        button:focus-visible, 
-        a:focus-visible,
-        input:focus-visible,
-        select:focus-visible,
-        textarea:focus-visible,
-        [role="radio"]:focus-visible {
-            outline: 3px solid var(--focus-ring) !important;
-            outline-offset: 2px !important;
-            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.25) !important;
-        }
-
-        /* Skip link for keyboard navigation */
-        .skip-link {
-            position: absolute;
-            top: -40px;
-            left: 0;
-            background: var(--primary-color);
-            color: white;
-            padding: 8px;
-            text-decoration: none;
-            z-index: 100000;
-            border-radius: 0 0 8px 0;
-            font-weight: 700;
-            font-size: var(--font-size-lg);
-        }
-        .skip-link:focus {
-            top: 0;
-        }
-
-        /* ============================================
-           Sidebar - Senior Friendly
-           ============================================ */
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
         [data-testid="collapsedControl"],
@@ -241,23 +136,22 @@ def inject_css():
             top: 0 !important;
             right: 0 !important;
             height: 100vh !important;
-            width: 340px !important;
+            width: 300px !important;
             max-width: 100vw !important;
             z-index: 10000 !important;
             transition: transform 0.3s ease !important;
-            box-shadow: -8px 0 24px rgba(0,0,0,0.12);
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
             overflow-y: auto !important;
             margin: 0 !important;
-            padding: var(--space-lg) var(--space-md) !important;
-            background: var(--sidebar-bg) !important;
-            border-left: 2px solid var(--border-color) !important;
+            padding-top: 1rem !important;
+            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
+            border-left: 1px solid rgba(0,0,0,0.08) !important;
             transform: translateX(0);
         }
 
         @media (max-width: 768px) {
             section[data-testid="stSidebar"] {
                 width: 100vw !important;
-                padding: var(--space-md) !important;
             }
         }
 
@@ -265,695 +159,155 @@ def inject_css():
             display: none !important;
         }
 
-        /* Sidebar content spacing */
-        section[data-testid="stSidebar"] .block-container {
-            padding: 0 !important;
-        }
-
-        section[data-testid="stSidebar"] h1,
-        section[data-testid="stSidebar"] h2,
-        section[data-testid="stSidebar"] h3 {
-            font-size: var(--font-size-xl) !important;
-            font-weight: 700 !important;
-            color: var(--text-color) !important;
-            margin-bottom: var(--space-md) !important;
-        }
-
-        section[data-testid="stSidebar"] p,
-        section[data-testid="stSidebar"] .stMarkdown {
-            font-size: var(--font-size-lg) !important;
-            color: var(--text-muted) !important;
-        }
-
-        section[data-testid="stSidebar"] hr {
-            margin: var(--space-md) 0 !important;
-            border-color: var(--border-color) !important;
-        }
-
-        /* ============================================
-           Main Content Area
-           ============================================ */
         [data-testid="stAppViewContainer"] > [data-testid="stMain"],
         [data-testid="stMainBlockContainer"] {
             max-width: 100% !important;
             width: 100% !important;
             margin-left: 0 !important;
             margin-right: 0 !important;
-            padding: var(--space-lg) !important;
         }
 
-        @media (min-width: 1024px) {
-            [data-testid="stMainBlockContainer"] {
-                padding-right: 360px !important;
-            }
-        }
-
-        /* ============================================
-           Navigation Buttons (Sidebar)
-           ============================================ */
         .nav-btn-container .stButton > button {
             width: 100% !important;
             text-align: right !important;
             justify-content: flex-start !important;
-            padding: var(--space-md) var(--space-md) !important;
-            font-size: var(--font-size-lg) !important;
-            font-weight: 700 !important;
-            border-radius: var(--radius) !important;
+            padding: 0.7rem 1rem !important;
+            font-size: 1rem !important;
+            font-weight: 600 !important;
+            border-radius: 10px !important;
             background: transparent !important;
-            color: var(--text-color) !important;
-            border: 2px solid transparent !important;
+            color: #1a1a2e !important;
+            border: 1px solid transparent !important;
             box-shadow: none !important;
             transition: all 0.2s ease !important;
             direction: rtl !important;
-            min-height: var(--min-touch) !important;
-            margin-bottom: var(--space-xs) !important;
         }
-
         .nav-btn-container .stButton > button:hover {
-            background: rgba(26, 86, 219, 0.08) !important;
-            color: var(--primary-color) !important;
-            border-color: rgba(26, 86, 219, 0.2) !important;
-            transform: translateX(-3px) !important;
+            background: rgba(102,126,234,0.08) !important;
+            color: #667eea !important;
+            border-color: rgba(102,126,234,0.15) !important;
+            transform: translateX(-2px) !important;
         }
-
         .nav-btn-container .stButton > button[kind="primary"] {
-            background: var(--primary-gradient) !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
-            box-shadow: var(--shadow-md) !important;
-            font-weight: 800 !important;
+            box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
         }
-
         .nav-btn-container .stButton > button[kind="primary"]:hover {
-            background: var(--primary-gradient-hover) !important;
+            background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%) !important;
             color: white !important;
-            transform: translateX(-3px) !important;
-            box-shadow: var(--shadow-lg) !important;
+            transform: translateX(-2px) !important;
         }
 
-        /* ============================================
-           Floating Action Buttons
-           ============================================ */
         .floating-show-btn .stButton > button {
             position: fixed !important;
-            top: 24px !important;
-            right: 24px !important;
+            top: 20px !important;
+            right: 20px !important;
             z-index: 99999 !important;
-            background: var(--primary-gradient) !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
-            border-radius: var(--radius-lg) !important;
-            width: 64px !important;
-            height: 64px !important;
-            font-size: 32px !important;
+            border-radius: 15px !important;
+            width: 60px !important;
+            height: 60px !important;
+            font-size: 28px !important;
             font-weight: bold !important;
-            box-shadow: var(--shadow-lg) !important;
+            box-shadow: 0 4px 15px rgba(102,126,234,0.4) !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
             cursor: pointer !important;
             padding: 0 !important;
-            min-height: 64px !important;
+            min-height: 60px !important;
             transition: all 0.2s ease !important;
         }
-
         .floating-show-btn .stButton > button:hover {
-            transform: scale(1.1) !important;
-            box-shadow: 0 8px 25px rgba(26, 86, 219, 0.5) !important;
-        }
-
-        .floating-show-btn .stButton > button:focus-visible {
-            outline: 3px solid white !important;
-            outline-offset: 4px !important;
+            transform: scale(1.08) !important;
+            box-shadow: 0 6px 20px rgba(102,126,234,0.6) !important;
         }
 
         .help-float-container .stButton > button {
             position: fixed !important;
-            top: 24px !important;
-            right: 104px !important;
+            top: 20px !important;
+            right: 100px !important;
             z-index: 99998 !important;
-            background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important;
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
             color: white !important;
-            font-weight: 800 !important;
-            border-radius: var(--radius) !important;
-            padding: 14px 24px !important;
-            font-size: var(--font-size-lg) !important;
+            font-weight: 700 !important;
+            border-radius: 12px !important;
+            padding: 12px 20px !important;
+            font-size: 16px !important;
             border: none !important;
-            box-shadow: var(--shadow-lg) !important;
+            box-shadow: 0 4px 15px rgba(243,156,18,0.4) !important;
             white-space: nowrap !important;
-            min-height: 56px !important;
+            min-height: 48px !important;
             transition: all 0.2s ease !important;
         }
-
         .help-float-container .stButton > button:hover {
-            transform: scale(1.05) !important;
-            box-shadow: 0 8px 25px rgba(217, 119, 6, 0.5) !important;
+            transform: scale(1.04) !important;
+            box-shadow: 0 6px 20px rgba(243,156,18,0.5) !important;
         }
 
-        /* ============================================
-           Typography & Headers
-           ============================================ */
         .main-header {
-            font-size: var(--font-size-2xl) !important;
-            font-weight: 800 !important;
-            color: var(--text-color) !important;
-            text-align: center !important;
-            margin-bottom: var(--space-lg) !important;
-            padding: var(--space-lg) var(--space-md) !important;
-            background: var(--card-bg) !important;
-            border-radius: var(--radius-lg) !important;
-            box-shadow: var(--shadow-md) !important;
-            border: 2px solid var(--border-color) !important;
-            margin-top: 100px !important;
-            line-height: 1.4 !important;
+            font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
+            margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
+            border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            backdrop-filter: blur(5px); border: 1px solid rgba(0,0,0,0.05);
+            margin-top: 100px;
         }
-
-        h1, h2, h3, h4, h5, h6 {
-            color: var(--text-color) !important;
-            font-weight: 700 !important;
-            line-height: 1.4 !important;
-            margin-bottom: var(--space-md) !important;
-        }
-
-        h1 { font-size: var(--font-size-2xl) !important; }
-        h2 { font-size: var(--font-size-xl) !important; }
-        h3 { font-size: var(--font-size-lg) !important; }
-
-        p, li, label, .stMarkdown {
-            font-size: var(--font-size-base) !important;
-            color: var(--text-muted) !important;
-        }
-
-        /* ============================================
-           Cards
-           ============================================ */
-        .card { 
-            background: var(--card-bg) !important; 
-            border-radius: var(--radius-lg) !important; 
-            padding: var(--space-lg) !important;
-            box-shadow: var(--shadow-md) !important; 
-            margin-bottom: var(--space-md) !important; 
-            transition: transform 0.2s, box-shadow 0.2s; 
-            color: var(--text-color) !important; 
-            border: 2px solid var(--border-color) !important;
-        }
-
-        .card:hover { 
-            transform: translateY(-3px); 
-            box-shadow: var(--shadow-lg) !important; 
-        }
-
-        .card h3 {
-            margin-top: 0 !important;
-            font-size: var(--font-size-xl) !important;
-        }
-
-        /* ============================================
-           Buttons (Global)
-           ============================================ */
+        .card { background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem; transition: transform 0.2s; color: #1a1a2e; border: 1px solid rgba(0,0,0,0.05); }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
         .stButton > button {
-            background: var(--primary-gradient) !important;
-            color: white !important; 
-            border: none !important; 
-            border-radius: var(--radius) !important; 
-            font-weight: 700 !important;
-            font-size: var(--font-size-lg) !important;
-            transition: all 0.2s !important; 
-            box-shadow: var(--shadow-md) !important;
-            min-height: var(--min-touch) !important;
-            padding: var(--space-sm) var(--space-md) !important;
-            width: 100% !important;
-            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; border: none; border-radius: 8px; font-weight: 600;
+            transition: all 0.2s; box-shadow: 0 2px 8px rgba(102,126,234,0.3);
         }
+        .stButton > button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }
+        .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
+        .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
+        .content-area { padding: 0 1rem; }
 
-        .stButton > button:hover { 
-            transform: scale(1.02); 
-            box-shadow: var(--shadow-lg) !important; 
-            background: var(--primary-gradient-hover) !important;
-        }
-
-        .stButton > button:active {
-            transform: scale(0.98) !important;
-        }
-
-        /* Secondary buttons */
-        .stButton > button[kind="secondary"] {
-            background: white !important;
-            color: var(--primary-color) !important;
-            border: 2px solid var(--primary-color) !important;
-            box-shadow: var(--shadow-sm) !important;
-        }
-
-        .stButton > button[kind="secondary"]:hover {
-            background: rgba(26, 86, 219, 0.05) !important;
-        }
-
-        /* Danger/Delete buttons */
-        .stButton > button[data-testid="baseButton-secondary"] {
-            background: white !important;
-            color: var(--error-color) !important;
-            border: 2px solid var(--error-color) !important;
-        }
-
-        /* ============================================
-           Form Elements
-           ============================================ */
-        .stTextInput > div > div > input,
-        .stTextArea > div > div > textarea,
-        .stNumberInput > div > div > input,
-        .stDateInput > div > div > input {
-            font-size: var(--font-size-lg) !important;
-            min-height: var(--min-touch) !important;
-            border-radius: var(--radius) !important;
-            border: 2px solid var(--border-color) !important;
-            padding: var(--space-sm) var(--space-md) !important;
-            color: var(--text-color) !important;
-            background: white !important;
-        }
-
-        .stTextInput > div > div > input:focus,
-        .stTextArea > div > div > textarea:focus,
-        .stNumberInput > div > div > input:focus,
-        .stDateInput > div > div > input:focus {
-            border-color: var(--primary-color) !important;
-            box-shadow: 0 0 0 4px rgba(26, 86, 219, 0.15) !important;
-        }
-
-        .stSelectbox > div > div,
-        .stMultiSelect > div > div {
-            font-size: var(--font-size-lg) !important;
-            min-height: var(--min-touch) !important;
-            border-radius: var(--radius) !important;
-            border: 2px solid var(--border-color) !important;
-        }
-
-        .stRadio > div {
-            direction: rtl !important;
-            gap: var(--space-sm) !important;
-        }
-
-        .stRadio label {
-            font-size: var(--font-size-lg) !important;
-            font-weight: 600 !important;
-            padding: var(--space-sm) var(--space-md) !important;
-            min-height: var(--min-touch) !important;
-            display: flex;
-            align-items: center;
-        }
-
-        .stRadio [role="radiogroup"] {
-            gap: var(--space-md) !important;
-        }
-
-        /* ============================================
-           DataFrames & Tables
-           ============================================ */
-        .stDataFrame {
-            background: var(--card-bg) !important; 
-            border-radius: var(--radius) !important; 
-            box-shadow: var(--shadow-sm) !important;
-            border: 2px solid var(--border-color) !important;
-            overflow: hidden;
-        }
-
-        .stDataFrame table {
-            font-size: var(--font-size-base) !important;
-            border-collapse: separate !important;
-            border-spacing: 0 !important;
-        }
-
-        .stDataFrame th {
-            background: #f8fafc !important;
-            color: var(--text-color) !important;
-            font-weight: 700 !important;
-            font-size: var(--font-size-base) !important;
-            padding: var(--space-sm) var(--space-md) !important;
-            border-bottom: 2px solid var(--border-color) !important;
-            text-align: right !important;
-        }
-
-        .stDataFrame td {
-            padding: var(--space-sm) var(--space-md) !important;
-            border-bottom: 1px solid #e5e7eb !important;
-            color: var(--text-muted) !important;
-            font-size: var(--font-size-base) !important;
-        }
-
-        .stDataFrame tr:hover td {
-            background: #f8fafc !important;
-        }
-
-        /* ============================================
-           Expanders & Tabs
-           ============================================ */
+        .stDataFrame { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .streamlit-expanderHeader {
-            background: var(--primary-gradient) !important;
-            color: white !important; 
-            border-radius: var(--radius) !important; 
-            font-weight: 700 !important;
-            font-size: var(--font-size-lg) !important;
-            padding: var(--space-sm) var(--space-md) !important;
-            min-height: var(--min-touch) !important;
-            border: none !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white !important; border-radius: 8px; font-weight: 600;
         }
-
-        .streamlit-expanderContent {
-            background: var(--card-bg) !important;
-            border: 2px solid var(--border-color) !important;
-            border-top: none !important;
-            border-radius: 0 0 var(--radius) var(--radius) !important;
-            padding: var(--space-md) !important;
-        }
-
-        .stTabs [data-baseweb="tab-list"] { 
-            gap: var(--space-sm) !important; 
-            margin-bottom: var(--space-md) !important;
-        }
-
+        .stForm { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .stTabs [data-baseweb="tab-list"] { gap: 8px; }
         .stTabs [data-baseweb="tab"] {
-            background: rgba(26, 86, 219, 0.08) !important; 
-            border-radius: var(--radius) var(--radius) 0 0 !important;
-            padding: var(--space-sm) var(--space-lg) !important; 
-            font-weight: 700 !important; 
-            color: var(--primary-color) !important;
-            border: 2px solid rgba(26, 86, 219, 0.15) !important; 
-            border-bottom: none !important;
-            font-size: var(--font-size-lg) !important;
-            min-height: var(--min-touch) !important;
+            background: rgba(102,126,234,0.1); border-radius: 8px 8px 0 0;
+            padding: 10px 20px; font-weight: 600; color: #667eea;
+            border: 1px solid rgba(102,126,234,0.2); border-bottom: none;
         }
+        .stTabs [aria-selected="true"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; }
+        .stSuccess { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }
+        .stError { background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }
 
-        .stTabs [aria-selected="true"] { 
-            background: var(--primary-gradient) !important; 
-            color: white !important;
-            border-color: var(--primary-color) !important;
-        }
-
-        /* ============================================
-           Alerts & Messages
-           ============================================ */
-        .stAlert {
-            border-radius: var(--radius) !important;
-            padding: var(--space-md) var(--space-lg) !important;
-            font-size: var(--font-size-lg) !important;
-            font-weight: 600 !important;
-            border: 2px solid transparent !important;
-            margin-bottom: var(--space-md) !important;
-        }
-
-        .stSuccess { 
-            background: var(--success-bg) !important; 
-            border-color: var(--success-color) !important; 
-            color: var(--success-color) !important; 
-        }
-
-        .stError { 
-            background: var(--error-bg) !important; 
-            border-color: var(--error-color) !important; 
-            color: var(--error-color) !important; 
-        }
-
-        .stWarning {
-            background: var(--warning-bg) !important;
-            border-color: var(--warning-color) !important;
-            color: var(--warning-color) !important;
-        }
-
-        .stInfo {
-            background: var(--info-bg) !important;
-            border-color: var(--info-color) !important;
-            color: var(--info-color) !important;
-        }
-
-        /* ============================================
-           Forms
-           ============================================ */
-        .stForm {
-            background: var(--card-bg) !important; 
-            padding: var(--space-lg) !important; 
-            border-radius: var(--radius-lg) !important; 
-            box-shadow: var(--shadow-md) !important;
-            border: 2px solid var(--border-color) !important;
-        }
-
-        .stForm label {
-            font-size: var(--font-size-lg) !important;
-            font-weight: 700 !important;
-            color: var(--text-color) !important;
-            margin-bottom: var(--space-xs) !important;
-            display: block;
-        }
-
-        .stForm .stButton > button {
-            margin-top: var(--space-md) !important;
-        }
-
-        /* ============================================
-           Metrics
-           ============================================ */
-        [data-testid="stMetric"] {
-            background: var(--card-bg) !important;
-            border: 2px solid var(--border-color) !important;
-            border-radius: var(--radius-lg) !important;
-            padding: var(--space-md) !important;
-            box-shadow: var(--shadow-sm) !important;
-        }
-
-        [data-testid="stMetricLabel"] {
-            font-size: var(--font-size-lg) !important;
-            font-weight: 700 !important;
-            color: var(--text-muted) !important;
-        }
-
-        [data-testid="stMetricValue"] {
-            font-size: var(--font-size-2xl) !important;
-            font-weight: 800 !important;
-            color: var(--primary-color) !important;
-        }
-
-        [data-testid="stMetricDelta"] {
-            font-size: var(--font-size-lg) !important;
-            font-weight: 600 !important;
-        }
-
-        /* ============================================
-           Dialogs
-           ============================================ */
-        [data-testid="stDialog"] > div > div {
-            border-radius: var(--radius-lg) !important;
-            border: 2px solid var(--border-color) !important;
-            box-shadow: var(--shadow-lg) !important;
-            padding: var(--space-lg) !important;
-        }
-
-        [data-testid="stDialog"] h3 {
-            font-size: var(--font-size-xl) !important;
-            color: var(--primary-color) !important;
-            text-align: center !important;
-            margin-bottom: var(--space-md) !important;
-        }
-
-        /* ============================================
-           Plotly Charts
-           ============================================ */
-        .js-plotly-plot {
-            border-radius: var(--radius) !important;
-            border: 2px solid var(--border-color) !important;
-            background: var(--card-bg) !important;
-            padding: var(--space-sm) !important;
-        }
-
-        /* ============================================
-           Iframes (HTML components)
-           ============================================ */
         iframe[title="st_components.html"] {
             border: none !important;
             background: transparent !important;
-            border-radius: var(--radius) !important;
         }
 
-        /* ============================================
-           Content Area
-           ============================================ */
-        .content-area { 
-            padding: 0 var(--space-md); 
-        }
-
-        /* ============================================
-           Responsive Adjustments
-           ============================================ */
         @media (max-width: 768px) {
-            :root {
-                --font-size-base: 16px;
-                --font-size-lg: 18px;
-                --font-size-xl: 22px;
-                --font-size-2xl: 26px;
-                --space-md: 1rem;
-                --space-lg: 1.5rem;
-            }
-
             .floating-show-btn .stButton > button {
-                width: 56px !important;
-                height: 56px !important;
-                font-size: 28px !important;
-                top: 16px !important;
-                right: 16px !important;
-                min-height: 56px !important;
+                width: 50px !important;
+                height: 50px !important;
+                font-size: 24px !important;
+                top: 14px !important;
+                right: 14px !important;
             }
-
             .help-float-container .stButton > button {
-                right: 84px !important;
-                top: 16px !important;
-                padding: 12px 18px !important;
-                font-size: var(--font-size-base) !important;
-                min-height: 48px !important;
+                right: 80px !important;
+                top: 14px !important;
+                padding: 10px 16px !important;
+                font-size: 14px !important;
             }
-
-            .main-header { 
-                font-size: var(--font-size-xl) !important; 
-                margin-top: 100px !important; 
-                padding: var(--space-md) !important;
-            }
-
-            section[data-testid="stSidebar"] {
-                width: 100vw !important;
-            }
-
-            .stButton > button {
-                font-size: var(--font-size-base) !important;
-                padding: var(--space-sm) !important;
-            }
-
-            .stTabs [data-baseweb="tab"] {
-                padding: var(--space-xs) var(--space-sm) !important;
-                font-size: var(--font-size-base) !important;
-            }
-
-            .card {
-                padding: var(--space-md) !important;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .main-header {
-                margin-top: 90px !important;
-            }
-            
-            [data-testid="stMainBlockContainer"] {
-                padding: var(--space-sm) !important;
-            }
-        }
-
-        /* ============================================
-           Utility Classes
-           ============================================ */
-        .sr-only {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            white-space: nowrap;
-            border-width: 0;
-        }
-
-        .text-center {
-            text-align: center !important;
-        }
-
-        .mt-lg {
-            margin-top: var(--space-lg) !important;
-        }
-
-        .mb-lg {
-            margin-bottom: var(--space-lg) !important;
-        }
-
-        /* Smooth scrolling */
-        html {
-            scroll-behavior: smooth;
-        }
-
-        /* Reduce motion for accessibility */
-        @media (prefers-reduced-motion: reduce) {
-            * {
-                animation-duration: 0.01ms !important;
-                animation-iteration-count: 1 !important;
-                transition-duration: 0.01ms !important;
-            }
+            .main-header { font-size: 1.6rem; margin-top: 110px; }
         }
     </style>
-    
-    <!-- Skip to main content link for screen readers/keyboard -->
-    <a href="#main-content" class="skip-link">التخطي إلى المحتوى الرئيسي</a>
     """, unsafe_allow_html=True)
-
-# =============================================================================
-# دوال مساعدة للواجهة (UI Helpers) - Senior Friendly
-# =============================================================================
-def senior_card(title=None, content=None):
-    """تُرجع HTML لبطاقة بتصميم مناسب لكبار السن"""
-    title_html = f"<h3 style='margin-top:0;'>{title}</h3>" if title else ""
-    content_html = f"<p style='font-size:18px; margin-bottom:0;'>{content}</p>" if content else ""
-    return f"""
-    <div class="card" role="region" aria-label="{title or 'بطاقة معلومات'}">
-        {title_html}
-        {content_html}
-    </div>
-    """
-
-def senior_alert(message, type_="info"):
-    """تعرض رسالة بتصميم واضح"""
-    type_map = {
-        "info": ("ℹ️", "stInfo"),
-        "success": ("✅", "stSuccess"),
-        "error": ("❌", "stError"),
-        "warning": ("⚠️", "stWarning")
-    }
-    icon, css_class = type_map.get(type_, ("ℹ️", "stInfo"))
-    st.markdown(f"""
-    <div class="{css_class}" style="padding:1.25rem; border-radius:14px; margin-bottom:1rem; font-size:20px; font-weight:600;">
-        {icon} {message}
-    </div>
-    """, unsafe_allow_html=True)
-
-def senior_form_section(title, description=None):
-    """تبدأ قسم نموذج بعنوان واضح"""
-    st.markdown(f"### {title}")
-    if description:
-        st.markdown(f"<p style='font-size:18px; color:#374151; margin-bottom:1rem;'>{description}</p>", unsafe_allow_html=True)
-    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-
-def senior_dataframe(df, title=None, use_container_width=True):
-    """تعرض جدول بعنوان واضح وتباين عالٍ"""
-    if title:
-        st.markdown(f"#### {title}")
-    if df is not None and not df.empty:
-        st.dataframe(df, use_container_width=use_container_width, hide_index=True)
-    else:
-        st.info("لا توجد بيانات لعرضها")
-
-def senior_columns(specs, gap="large"):
-    """تُنشئ أعمدة بمسافات كافية"""
-    return st.columns(specs, gap=gap)
-
-def senior_divider():
-    """فاصل بمسافة كافية"""
-    st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
-    st.divider()
-    st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
-
-def validate_phone_egypt(phone):
-    """التحقق من صحة رقم الهاتف المصري"""
-    if not phone:
-        return True
-    cleaned = str(phone).strip().replace(" ", "").replace("-", "")
-    if cleaned.startswith("+2"):
-        cleaned = cleaned[2:]
-    if cleaned.startswith("2"):
-        cleaned = cleaned[1:]
-    return cleaned.startswith("01") and len(cleaned) == 11 and cleaned.isdigit()
 
 # =============================================================================
 # تحسين الأداء: كاش مركزي داخل session_state
@@ -1491,6 +845,7 @@ def init_session():
 def logout(db=None):
     if db and st.session_state.user:
         try:
+            # يمكن حفظ أي شيء قبل الخروج
             pass
         except Exception:
             pass
@@ -1530,7 +885,7 @@ def send_telegram_photo(caption: str, file_bytes, filename: str) -> bool:
 def show_help_dialog():
     hdr_col1, hdr_col2 = st.columns([0.85, 0.15])
     with hdr_col1:
-        st.markdown("<h3 style='text-align:center; color:#1a56db; margin:0; padding-top:0.5rem; font-size:26px;'>📬 تواصل معنا</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align:center; color:#667eea; margin:0; padding-top:0.5rem;'>📬 تواصل معنا</h3>", unsafe_allow_html=True)
     with hdr_col2:
         if st.button("✕ إغلاق", key="help_dialog_close_btn", help="إغلاق مركز المساعدة", use_container_width=True):
             st.session_state.open_help_dialog = False
@@ -1543,13 +898,13 @@ def show_help_dialog():
     with st.form("help_form_enhanced", clear_on_submit=False):
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input("الاسم *", placeholder="أدخل اسمك الكامل", help="اكتب اسمك بالكامل")
-            whatsapp = st.text_input("رقم الواتساب *", placeholder="01xxxxxxxxx", help="مثال: 01012345678")
+            name = st.text_input("الاسم *", placeholder="أدخل اسمك الكامل")
+            whatsapp = st.text_input("رقم الواتساب *", placeholder="01xxxxxxxxx")
         with col2:
-            issue_type = st.selectbox("نوع المشكلة *", ["مشكلة تقنية", "مشكلة في البيانات", "طلب مساعدة", "اقتراح تحسين", "أخرى"], help="اختر نوع المشكلة المناسب")
-            urgency = st.selectbox("الأولوية", ["عادي", "مستعجل", "طارئ جداً"], index=0, help="مدى أهمية المشكلة")
-        issue_desc = st.text_area("وصف المشكلة أو الطلب *", placeholder="اشرح المشكلة بالتفصيل...", height=150, help="اشرح المشكلة بقدر الإمكان")
-        uploaded_file = st.file_uploader("📎 إرفاق لقطة شاشة (اختياري)", type=["png", "jpg", "jpeg"], help="يمكنك إرفاق صورة للتوضيح")
+            issue_type = st.selectbox("نوع المشكلة *", ["مشكلة تقنية", "مشكلة في البيانات", "طلب مساعدة", "اقتراح تحسين", "أخرى"])
+            urgency = st.selectbox("الأولوية", ["عادي", "مستعجل", "طارئ جداً"], index=0)
+        issue_desc = st.text_area("وصف المشكلة أو الطلب *", placeholder="اشرح المشكلة بالتفصيل...", height=150)
+        uploaded_file = st.file_uploader("📎 إرفاق لقطة شاشة (اختياري)", type=["png", "jpg", "jpeg"])
         submitted = st.form_submit_button("🚀 إرسال الطلب", use_container_width=True)
         if submitted:
             if not name or not whatsapp or not issue_desc:
@@ -1617,7 +972,7 @@ def auto_fix_missing_sections(db: Database):
 def show_initialization(db: Database):
     users = db.get_users()
     if users.empty:
-        st.markdown("<div class='card'><h2 style='text-align:center; font-size:28px;'>🔧 لا يوجد مستخدمون بعد</h2></div>", unsafe_allow_html=True)
+        st.markdown("<div class='card'><h2 style='text-align:center;'>🔧 لا يوجد مستخدمون بعد</h2></div>", unsafe_allow_html=True)
         st.markdown("#### يرجى الضغط على الزر التالي لإنشاء مدير النظام الافتراضي:")
         if st.button("🛠️ تهيئة النظام وإنشاء المسؤول الأول", use_container_width=True, key="init_admin_btn"):
             admin_data = {
@@ -1638,9 +993,8 @@ def show_login_page(db: Database, jwt_secret: str):
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
         with st.form("login_form"):
-            st.markdown("### تسجيل دخول الخدام")
-            username = st.text_input("اسم المستخدم", help="اسم المستخدم المسجل في النظام").strip()
-            password = st.text_input("كلمة المرور", type="password", help="كلمة المرور الخاصة بك").strip()
+            username = st.text_input("اسم المستخدم").strip()
+            password = st.text_input("كلمة المرور", type="password").strip()
             if st.form_submit_button("تسجيل الدخول", use_container_width=True):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
@@ -1668,8 +1022,8 @@ def show_login_page(db: Database, jwt_secret: str):
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
         with st.form("student_login_form"):
-            code = st.text_input("كود الاختبار", placeholder="مثال: GEN123", help="ادخل الكود المكون من 6 أحرف").strip()
-            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="مثال: QUIZ99", help="كلمة المرور المرفقة مع الكود").strip()
+            code = st.text_input("كود الاختبار", placeholder="مثال: GEN123").strip()
+            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="مثال: QUIZ99").strip()
             if st.form_submit_button("بدء الاختبار", use_container_width=True):
                 if not code or not passwd:
                     st.error("الرجاء إدخال الكود وكلمة المرور")
@@ -1773,7 +1127,7 @@ def show_student_quiz(db: Database):
         options_dict = dict(zip(active_students["student_id"], active_students["full_name"]))
         selected_id = st.selectbox(
             "اختر اسمك من القائمة", options=list(options_dict.keys()),
-            format_func=lambda x: options_dict[x], index=None, placeholder="اختر اسمك...", help="ابحث عن اسمك في القائمة"
+            format_func=lambda x: options_dict[x], index=None, placeholder="اختر اسمك..."
         )
         if selected_id is not None:
             student_row = active_students[active_students.student_id == selected_id].iloc[0]
@@ -1890,11 +1244,11 @@ def show_student_quiz(db: Database):
             height: 100%; background: transparent;
         }}
         #timer {{
-            font-size: 2rem; font-weight: bold;
-            padding: 1.25rem 2.5rem;
-            background: linear-gradient(135deg, #1a56db 0%, #7c3aed 100%);
-            color: white; border-radius: 16px;
-            box-shadow: 0 4px 12px rgba(26,86,219,0.4);
+            font-size: 1.8rem; font-weight: bold;
+            padding: 1rem 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(102,126,234,0.4);
             text-align: center;
         }}
         </style>
@@ -1922,7 +1276,7 @@ def show_student_quiz(db: Database):
         </body>
         </html>
         """
-        st.components.v1.html(countdown_html, height=90, scrolling=False)
+        st.components.v1.html(countdown_html, height=80, scrolling=False)
 
         st.title(f"📝 {quiz.get('title', '')}")
         st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
@@ -1939,10 +1293,10 @@ def show_student_quiz(db: Database):
                 options = [opt for opt in options if opt and str(opt).strip()]
                 if options:
                     current_index = options.index(prev_answer) if prev_answer in options else None
-                    ans = st.radio("اختر الإجابة", options, key=f"q_{q_id}", index=current_index, help="اختر إجابة واحدة")
+                    ans = st.radio("اختر الإجابة", options, key=f"q_{q_id}", index=current_index)
                     new_answer = ans if ans else ""
             else:
-                new_answer = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer, help="اكتب إجابتك هنا")
+                new_answer = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
             if new_answer != prev_answer:
                 st.session_state.quiz_answers[q_id] = new_answer
                 save_current_answers(db)
@@ -2070,10 +1424,10 @@ def show_sidebar_navigation(db: Database):
             st.session_state.show_sidebar = False
             st.rerun()
 
-        st.markdown('<div class="nav-btn-container" role="navigation" aria-label="القائمة الرئيسية">', unsafe_allow_html=True)
+        st.markdown('<div class="nav-btn-container">', unsafe_allow_html=True)
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
-            if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type, help=f"الانتقال إلى {item}"):
+            if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
                 st.session_state.show_sidebar = False
@@ -2081,7 +1435,7 @@ def show_sidebar_navigation(db: Database):
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.divider()
-        if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn", help="تسجيل الخروج من النظام"):
+        if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn"):
             logout(db)
 
     return current_choice
@@ -2135,28 +1489,19 @@ def show_dashboard(db: Database):
     col3.metric("الغياب اليوم", absent_today)
     col4.metric("منقطعات", need_follow)
 
-    senior_divider()
     st.markdown("#### 📈 الحضور الأسبوعي")
     if not attendance.empty and "date" in attendance.columns and "status" in attendance.columns:
         last_week = get_cairo_now().replace(tzinfo=None) - timedelta(days=7)
         recent = attendance[attendance.date >= last_week]
         if not recent.empty:
             fig = px.histogram(recent, x="date", color="status", barmode="group")
-            fig.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)', 
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(size=16, family="Cairo"),
-                legend=dict(font=dict(size=16)),
-                xaxis=dict(title_font=dict(size=18), tickfont=dict(size=14)),
-                yaxis=dict(title_font=dict(size=18), tickfont=dict(size=14))
-            )
+            fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("لا توجد بيانات حضور للأيام الماضية.")
     else:
         st.info("لا توجد بيانات حضور بعد.")
 
-    senior_divider()
     st.markdown("#### 🏅 أكثر 5 طالبات غياباً هذا الشهر")
     if not attendance.empty and "date" in attendance.columns and "status" in attendance.columns:
         month_start = get_cairo_now().replace(day=1).strftime("%Y-%m-%d")
@@ -2166,22 +1511,21 @@ def show_dashboard(db: Database):
             absent_counts = absent_counts.sort_values("أيام الغياب", ascending=False).head(5)
             if not students.empty and "student_id" in students.columns and "full_name" in students.columns:
                 absent_counts = absent_counts.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-            senior_dataframe(absent_counts[["full_name", "أيام الغياب"]], title="")
+            st.dataframe(absent_counts[["full_name", "أيام الغياب"]], use_container_width=True)
         else:
             st.info("لا يوجد غياب هذا الشهر.")
 
-    senior_divider()
     st.markdown("#### 🔔 بنات بحاجة لافتقاد عاجل")
     urgent = followup[followup.regularity_status.isin(["منقطع", "متقطع"])] if not followup.empty and "regularity_status" in followup.columns else pd.DataFrame()
     if not urgent.empty:
         if not students.empty and "student_id" in students.columns and "full_name" in students.columns:
             urgent = urgent.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-        senior_dataframe(urgent[["full_name", "followup_date", "notes"]], title="")
+        st.dataframe(urgent[["full_name", "followup_date", "notes"]], use_container_width=True)
     else:
         st.info("كل البنات منتظمات.")
 
     if role in ["System Admin", "Father Account", "Service Manager"]:
-        senior_divider()
+        st.markdown("---")
         st.subheader("🏆 أفضل فصل درجات في المسابقات")
         results = db.get_quiz_results()
         students_all = db.get_students()
@@ -2197,7 +1541,7 @@ def show_dashboard(db: Database):
                     if not section_scores.empty:
                         top_section = section_scores.sort_values("score", ascending=False).iloc[0]
                         st.metric(f"أفضل فصل: {top_section.get('section_name', '')}", f"{top_section.get('score', 0):.1f} / 20 متوسط")
-                        senior_dataframe(section_scores.rename(columns={"section_name":"الفصل", "score":"متوسط الدرجات"}).set_index("الفصل"), title="")
+                        st.dataframe(section_scores.rename(columns={"section_name":"الفصل", "score":"متوسط الدرجات"}).set_index("الفصل"), use_container_width=True)
 
 # =============================================================================
 # إدارة المستخدمين (بما في ذلك إدارة المراحل)
@@ -2214,24 +1558,23 @@ def show_user_management(db: Database):
         st.subheader("قائمة المستخدمين (خدام)")
         if not users.empty:
             display_cols = [c for c in ["user_id", "username", "full_name", "role", "section_id", "phone", "email"] if c in users.columns]
-            senior_dataframe(users[display_cols], title="")
+            st.dataframe(users[display_cols], use_container_width=True)
         else:
             st.info("لا يوجد مستخدمون مسجلون.")
         with st.expander("➕ إضافة مستخدم جديد"):
             with st.form("add_user_form"):
-                senior_form_section("بيانات المستخدم الجديد")
                 col1, col2 = st.columns(2)
-                username = col1.text_input("اسم المستخدم*", help="اسم فريد لتسجيل الدخول").strip()
-                full_name = col2.text_input("الاسم الكامل*", help="الاسم بالعربي")
-                password = col1.text_input("كلمة المرور*", type="password", help="4 أحرف على الأقل").strip()
-                role = col2.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"], help="اختر الصلاحية المناسبة")
+                username = col1.text_input("اسم المستخدم*").strip()
+                full_name = col2.text_input("الاسم الكامل*")
+                password = col1.text_input("كلمة المرور*", type="password").strip()
+                role = col2.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"])
                 section_id = ""
                 if role in ["Service Manager", "Teacher"] and not sections.empty:
                     section_options = ["None"] + sections["section_id"].tolist()
-                    section_choice = st.selectbox("الفصل", section_options, format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0] if x != "None" else "لا يوجد", help="الفصل المسؤول عنه")
+                    section_choice = st.selectbox("الفصل", section_options, format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0] if x != "None" else "لا يوجد")
                     section_id = section_choice if section_choice != "None" else ""
-                phone = st.text_input("رقم الهاتف (اختياري)", help="01xxxxxxxxx")
-                email = st.text_input("البريد الإلكتروني (اختياري)", help="example@email.com")
+                phone = st.text_input("رقم الهاتف (اختياري)")
+                email = st.text_input("البريد الإلكتروني (اختياري)")
                 if st.form_submit_button("إضافة"):
                     if not username or not password or not full_name:
                         st.error("مطلوب اسم المستخدم وكلمة المرور والاسم الكامل")
@@ -2249,20 +1592,20 @@ def show_user_management(db: Database):
 
         with st.expander("✏️ تعديل / حذف مستخدم"):
             if not users.empty:
-                selected_user_id = st.selectbox("اختر المستخدم", users["user_id"], key="sel_user_edit", help="اختر المستخدم المراد تعديله")
+                selected_user_id = st.selectbox("اختر المستخدم", users["user_id"], key="sel_user_edit")
                 user_data = users[users.user_id == selected_user_id].iloc[0].to_dict()
-                new_full_name = st.text_input("الاسم الكامل", value=user_data.get("full_name", ""), key="user_fullname", help="الاسم الكامل")
-                new_phone = st.text_input("رقم الهاتف", value=user_data.get("phone", ""), key="user_phone", help="رقم الهاتف")
-                new_email = st.text_input("البريد الإلكتروني", value=user_data.get("email", ""), key="user_email", help="البريد الإلكتروني")
+                new_full_name = st.text_input("الاسم الكامل", value=user_data.get("full_name", ""), key="user_fullname")
+                new_phone = st.text_input("رقم الهاتف", value=user_data.get("phone", ""), key="user_phone")
+                new_email = st.text_input("البريد الإلكتروني", value=user_data.get("email", ""), key="user_email")
                 roles_list = ["System Admin", "Father Account", "Service Manager", "Teacher"]
                 current_role = user_data.get("role", "Teacher")
                 role_index = roles_list.index(current_role) if current_role in roles_list else 3
-                new_role = st.selectbox("الصلاحية", roles_list, index=role_index, key="user_role", help="صلاحية المستخدم")
+                new_role = st.selectbox("الصلاحية", roles_list, index=role_index, key="user_role")
                 new_section_id = user_data.get("section_id", "")
                 if new_role in ["Service Manager", "Teacher"] and not sections.empty:
                     section_options = ["None"] + sections["section_id"].tolist()
                     current_idx = section_options.index(new_section_id) if new_section_id in section_options else 0
-                    section_choice = st.selectbox("الفصل", section_options, index=current_idx, format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0] if x != "None" else "لا يوجد", key="user_section", help="الفصل المسؤول عنه")
+                    section_choice = st.selectbox("الفصل", section_options, index=current_idx, format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0] if x != "None" else "لا يوجد", key="user_section")
                     new_section_id = section_choice if section_choice != "None" else ""
                 col1, col2 = st.columns(2)
                 if col1.button("تحديث البيانات", key="update_user_btn"):
@@ -2290,21 +1633,20 @@ def show_user_management(db: Database):
                 teachers_display = teachers
                 teachers_display["الفصل"] = ""
             display_cols = [c for c in ["user_id", "username", "full_name", "الفصل", "phone", "email"] if c in teachers_display.columns]
-            senior_dataframe(teachers_display[display_cols], title="")
+            st.dataframe(teachers_display[display_cols], use_container_width=True)
         else:
             st.info("لا توجد مدرسات مسجلات.")
         with st.expander("➕ إضافة مدرسة جديدة"):
             with st.form("add_teacher_form"):
-                senior_form_section("بيانات المدرسة الجديدة")
-                teacher_name = st.text_input("اسم المستخدم*", help="اسم المستخدم لتسجيل الدخول").strip()
-                password = st.text_input("كلمة المرور*", type="password", help="4 أحرف على الأقل").strip()
+                teacher_name = st.text_input("اسم المستخدم*").strip()
+                password = st.text_input("كلمة المرور*", type="password").strip()
                 section_id = ""
                 if not sections.empty:
                     section_options = ["None"] + sections["section_id"].tolist()
-                    section_choice = st.selectbox("الفصل", section_options, format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0] if x != "None" else "لا يوجد", help="الفصل المسؤول عنه")
+                    section_choice = st.selectbox("الفصل", section_options, format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0] if x != "None" else "لا يوجد")
                     section_id = section_choice if section_choice != "None" else ""
-                phone = st.text_input("رقم الهاتف", help="01xxxxxxxxx")
-                email = st.text_input("البريد الإلكتروني", help="example@email.com")
+                phone = st.text_input("رقم الهاتف")
+                email = st.text_input("البريد الإلكتروني")
                 if st.form_submit_button("إضافة"):
                     if not teacher_name or not password:
                         st.error("اسم المستخدم وكلمة المرور مطلوبان")
@@ -2329,22 +1671,21 @@ def show_user_management(db: Database):
                 students_display = students
                 students_display["section_name"] = ""
             display_cols = [c for c in ["student_id", "full_name", "section_name", "phone", "parent_phone", "birthdate", "school", "status"] if c in students_display.columns]
-            senior_dataframe(students_display[display_cols], title="")
+            st.dataframe(students_display[display_cols], use_container_width=True)
         else:
             st.info("لا توجد طالبات مسجلة.")
         with st.expander("➕ إضافة طالبة جديدة"):
             with st.form("add_student_form"):
-                senior_form_section("بيانات الطالبة الجديدة")
-                full_name = st.text_input("الاسم الكامل*", help="اسم الطالبة بالكامل")
+                full_name = st.text_input("الاسم الكامل*")
                 section_id = ""
                 if not sections.empty:
-                    section_id = st.selectbox("الفصل", sections["section_id"], format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0], help="اختر الفصل")
-                phone = st.text_input("رقم الهاتف", help="01xxxxxxxxx")
-                parent_phone = st.text_input("رقم ولي الأمر", help="01xxxxxxxxx")
-                birthdate = st.date_input("تاريخ الميلاد", value=None, help="اختر تاريخ الميلاد")
-                address = st.text_area("العنوان", help="عنوان السكن")
-                school = st.text_input("المدرسة", help="اسم المدرسة")
-                notes = st.text_area("ملاحظات", help="أي ملاحظات إضافية")
+                    section_id = st.selectbox("الفصل", sections["section_id"], format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0])
+                phone = st.text_input("رقم الهاتف")
+                parent_phone = st.text_input("رقم ولي الأمر")
+                birthdate = st.date_input("تاريخ الميلاد", value=None)
+                address = st.text_area("العنوان")
+                school = st.text_input("المدرسة")
+                notes = st.text_area("ملاحظات")
                 if st.form_submit_button("إضافة"):
                     if not full_name:
                         st.error("الاسم الكامل مطلوب")
@@ -2360,29 +1701,29 @@ def show_user_management(db: Database):
                         st.rerun()
         with st.expander("✏️ تعديل بيانات طالبة"):
             if not students.empty:
-                selected_student = st.selectbox("اختر طالبة", students["student_id"], key="sel_student_edit", help="اختر الطالبة المراد تعديل بياناتها")
+                selected_student = st.selectbox("اختر طالبة", students["student_id"], key="sel_student_edit")
                 student_row = students[students.student_id == selected_student].iloc[0].to_dict()
-                new_full_name = st.text_input("الاسم الكامل", value=student_row.get("full_name", ""), key="student_fullname", help="الاسم الكامل")
+                new_full_name = st.text_input("الاسم الكامل", value=student_row.get("full_name", ""), key="student_fullname")
                 sections_local = sections
                 new_section_id = student_row.get("section_id", "")
                 if not sections_local.empty:
                     section_options = sections_local["section_id"].tolist()
                     current_idx = section_options.index(new_section_id) if new_section_id in section_options else 0
-                    new_section_id = st.selectbox("الفصل", section_options, index=current_idx, format_func=lambda x: sections_local[sections_local.section_id==x]["section_name"].values[0], key="student_section", help="الفصل الدراسي")
-                new_phone = st.text_input("رقم الهاتف", value=student_row.get("phone", ""), key="student_phone", help="01xxxxxxxxx")
-                new_parent = st.text_input("رقم ولي الأمر", value=student_row.get("parent_phone", ""), key="student_parent", help="01xxxxxxxxx")
+                    new_section_id = st.selectbox("الفصل", section_options, index=current_idx, format_func=lambda x: sections_local[sections_local.section_id==x]["section_name"].values[0], key="student_section")
+                new_phone = st.text_input("رقم الهاتف", value=student_row.get("phone", ""), key="student_phone")
+                new_parent = st.text_input("رقم ولي الأمر", value=student_row.get("parent_phone", ""), key="student_parent")
                 existing_birthdate = student_row.get("birthdate", "")
                 if existing_birthdate:
                     try: birth_date_val = pd.to_datetime(existing_birthdate).date()
                     except: birth_date_val = None
                 else: birth_date_val = None
-                new_birthdate = st.date_input("تاريخ الميلاد", value=birth_date_val, key="student_birthdate", help="تاريخ الميلاد")
-                new_school = st.text_input("المدرسة", value=student_row.get("school", ""), key="student_school", help="اسم المدرسة")
-                new_notes = st.text_area("ملاحظات", value=student_row.get("notes", ""), key="student_notes", help="ملاحظات إضافية")
+                new_birthdate = st.date_input("تاريخ الميلاد", value=birth_date_val, key="student_birthdate")
+                new_school = st.text_input("المدرسة", value=student_row.get("school", ""), key="student_school")
+                new_notes = st.text_area("ملاحظات", value=student_row.get("notes", ""), key="student_notes")
                 status_list = ["active", "inactive"]
                 current_status = student_row.get("status", "active")
                 status_index = 0 if current_status == "active" else 1
-                new_status = st.selectbox("الحالة", status_list, index=status_index, key="student_status", help="حالة الطالبة في النظام")
+                new_status = st.selectbox("الحالة", status_list, index=status_index, key="student_status")
                 if st.button("حفظ التعديلات", key="save_student_btn"):
                     db.update_student(selected_student, {
                         "full_name": new_full_name, "section_id": new_section_id,
@@ -2395,7 +1736,7 @@ def show_user_management(db: Database):
                     st.rerun()
         with st.expander("🗑️ حذف طالبة"):
             if not students.empty:
-                delete_id = st.selectbox("اختر طالبة للحذف", students["student_id"], key="delete_student_sel", help="اختر الطالبة المراد حذفها")
+                delete_id = st.selectbox("اختر طالبة للحذف", students["student_id"], key="delete_student_sel")
                 if st.button("تأكيد حذف الطالبة"):
                     db.delete_student(delete_id)
                     st.success("تم الحذف")
@@ -2413,20 +1754,19 @@ def show_user_management(db: Database):
                 mgr_display = managers
                 mgr_display["الفصل"] = ""
             display_cols = [c for c in ["user_id", "username", "full_name", "الفصل", "phone", "email"] if c in mgr_display.columns]
-            senior_dataframe(mgr_display[display_cols], title="")
+            st.dataframe(mgr_display[display_cols], use_container_width=True)
         else:
             st.info("لا يوجد أمناء خدمة.")
 
     with tab5:
         st.subheader("قائمة الفصول")
         if not sections.empty:
-            senior_dataframe(sections[["section_id", "section_name"]], title="")
+            st.dataframe(sections[["section_id", "section_name"]], use_container_width=True)
         else:
             st.info("لا توجد فصول مسجلة.")
         with st.expander("➕ إضافة فصل جديد"):
             with st.form("add_section_form"):
-                senior_form_section("بيانات الفصل الجديد")
-                name = st.text_input("اسم الفصل*", help="مثال: فصل القديسة مريم")
+                name = st.text_input("اسم الفصل*")
                 if st.form_submit_button("إضافة"):
                     if not name:
                         st.error("اسم الفصل مطلوب")
@@ -2437,12 +1777,12 @@ def show_user_management(db: Database):
                         st.rerun()
         with st.expander("🗑️ حذف فصل"):
             if not sections.empty:
-                del_sec = st.selectbox("اختر فصل", sections["section_id"], key="del_section_sel", help="اختر الفصل المراد حذفه")
+                del_sec = st.selectbox("اختر فصل", sections["section_id"], key="del_section_sel")
                 if st.button("تأكيد حذف الفصل"):
                     db.delete_section(del_sec)
                     st.success("تم الحذف")
                     time.sleep(1)
-                    st.rerun()  # تم تصحيح المسافة البادئة هنا
+                    st.rerun()
 
     with tab6:
         st.subheader("🏫 إدارة المراحل الدراسية")
@@ -2452,18 +1792,17 @@ def show_user_management(db: Database):
             else:
                 stages_display = stages
                 stages_display["المسؤول"] = ""
-            senior_dataframe(stages_display[["stage_id", "stage_name", "المسؤول"]], title="")
+            st.dataframe(stages_display[["stage_id", "stage_name", "المسؤول"]], use_container_width=True)
         else:
             st.info("لا توجد مراحل مسجلة بعد.")
         with st.expander("➕ إضافة مرحلة جديدة"):
             with st.form("add_stage_form"):
-                senior_form_section("بيانات المرحلة الجديدة")
-                stage_name = st.text_input("اسم المرحلة*", placeholder="مثال: KG1, KG2, الصف الأول...", help="اسم المرحلة الدراسية")
+                stage_name = st.text_input("اسم المرحلة*", placeholder="مثال: KG1, KG2, الصف الأول...")
                 eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
                 manager_id = ""
                 if not eligible_users.empty:
                     manager_choice = st.selectbox("مسؤول المرحلة (اختياري)", ["None"] + eligible_users["user_id"].tolist(),
-                                                  format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0], help="اختر مسؤول المرحلة")
+                                                  format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0])
                     manager_id = manager_choice if manager_choice != "None" else ""
                 else:
                     st.info("لا يوجد مستخدمون مؤهلون لإدارة المرحلة.")
@@ -2482,16 +1821,16 @@ def show_user_management(db: Database):
         if not stages.empty:
             with st.expander("✏️ تعديل / حذف مرحلة"):
                 stage_sel = st.selectbox("اختر مرحلة", stages["stage_id"],
-                                         format_func=lambda x: stages[stages.stage_id==x]["stage_name"].values[0], help="اختر المرحلة المراد تعديلها")
+                                         format_func=lambda x: stages[stages.stage_id==x]["stage_name"].values[0])
                 stage_row = stages[stages.stage_id == stage_sel].iloc[0].to_dict()
-                new_stage_name = st.text_input("اسم المرحلة", value=stage_row["stage_name"], help="اسم المرحلة")
+                new_stage_name = st.text_input("اسم المرحلة", value=stage_row["stage_name"])
                 eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
                 current_mgr = stage_row.get("manager_user_id", "")
                 if not eligible_users.empty:
                     mgr_options = ["None"] + eligible_users["user_id"].tolist()
                     current_idx = mgr_options.index(current_mgr) if current_mgr in mgr_options else 0
                     new_manager = st.selectbox("مسؤول المرحلة", mgr_options, index=current_idx,
-                                               format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0], help="مسؤول المرحلة")
+                                               format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0])
                     new_mgr_id = new_manager if new_manager != "None" else ""
                 else:
                     new_mgr_id = ""
@@ -2515,7 +1854,7 @@ def show_attendance(db: Database):
     role = user.get("role", "")
     if role == "Service Manager":
         st.error("🚫 أمناء الخدمة لا يمكنهم تسجيل الحضور، هذه المهمة خاصة بالمدرسات فقط.")
-        if st.button("🔙 العودة إلى لوحة التحكم", use_container_width=True):
+        if st.button("🔙 العودة إلى لوحة التحكم"):
             st.session_state.menu_choice = "🏠 لوحة التحكم"
             st.rerun()
         return
@@ -2533,8 +1872,8 @@ def show_attendance(db: Database):
         st.write(f"**الفصل:** {section_name}")
     else:
         selected_section = st.selectbox("اختر الفصل", sections["section_id"],
-                               format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0], help="اختر الفصل لتسجيل الحضور")
-    date = st.date_input("التاريخ", get_cairo_now().date(), help="تاريخ يوم الحضور")
+                               format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0])
+    date = st.date_input("التاريخ", get_cairo_now().date())
     date_str = date.strftime("%Y-%m-%d")
     students = db.get_students()
     section_students = students[students.section_id == selected_section] if not students.empty and "section_id" in students.columns else pd.DataFrame()
@@ -2559,8 +1898,8 @@ def show_attendance(db: Database):
         cols[0].write(f"**{sname}**")
         status_list = ["حاضر", "غائب", "متأخر"]
         status_index = status_list.index(prev_status) if prev_status in status_list else 0
-        status = cols[1].radio("الحالة", status_list, index=status_index, key=f"att_{sid}", horizontal=True, help=f"حالة {sname}")
-        notes = cols[2].text_input("ملاحظة", value=prev_notes, key=f"note_{sid}", label_visibility="collapsed", help="ملاحظة اختيارية")
+        status = cols[1].radio("الحالة", status_list, index=status_index, key=f"att_{sid}", horizontal=True)
+        notes = cols[2].text_input("ملاحظة", value=prev_notes, key=f"note_{sid}", label_visibility="collapsed")
         statuses[sid] = status
         notes_dict[sid] = notes
     st.markdown("</div>", unsafe_allow_html=True)
@@ -2583,7 +1922,7 @@ def show_attendance(db: Database):
             st.rerun()
 
     if not existing.empty:
-        senior_divider()
+        st.markdown("---")
         st.subheader("🗑️ إدارة سجلات الحضور السابقة")
         rec = existing.copy()
         rec["student_name"] = rec["student_id"].apply(
@@ -2591,8 +1930,8 @@ def show_attendance(db: Database):
             if sid in section_students["student_id"].values else sid
         )
         rec = rec[["record_id", "student_name", "status", "notes"]]
-        senior_dataframe(rec, title="")
-        del_id = st.selectbox("اختر سجل حضور لحذفه", rec["record_id"], key="del_att_sel", help="اختر السجل المراد حذفه")
+        st.dataframe(rec, use_container_width=True)
+        del_id = st.selectbox("اختر سجل حضور لحذفه", rec["record_id"], key="del_att_sel")
         if st.button("حذف سجل الحضور"):
             db.delete_attendance_record(del_id)
             st.success("تم الحذف")
@@ -2632,27 +1971,27 @@ def show_followup(db: Database):
     col2.metric("متقطعات", intermittent)
     col3.metric("منقطعات", disconnected)
 
-    senior_divider()
+    st.markdown("---")
     st.subheader("⚠️ بنات بحاجة إلى افتقاد")
     if not followup.empty and "regularity_status" in followup.columns and "student_id" in followup.columns:
         urgent = followup[(followup.regularity_status.isin(["متقطع", "منقطع"])) & (followup.student_id.isin(responsible["student_id"]))]
         if not urgent.empty:
             urgent_display = urgent.merge(responsible[["student_id", "full_name"]], on="student_id", how="left")
-            senior_dataframe(urgent_display[["full_name", "followup_date", "followup_type", "notes"]], title="")
+            st.dataframe(urgent_display[["full_name", "followup_date", "followup_type", "notes"]], use_container_width=True)
         else:
             st.info("كل البنات منتظمات حالياً.")
     else:
         st.info("لا توجد متابعات سابقة.")
 
-    senior_divider()
+    st.markdown("---")
     st.subheader("➕ إضافة متابعة جديدة")
     if "student_id" in responsible.columns:
         student = st.selectbox("اختر الطالبة", responsible["student_id"],
-                               format_func=lambda x: responsible[responsible.student_id==x]["full_name"].values[0], key="followup_student", help="اختر الطالبة")
+                               format_func=lambda x: responsible[responsible.student_id==x]["full_name"].values[0], key="followup_student")
         with st.form("followup_form"):
-            ftype = st.selectbox("نوع الافتقاد", ["زيارة", "اتصال هاتفي", "رسالة", "لقاء شخصي"], help="نوع المتابعة")
-            notes = st.text_area("ملاحظات", help="تفاصيل المتابعة")
-            regularity = st.selectbox("حالة الانتظام", ["منتظم", "متقطع", "منقطع"], help="حالة انتظام الطالبة")
+            ftype = st.selectbox("نوع الافتقاد", ["زيارة", "اتصال هاتفي", "رسالة", "لقاء شخصي"])
+            notes = st.text_area("ملاحظات")
+            regularity = st.selectbox("حالة الانتظام", ["منتظم", "متقطع", "منقطع"])
             if st.form_submit_button("حفظ المتابعة"):
                 try:
                     db.add_followup_record({
@@ -2693,18 +2032,18 @@ def show_my_students(db: Database):
         my_students["regularity_status"] = "غير معروف"
 
     display_cols = [c for c in ["full_name", "phone", "regularity_status"] if c in my_students.columns]
-    senior_dataframe(my_students[display_cols], title="قائمة الطالبات")
+    st.dataframe(my_students[display_cols], use_container_width=True)
 
-    senior_divider()
+    st.markdown("---")
     st.subheader("➕ إضافة متابعة سريعة")
     if "student_id" in my_students.columns:
         selected = st.selectbox("اختر طالبة", my_students["student_id"],
-                                format_func=lambda x: my_students[my_students.student_id==x]["full_name"].values[0], key="my_students_fup", help="اختر الطالبة")
+                                format_func=lambda x: my_students[my_students.student_id==x]["full_name"].values[0], key="my_students_fup")
         with st.expander("فتح نموذج المتابعة"):
             with st.form("quick_followup_form"):
-                ftype = st.selectbox("نوع الافتقاد", ["زيارة", "اتصال هاتفي", "رسالة", "لقاء شخصي"], help="نوع المتابعة")
-                notes = st.text_area("ملاحظات", help="تفاصيل المتابعة")
-                regularity = st.selectbox("حالة الانتظام", ["منتظم", "متقطع", "منقطع"], help="حالة الانتظام")
+                ftype = st.selectbox("نوع الافتقاد", ["زيارة", "اتصال هاتفي", "رسالة", "لقاء شخصي"])
+                notes = st.text_area("ملاحظات")
+                regularity = st.selectbox("حالة الانتظام", ["منتظم", "متقطع", "منقطع"])
                 if st.form_submit_button("حفظ المتابعة"):
                     try:
                         db.add_followup_record({
@@ -2771,16 +2110,16 @@ def show_class_competition_scores(db: Database):
     if "total_marks" in display_df.columns:
         display_df["total_marks"] = pd.to_numeric(display_df["total_marks"], errors="coerce").fillna(20)
 
-    senior_divider()
+    st.markdown("---")
     st.subheader("🔍 بحث وتصفية")
-    search_term = st.text_input("ابحث باسم الطالبة أو المسابقة", placeholder="اكتب اسم الطالبة أو المسابقة...", help="اكتب للبحث")
+    search_term = st.text_input("ابحث باسم الطالبة أو المسابقة", placeholder="اكتب اسم الطالبة أو المسابقة...")
     if "اسم المسابقة" in display_df.columns:
         quiz_names = ["الكل"] + sorted(display_df["اسم المسابقة"].dropna().unique().tolist())
-        filter_quiz = st.selectbox("تصفية حسب المسابقة", quiz_names, help="اختر مسابقة معينة")
+        filter_quiz = st.selectbox("تصفية حسب المسابقة", quiz_names)
     else:
         filter_quiz = "الكل"
 
-    sort_by = st.selectbox("ترتيب حسب", ["التاريخ", "الدرجة (تنازلي)", "الدرجة (تصاعدي)", "اسم الطالبة"], help="طريقة الترتيب")
+    sort_by = st.selectbox("ترتيب حسب", ["التاريخ", "الدرجة (تنازلي)", "الدرجة (تصاعدي)", "اسم الطالبة"])
 
     filtered_df = display_df.copy()
     if search_term:
@@ -2803,15 +2142,15 @@ def show_class_competition_scores(db: Database):
     elif sort_by == "اسم الطالبة" and "اسم الطالبة" in filtered_df.columns:
         filtered_df = filtered_df.sort_values("اسم الطالبة", ascending=True)
 
-    senior_divider()
+    st.markdown("---")
     st.subheader("📋 النتائج")
     if not filtered_df.empty:
         filtered_df = filtered_df.reset_index(drop=True)
         filtered_df.index = filtered_df.index + 1
-        senior_dataframe(filtered_df, title="")
+        st.dataframe(filtered_df, use_container_width=True)
 
         if "score" in filtered_df.columns and "total_marks" in filtered_df.columns:
-            senior_divider()
+            st.markdown("---")
             st.subheader("📊 إحصائيات الفصل")
             avg_score = filtered_df["score"].mean()
             max_score = filtered_df["score"].max()
@@ -2822,11 +2161,11 @@ def show_class_competition_scores(db: Database):
             c3.metric("أقل درجة", f"{min_score:.1f}")
 
             if "اسم الطالبة" in filtered_df.columns:
-                senior_divider()
+                st.markdown("---")
                 st.subheader("🏆 ترتيب الطالبات")
                 ranking = filtered_df.groupby("اسم الطالبة")["score"].sum().reset_index().sort_values("score", ascending=False)
                 ranking.index = range(1, len(ranking) + 1)
-                senior_dataframe(ranking, title="")
+                st.dataframe(ranking, use_container_width=True)
     else:
         st.info("لا توجد نتائج مطابقة للبحث.")
 
@@ -2840,10 +2179,10 @@ def show_quizzes(db: Database):
     if role in ["System Admin", "Service Manager"]:
         st.subheader("➕ إنشاء اختبار جديد")
         with st.form("quiz_form"):
-            title = st.text_input("عنوان الاختبار*", help="مثال: اختبار الشهر الأول")
-            num_questions = st.selectbox("عدد الأسئلة", [10, 20, 30], index=1, help="عدد أسئلة الاختبار")
-            time_limit = st.number_input("الوقت (بالدقائق)", 1, 180, 15, help="الوقت المخصص للاختبار")
-            expiry = st.date_input("تاريخ الانتهاء", get_cairo_now().date() + timedelta(days=7), help="تاريخ انتهاء صلاحية الاختبار")
+            title = st.text_input("عنوان الاختبار*")
+            num_questions = st.selectbox("عدد الأسئلة", [10, 20, 30], index=1)
+            time_limit = st.number_input("الوقت (بالدقائق)", 1, 180, 15)
+            expiry = st.date_input("تاريخ الانتهاء", get_cairo_now().date() + timedelta(days=7))
             if st.form_submit_button("إنشاء"):
                 if not title:
                     st.error("يرجى إدخال عنوان الاختبار")
@@ -2862,34 +2201,34 @@ def show_quizzes(db: Database):
                     time.sleep(2)
                     st.rerun()
 
-        senior_divider()
+        st.markdown("---")
         st.subheader("📝 إدارة الأسئلة")
         if not quizzes.empty and "is_active" in quizzes.columns:
             active_quizzes = quizzes[quizzes.is_active == "True"]
             if not active_quizzes.empty:
                 quiz_choice = st.selectbox("اختر اختباراً لإدارة أسئلته", active_quizzes["quiz_id"],
-                                           format_func=lambda x: active_quizzes[active_quizzes.quiz_id==x]["title"].values[0], help="اختر الاختبار")
+                                           format_func=lambda x: active_quizzes[active_quizzes.quiz_id==x]["title"].values[0])
                 if quiz_choice:
                     questions = db.get_quiz_questions(quiz_choice)
                     st.markdown(f"**عدد الأسئلة:** {len(questions)}")
                     if not questions.empty:
                         display_cols = [c for c in ["question_text", "question_type", "correct_answer"] if c in questions.columns]
-                        senior_dataframe(questions[display_cols], title="")
+                        st.dataframe(questions[display_cols], use_container_width=True)
                     with st.form("add_question_form"):
-                        qtext = st.text_area("نص السؤال*", help="اكتب نص السؤال بوضوح")
-                        qtype = st.selectbox("نوع السؤال", ["اختيار من متعدد", "صح وخطأ", "أكمل", "إجابة قصيرة"], help="نوع السؤال")
+                        qtext = st.text_area("نص السؤال*")
+                        qtype = st.selectbox("نوع السؤال", ["اختيار من متعدد", "صح وخطأ", "أكمل", "إجابة قصيرة"])
                         opts = {}
                         if qtype == "اختيار من متعدد":
                             cols = st.columns(4)
-                            opts["option1"] = cols[0].text_input("الخيار 1", help="الخيار الأول")
-                            opts["option2"] = cols[1].text_input("الخيار 2", help="الخيار الثاني")
-                            opts["option3"] = cols[2].text_input("الخيار 3", help="الخيار الثالث")
-                            opts["option4"] = cols[3].text_input("الخيار 4", help="الخيار الرابع")
+                            opts["option1"] = cols[0].text_input("الخيار 1")
+                            opts["option2"] = cols[1].text_input("الخيار 2")
+                            opts["option3"] = cols[2].text_input("الخيار 3")
+                            opts["option4"] = cols[3].text_input("الخيار 4")
                         elif qtype == "صح وخطأ":
                             opts["option1"] = "صح"; opts["option2"] = "خطأ"
                         else:
                             opts["option1"] = opts["option2"] = opts["option3"] = opts["option4"] = ""
-                        correct = st.text_input("الإجابة الصحيحة*", help="اكتب الإجابة الصحيحة")
+                        correct = st.text_input("الإجابة الصحيحة*")
                         if st.form_submit_button("إضافة سؤال"):
                             if not qtext or not correct:
                                 st.error("نص السؤال والإجابة الصحيحة مطلوبان")
@@ -2905,14 +2244,14 @@ def show_quizzes(db: Database):
                                 time.sleep(1)
                                 st.rerun()
                     if not questions.empty:
-                        del_q = st.selectbox("اختر سؤالاً لحذفه", questions["question_id"], help="اختر السؤال المراد حذفه")
+                        del_q = st.selectbox("اختر سؤالاً لحذفه", questions["question_id"])
                         if st.button("حذف السؤال"):
                             db.delete_question(del_q)
                             st.success("تم الحذف")
                             time.sleep(1)
                             st.rerun()
 
-        senior_divider()
+        st.markdown("---")
         st.subheader("📋 إدارة الاختبارات")
         if quizzes.empty:
             st.info("لا توجد اختبارات بعد.")
@@ -2985,7 +2324,7 @@ def show_quizzes(db: Database):
                 quiz_titles = quizzes[quizzes["quiz_id"].isin(quiz_ids)][["quiz_id", "title"]].drop_duplicates()
                 quiz_options = ["الكل"] + quiz_titles["quiz_id"].tolist()
                 selected_quiz_filter = st.selectbox("اختر الاختبار لعرض نتائجه فقط", quiz_options,
-                                                    format_func=lambda x: "الكل" if x == "الكل" else quiz_titles[quiz_titles.quiz_id == x]["title"].values[0], help="تصفية حسب الاختبار")
+                                                    format_func=lambda x: "الكل" if x == "الكل" else quiz_titles[quiz_titles.quiz_id == x]["title"].values[0])
                 if selected_quiz_filter != "الكل":
                     results = results[results.quiz_id == selected_quiz_filter]
 
@@ -3020,11 +2359,11 @@ def show_quizzes(db: Database):
 
             display_cols = list(dict.fromkeys(display_cols))
             available = [c for c in display_cols if c in results.columns]
-            senior_dataframe(results[available], title="")
+            st.dataframe(results[available], use_container_width=True)
 
             if st.button("🏆 ترتيب الطالبات حسب المجموع") and "اسم الطالبة" in results.columns and "score" in results.columns:
                 top = results.groupby("اسم الطالبة")["score"].sum().reset_index().sort_values("score", ascending=False)
-                senior_dataframe(top, title="")
+                st.dataframe(top, use_container_width=True)
     else:
         st.info("لا توجد نتائج بعد.")
 
@@ -3049,8 +2388,8 @@ def show_reports(db: Database):
         attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
     st.subheader("📅 تقرير الغياب الشهري")
     col1, col2 = st.columns(2)
-    month = col1.selectbox("الشهر", range(1,13), index=get_cairo_now().month-1, help="اختر الشهر")
-    year = col2.number_input("السنة", value=get_cairo_now().year, min_value=2020, help="اختر السنة")
+    month = col1.selectbox("الشهر", range(1,13), index=get_cairo_now().month-1)
+    year = col2.number_input("السنة", value=get_cairo_now().year, min_value=2020)
     if "date" in attendance.columns:
         monthly = attendance[(attendance.date.dt.month == month) & (attendance.date.dt.year == year)]
         if not monthly.empty:
@@ -3058,24 +2397,20 @@ def show_reports(db: Database):
             pivot = summary.pivot(index="student_id", columns="status", values="count").fillna(0).reset_index()
             if not students.empty:
                 pivot = pivot.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-            senior_dataframe(pivot, title="")
+            st.dataframe(pivot, use_container_width=True)
             fig = px.pie(monthly, names="status", title=f"نسب الحضور لشهر {month}/{year}")
-            fig.update_layout(
-                font=dict(size=16, family="Cairo"),
-                legend=dict(font=dict(size=16))
-            )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("لا توجد بيانات لهذا الشهر.")
 
-    senior_divider()
+    st.markdown("---")
     st.subheader("🏆 أكثر 10 طالبات غياباً")
     if not attendance.empty and "status" in attendance.columns and "student_id" in attendance.columns:
         absent_counts = attendance[attendance.status == "غائب"].groupby("student_id").size().reset_index(name="أيام الغياب")
         absent_counts = absent_counts.sort_values("أيام الغياب", ascending=False).head(10)
         if not students.empty:
             absent_counts = absent_counts.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-        senior_dataframe(absent_counts[["full_name", "أيام الغياب"]], title="")
+        st.dataframe(absent_counts[["full_name", "أيام الغياب"]], use_container_width=True)
 
 def show_logs(db: Database):
     st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
@@ -3083,9 +2418,9 @@ def show_logs(db: Database):
     if not logs.empty:
         if "timestamp" in logs.columns:
             logs["timestamp"] = pd.to_datetime(logs["timestamp"])
-        senior_dataframe(logs.sort_values("timestamp", ascending=False), title="")
+        st.dataframe(logs.sort_values("timestamp", ascending=False), use_container_width=True)
         if "log_id" in logs.columns:
-            del_id = st.selectbox("اختر سجلاً لحذفه", logs["log_id"], key="del_log_sel", help="اختر السجل المراد حذفه")
+            del_id = st.selectbox("اختر سجلاً لحذفه", logs["log_id"], key="del_log_sel")
             if st.button("حذف السجل"):
                 db.delete_log(del_id)
                 st.success("تم الحذف")
@@ -3095,9 +2430,9 @@ def show_logs(db: Database):
 def change_password(db: Database):
     st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
     with st.form("change_password_form"):
-        old = st.text_input("كلمة المرور الحالية", type="password", help="كلمة المرور الحالية").strip()
-        new = st.text_input("كلمة المرور الجديدة", type="password", help="4 أحرف على الأقل").strip()
-        confirm = st.text_input("تأكيد كلمة المرور الجديدة", type="password", help="أعد كتابة كلمة المرور").strip()
+        old = st.text_input("كلمة المرور الحالية", type="password").strip()
+        new = st.text_input("كلمة المرور الجديدة", type="password").strip()
+        confirm = st.text_input("تأكيد كلمة المرور الجديدة", type="password").strip()
         if st.form_submit_button("تغيير كلمة المرور"):
             if not old or not new or not confirm:
                 st.error("الرجاء ملء جميع الحقول")
@@ -3198,7 +2533,7 @@ def main():
                     choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
                     st.session_state.menu_choice = choice
 
-            st.markdown("<div class='content-area' id='main-content'>", unsafe_allow_html=True)
+            st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if choice == "🏠 لوحة التحكم":
                 show_dashboard(db)
             elif choice == "👥 إدارة المستخدمين":
@@ -3208,7 +2543,7 @@ def main():
                     st.error("🚫 غير مصرح")
             elif choice == "🏫 إدارة المراحل":
                 if st.session_state.user.get("role") == "System Admin":
-                    show_user_management(db)
+                    show_user_management(db)  # ستفتح التبويب السادس الخاص بالمراحل
                 else:
                     st.error("🚫 غير مصرح")
             elif choice == "👩‍🎓 طالباتي":
