@@ -1,8 +1,30 @@
-streamlit
-gspread
-google-auth
-pandas
-plotly
-PyJWT
-requests
-streamlit-autorefresh
+# ============================================
+# نظام كنيسة الشهيدة دميانة - المكتبات المطلوبة
+# ============================================
+
+# --- إطار العمل الأساسي ---
+streamlit>=1.28.0,<2.0.0
+
+# --- التعامل مع جداول البيانات ---
+pandas>=2.0.0,<3.0.0
+openpyxl>=3.1.0          # لقراءة/كتابة Excel (احتياطي)
+
+# --- Google APIs ---
+gspread>=6.0.0           # Google Sheets API
+google-auth>=2.22.0      # OAuth2 / Service Account
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.1
+
+# --- الرسوم البيانية ---
+plotly>=5.18.0           # للرسوم التفاعلية
+
+# --- الأمان ---
+PyJWT>=2.8.0             # JSON Web Tokens للمصادقة
+cryptography>=41.0.0     # تشفير إضافي (مُوصى به)
+
+# --- HTTP Requests ---
+requests>=2.31.0         # لإرسال إشعارات Telegram
+
+# --- Utilities ---
+python-dateutil>=2.8.2   # معالجة التواريخ
+pytz>=2023.3             # المناطق الزمنية (احتياطي)
