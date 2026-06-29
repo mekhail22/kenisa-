@@ -1165,6 +1165,75 @@ class Database:
                                               "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
     # --- Logs ---
+    # --- Events ---
+    def get_events(self):
+        return self._sheet_to_df("Events")
+
+    def add_event(self, event_data):
+        df = self.get_events()
+        if df.empty:
+            df = pd.DataFrame(columns=["event_id", "event_name", "event_date", "location", "event_type",
+                                       "description", "max_attendees", "created_by", "created_at"])
+        df = pd.concat([df, pd.DataFrame([event_data])], ignore_index=True)
+        self._df_to_sheet("Events", df, ["event_id", "event_name", "event_date", "location", "event_type",
+                                          "description", "max_attendees", "created_by", "created_at"])
+
+    def update_event(self, event_id, updates):
+        df = self.get_events()
+        idx = df[df.event_id == event_id].index
+        if len(idx) > 0:
+            for k, v in updates.items():
+                df.at[idx[0], k] = self._safe_str(v)
+            self._df_to_sheet("Events", df, df.columns.tolist())
+
+    def delete_event(self, event_id):
+        df = self.get_events()
+        df = df[df.event_id != event_id]
+        self._df_to_sheet("Events", df, ["event_id", "event_name", "event_date", "location", "event_type",
+                                          "description", "max_attendees", "created_by", "created_at"])
+
+    # --- Event RSVPs ---
+    def get_event_rsvps(self):
+        return self._sheet_to_df("EventRSVPs")
+
+    def add_event_rsvp(self, rsvp_data):
+        df = self.get_event_rsvps()
+        if df.empty:
+            df = pd.DataFrame(columns=["rsvp_id", "event_id", "student_id", "student_name",
+                                       "rsvp_status", "rsvp_date", "actual_attendance"])
+        # Check for duplicates
+        existing = df[(df.event_id == rsvp_data["event_id"]) & (df.student_id == rsvp_data["student_id"])]
+        if not existing.empty:
+            return False
+        df = pd.concat([df, pd.DataFrame([rsvp_data])], ignore_index=True)
+        self._df_to_sheet("EventRSVPs", df, ["rsvp_id", "event_id", "student_id", "student_name",
+                                              "rsvp_status", "rsvp_date", "actual_attendance"])
+        return True
+
+    def update_event_attendance(self, event_id, student_id, attendance_status):
+        df = self.get_event_rsvps()
+        idx = df[(df.event_id == event_id) & (df.student_id == student_id)].index
+        if len(idx) > 0:
+            df.at[idx[0], "actual_attendance"] = self._safe_str(attendance_status)
+            self._df_to_sheet("EventRSVPs", df, ["rsvp_id", "event_id", "student_id", "student_name",
+                                                  "rsvp_status", "rsvp_date", "actual_attendance"])
+            return True
+        return False
+
+    def delete_event_rsvps(self, event_id):
+        df = self.get_event_rsvps()
+        df = df[df.event_id != event_id]
+        self._df_to_sheet("EventRSVPs", df, ["rsvp_id", "event_id", "student_id", "student_name",
+                                              "rsvp_status", "rsvp_date", "actual_attendance"])
+
+    def get_event_attendees_count(self, event_id):
+        rsvps_df = self.get_event_rsvps()
+        if rsvps_df.empty:
+            return 0
+        event_rsvps = rsvps_df[rsvps_df.event_id == event_id]
+        return len(event_rsvps)
+
+    # --- Logs ---
     def get_logs(self):
         return self._sheet_to_df("Logs")
 
@@ -3741,11 +3810,11 @@ def show_events_page(db: Database):
     st.markdown("<h2 class='main-header'>📅 الفعاليات والمناسبات</h2>", unsafe_allow_html=True)
     
     user = st.session_state.user
-    events_df = load_events()
-    rsvps_df = load_event_rsvps()
+    events_df = db.get_events()
+    rsvps_df = db.get_event_rsvps()
     students = db.get_students()
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 الفعاليات القادمة", "➕ إضافة فعالية", "🎫 تسجيل الحضور المتوقع", "✅ تسجيل حضور الفعالية"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 الفعاليات القادمة", "➕ إضافة فعالية", "🎫 تسجيل الحظور المتوقع", "✅ تسجيل حضور الفعالية"])
     
     with tab1:
         st.subheader("📋 الفعاليات القادمة")
@@ -3786,7 +3855,7 @@ def show_events_page(db: Database):
                     else:
                         date_str = "غير محدد"
                     
-                    rsvp_count = get_event_attendees_count(event_id)
+                    rsvp_count = get_event_attendees_count(db, event_id)
                     type_emoji = {"اجتماع": "💬", "خدمة": "⛪", "رحلة": "🚌", "احتفال": "🎉"}.get(event_type, "📅")
                     
                     st.markdown(f"""
@@ -3876,7 +3945,7 @@ def show_events_page(db: Database):
                     except (ValueError, TypeError):
                         max_att_val = 0
                     if max_att_val > 0:
-                        current_rsvps = get_event_attendees_count(selected_event_id)
+                        current_rsvps = get_event_attendees_count(db, selected_event_id)
                         st.markdown(f"**المسجلون:** {current_rsvps}/{max_att_val}")
                     
                     user_id = user.get("user_id", "")
@@ -3980,8 +4049,8 @@ def show_events_page(db: Database):
                             col2.metric("❌ لم يحضر", absent)
                             col3.metric("⏳ لم يسجل", not_recorded)
 
-def get_events_badge_count():
-    upcoming = get_upcoming_events(days=3)
+def get_events_badge_count(db):
+    upcoming = get_upcoming_events(db, days=3)
     return len(upcoming)
 
 def show_logs(db: Database):
@@ -4000,44 +4069,9 @@ def show_logs(db: Database):
                 st.rerun()
 
 # =============================================================================
-# Events Management System
+# Events Management System (Google Sheets)
 # =============================================================================
-def get_events_file_path():
-    return "events.csv"
-
-def load_events():
-    events_file = get_events_file_path()
-    try:
-        df = pd.read_csv(events_file, encoding='utf-8-sig')
-        if df.empty:
-            return pd.DataFrame(columns=["event_id", "event_name", "event_date", "location", "event_type", "description", "max_attendees", "created_by", "created_at"])
-        return df
-    except FileNotFoundError:
-        return pd.DataFrame(columns=["event_id", "event_name", "event_date", "location", "event_type", "description", "max_attendees", "created_by", "created_at"])
-
-def save_events(df):
-    events_file = get_events_file_path()
-    df.to_csv(events_file, index=False, encoding='utf-8-sig')
-
-def get_event_rsvps_file_path():
-    return "event_rsvps.csv"
-
-def load_event_rsvps():
-    rsvp_file = get_event_rsvps_file_path()
-    try:
-        df = pd.read_csv(rsvp_file, encoding='utf-8-sig')
-        if df.empty:
-            return pd.DataFrame(columns=["rsvp_id", "event_id", "student_id", "student_name", "rsvp_status", "rsvp_date", "actual_attendance"])
-        return df
-    except FileNotFoundError:
-        return pd.DataFrame(columns=["rsvp_id", "event_id", "student_id", "student_name", "rsvp_status", "rsvp_date", "actual_attendance"])
-
-def save_event_rsvps(df):
-    rsvp_file = get_event_rsvps_file_path()
-    df.to_csv(rsvp_file, index=False, encoding='utf-8-sig')
-
 def add_event(db, event_data):
-    events_df = load_events()
     new_event = {
         "event_id": str(uuid.uuid4()),
         "event_name": event_data["event_name"],
@@ -4049,23 +4083,15 @@ def add_event(db, event_data):
         "created_by": event_data.get("created_by", st.session_state.user.get("user_id", "")),
         "created_at": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S")
     }
-    events_df = pd.concat([events_df, pd.DataFrame([new_event])], ignore_index=True)
-    save_events(events_df)
+    db.add_event(new_event)
     return new_event["event_id"]
 
 def delete_event(event_id):
-    events_df = load_events()
-    events_df = events_df[events_df.event_id != event_id]
-    save_events(events_df)
-    rsvps_df = load_event_rsvps()
-    rsvps_df = rsvps_df[rsvps_df.event_id != event_id]
-    save_event_rsvps(rsvps_df)
+    db.delete_event(event_id)
+    # Also delete all RSVPs for this event
+    db.delete_event_rsvps(event_id)
 
 def add_event_rsvp(event_id, student_id, student_name):
-    rsvps_df = load_event_rsvps()
-    existing = rsvps_df[(rsvps_df.event_id == event_id) & (rsvps_df.student_id == student_id)]
-    if not existing.empty:
-        return False
     new_rsvp = {
         "rsvp_id": str(uuid.uuid4()),
         "event_id": event_id,
@@ -4075,21 +4101,13 @@ def add_event_rsvp(event_id, student_id, student_name):
         "rsvp_date": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
         "actual_attendance": ""
     }
-    rsvps_df = pd.concat([rsvps_df, pd.DataFrame([new_rsvp])], ignore_index=True)
-    save_event_rsvps(rsvps_df)
-    return True
+    return db.add_event_rsvp(new_rsvp)
 
 def update_event_attendance(event_id, student_id, attendance_status):
-    rsvps_df = load_event_rsvps()
-    idx = rsvps_df[(rsvps_df.event_id == event_id) & (rsvps_df.student_id == student_id)].index
-    if len(idx) > 0:
-        rsvps_df.at[idx[0], "actual_attendance"] = attendance_status
-        save_event_rsvps(rsvps_df)
-        return True
-    return False
+    return db.update_event_attendance(event_id, student_id, attendance_status)
 
-def get_upcoming_events(days=3):
-    events_df = load_events()
+def get_upcoming_events(db, days=3):
+    events_df = db.get_events()
     if events_df.empty:
         return pd.DataFrame()
     events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
@@ -4098,12 +4116,8 @@ def get_upcoming_events(days=3):
     upcoming = events_df[(events_df.event_date >= today) & (events_df.event_date <= future_date)]
     return upcoming.sort_values("event_date")
 
-def get_event_attendees_count(event_id):
-    rsvps_df = load_event_rsvps()
-    if rsvps_df.empty:
-        return 0
-    event_rsvps = rsvps_df[rsvps_df.event_id == event_id]
-    return len(event_rsvps)
+def get_event_attendees_count(db, event_id):
+    return db.get_event_attendees_count(event_id)
 
 def change_password(db: Database):
     st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
