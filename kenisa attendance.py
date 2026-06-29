@@ -1869,14 +1869,6 @@ def show_sidebar_navigation(db: Database):
         if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn"):
             logout(db)
 
-    # Floating button to show sidebar when hidden
-    if not st.session_state.get("show_sidebar", True):
-        st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
-        if st.button("☰", key="show_sidebar_btn"):
-            st.session_state.show_sidebar = True
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
     return current_choice
 
 # =============================================================================
@@ -3965,6 +3957,15 @@ def main():
             if not choice:
                 choice = "🏠 لوحة التحكم"
                 st.session_state.menu_choice = choice
+            
+            # Always render the floating button when sidebar is hidden
+            if not st.session_state.show_sidebar:
+                st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
+                show_btn_key = f"show_sidebar_btn_{hash(str(st.session_state.get('show_sidebar', True)))}"
+                if st.button("☰", key=show_btn_key):
+                    st.session_state.show_sidebar = True
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if choice == "🏠 لوحة التحكم":
