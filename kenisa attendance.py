@@ -2518,7 +2518,9 @@ def get_students_needing_followup(db):
     
     today = get_cairo_now()
     three_weeks_ago = today - timedelta(weeks=3)
-    recent_att = attendance[attendance.date >= three_weeks_ago]
+    # Make datetimes compatible for comparison (both naive)
+    three_weeks_ago_naive = three_weeks_ago.replace(tzinfo=None)
+    recent_att = attendance[attendance.date >= three_weeks_ago_naive]
     
     needs_followup = []
     for _, student in students.iterrows():
