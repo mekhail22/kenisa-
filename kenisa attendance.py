@@ -13,6 +13,10 @@ import time
 import requests
 from functools import wraps
 import threading
+import qrcode
+from io import BytesIO, StringIO
+import base64
+import csv
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -561,6 +565,91 @@ def inject_css():
         }}
         .sidebar-collapsible[open] summary {{
             margin-bottom: 0.3rem;
+        }}
+
+        /* ===== Member Cards & Avatar ===== */
+        .member-card {{
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 1.2rem;
+            border: var(--card-border);
+            box-shadow: 0 4px 15px var(--shadow-color);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            height: 100%;
+        }}
+        .member-card:hover {{
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px var(--shadow-color);
+        }}
+        .member-avatar {{
+            width: 56px; height: 56px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; font-weight: 800; color: white;
+            margin: 0 auto 0.5rem auto; flex-shrink: 0;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+        }}
+        .member-avatar-sm {{
+            width: 40px; height: 40px; font-size: 1.1rem;
+        }}
+        .status-badge {{
+            display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px;
+            font-size: 0.75rem; font-weight: 700; text-align: center;
+            min-width: 70px;
+        }}
+        .status-badge.active {{ background: rgba(40,167,69,0.15); color: #28a745; border: 1px solid rgba(40,167,69,0.3); }}
+        .status-badge.inactive {{ background: rgba(220,53,69,0.15); color: #dc3545; border: 1px solid rgba(220,53,69,0.3); }}
+        .status-badge.newcomer {{ background: rgba(255,193,7,0.15); color: #d4a017; border: 1px solid rgba(255,193,7,0.3); }}
+        .status-badge.leader {{ background: rgba(102,126,234,0.15); color: #667eea; border: 1px solid rgba(102,126,234,0.3); }}
+
+        /* ===== Member Grid ===== */
+        .member-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }}
+        @media (max-width: 768px) {{
+            .member-grid {{
+                grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+                gap: 0.8rem;
+            }}
+        }}
+        @media (max-width: 480px) {{
+            .member-grid {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+
+        /* ===== Member Detail Row ===== */
+        .member-detail-row {{
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.3rem 0; font-size: 0.85rem;
+            color: var(--text-secondary);
+        }}
+        .member-detail-row .label {{
+            font-weight: 600; color: var(--text-primary); min-width: 70px;
+        }}
+
+        /* ===== Filter Section ===== */
+        .filter-container {{
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 1rem;
+            border: var(--card-border);
+            margin-bottom: 1rem;
+        }}
+
+        /* ===== Bulk Action Bar ===== */
+        .bulk-action-bar {{
+            background: var(--gold-light);
+            border-radius: 12px;
+            padding: 0.8rem 1rem;
+            border: 1px solid rgba(212,175,55,0.2);
+            margin-bottom: 1rem;
+            display: flex; align-items: center; gap: 0.8rem;
+            flex-wrap: wrap;
         }}
 
         /* ===== Toast Custom Colors ===== */
@@ -1708,6 +1797,7 @@ def show_sidebar_navigation(db: Database):
             "System Admin": [
                 ("🏠", "لوحة التحكم"),
                 ("👥", "إدارة المستخدمين"),
+                ("🌟", "إدارة الأعضاء"),
                 ("🏫", "إدارة المراحل"),
                 ("📋", "الحضور"),
                 ("💬", "الافتقاد"),
@@ -2265,6 +2355,357 @@ def show_user_management(db: Database):
                     st.toast("🗑️ تم حذف المرحلة", icon="⚠️")
                     time.sleep(1)
                     st.rerun()
+
+# =============================================================================
+# نظام إدارة الأعضاء المتقدم
+# =============================================================================
+def generate_qr_base64(data: str) -> str:
+    """Generate a QR code image and return as base64 string."""
+    try:
+        qr = qrcode.QRCode(box_size=4, border=1)
+        qr.add_data(data)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return ""
+
+def get_avatar_color(name: str) -> str:
+    """Generate a consistent color from a name."""
+    colors = ["#667eea", "#28a745", "#d4af37", "#dc3545", "#17a2b8", "#e83e8c", "#fd7e14", "#6f42c1"]
+    idx = sum(ord(c) for c in name) % len(colors)
+    return colors[idx]
+
+def get_status_badge_class(status: str) -> str:
+    """Map status to CSS badge class."""
+    mapping = {
+        "active": "active", "Active": "active",
+        "inactive": "inactive", "Inactive": "inactive",
+        "newcomer": "newcomer", "Newcomer": "newcomer",
+        "leader": "leader", "Leader": "leader"
+    }
+    return mapping.get(status, "active")
+
+def get_status_label(status: str) -> str:
+    """Get Arabic label for status."""
+    mapping = {
+        "active": "نشط", "Active": "نشط",
+        "inactive": "غير نشط", "Inactive": "غير نشط",
+        "newcomer": "جديد", "Newcomer": "جديد",
+        "leader": "قائد", "Leader": "قائد"
+    }
+    return mapping.get(status, status)
+
+def calculate_age(birthdate_str: str) -> int:
+    """Calculate age from birthdate string."""
+    if not birthdate_str or birthdate_str == "":
+        return 0
+    try:
+        bd = pd.to_datetime(birthdate_str, errors="coerce")
+        if pd.isna(bd):
+            return 0
+        now = get_cairo_now()
+        return now.year - bd.year - ((now.month, now.day) < (bd.month, bd.day))
+    except Exception:
+        return 0
+
+def export_to_csv(df: pd.DataFrame, filename: str = "members_export.csv") -> bytes:
+    """Export DataFrame to CSV bytes."""
+    output = StringIO()
+    df.to_csv(output, index=False, encoding="utf-8-sig")
+    return output.getvalue().encode("utf-8-sig")
+
+def export_to_excel(df: pd.DataFrame, filename: str = "members_export.xlsx") -> bytes:
+    """Export DataFrame to Excel bytes using openpyxl."""
+    try:
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "الأعضاء"
+        # Write headers
+        for col_idx, col_name in enumerate(df.columns, 1):
+            ws.cell(row=1, column=col_idx, value=col_name)
+        # Write data
+        for row_idx, row in df.iterrows():
+            for col_idx, col_name in enumerate(df.columns, 1):
+                ws.cell(row=row_idx + 2, column=col_idx, value=str(row.get(col_name, "")))
+        buf = BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+    except Exception:
+        # Fallback to CSV if openpyxl fails
+        return export_to_csv(df, filename.replace(".xlsx", ".csv"))
+
+def show_member_management(db: Database):
+    """Advanced member management with cards, search, filter, bulk actions."""
+    st.markdown("<h2 class='main-header'>👥 إدارة الأعضاء المتقدمة</h2>", unsafe_allow_html=True)
+    
+    # Get data
+    students = db.get_students()
+    sections = db.get_sections()
+    attendance = db.get_attendance()
+    
+    if students.empty:
+        st.info("لا توجد طالبات مسجلات بعد.")
+        return
+    
+    # Merge section names
+    if not sections.empty and "section_id" in sections.columns:
+        students = students.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
+    else:
+        students["section_name"] = ""
+    
+    # Ensure status column exists with defaults
+    if "status" not in students.columns:
+        students["status"] = "active"
+    students["status"] = students["status"].fillna("active").astype(str)
+    
+    # Calculate age if birthdate exists
+    if "birthdate" in students.columns:
+        students["age"] = students["birthdate"].apply(calculate_age)
+    else:
+        students["age"] = 0
+    
+    # ===== Search & Filter Section =====
+    st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+    
+    col_search, col_status, col_section, col_age, col_reset = st.columns([2, 1.2, 1.5, 1.2, 0.8])
+    
+    with col_search:
+        search_term = st.text_input("🔍 بحث بالاسم", placeholder="اكتب اسم الطالبة...", key="member_search")
+    
+    with col_status:
+        status_options = ["الكل", "Active", "Inactive", "Newcomer", "Leader"]
+        status_labels = ["الكل", "نشط", "غير نشط", "جديد", "قائد"]
+        status_map = dict(zip(status_options, status_labels))
+        selected_status = st.selectbox("🏷️ الحالة", status_options, 
+                                       format_func=lambda x: status_map.get(x, x), key="member_status_filter")
+    
+    with col_section:
+        section_options = ["الكل"]
+        if not sections.empty:
+            section_options += sections["section_id"].tolist()
+        selected_section = st.selectbox("📚 الخدمة", section_options,
+                                        format_func=lambda x: "الكل" if x == "الكل" else (
+                                            sections[sections.section_id == x]["section_name"].values[0] if not sections.empty else x
+                                        ), key="member_section_filter")
+    
+    with col_age:
+        age_range = st.slider("🎂 العمر", 0, 30, (0, 30), key="member_age_filter")
+    
+    with col_reset:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔄 إعادة ضبط", key="reset_filters", use_container_width=True):
+            for key in ["member_search", "member_status_filter", "member_section_filter", "member_age_filter"]:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # ===== Apply Filters =====
+    filtered = students.copy()
+    
+    if search_term:
+        filtered = filtered[filtered["full_name"].astype(str).str.contains(search_term, na=False, case=False)]
+    
+    if selected_status and selected_status != "الكل":
+        filtered = filtered[filtered["status"].astype(str).str.lower() == selected_status.lower()]
+    
+    if selected_section and selected_section != "الكل":
+        filtered = filtered[filtered["section_id"] == selected_section]
+    
+    if "age" in filtered.columns:
+        filtered = filtered[(filtered["age"] >= age_range[0]) & (filtered["age"] <= age_range[1])]
+    
+    # ===== Bulk Actions =====
+    st.markdown('<div class="bulk-action-bar">', unsafe_allow_html=True)
+    st.markdown(f"<span style='font-weight:700;'>📊 {len(filtered)} طالبة</span>", unsafe_allow_html=True)
+    
+    # Checkbox for select all
+    select_all = st.checkbox("تحديد الكل", key="select_all_members")
+    
+    col_export_csv, col_export_xlsx, col_export_all = st.columns([1, 1, 1.5])
+    
+    with col_export_csv:
+        if st.button("📥 تصدير CSV", key="export_csv_btn", use_container_width=True):
+            csv_bytes = export_to_csv(filtered)
+            st.download_button(
+                label="📥 تحميل CSV",
+                data=csv_bytes,
+                file_name="members_export.csv",
+                mime="text/csv",
+                key="download_csv_btn"
+            )
+            st.toast("✅ تم تصدير الملف!", icon="📥")
+    
+    with col_export_xlsx:
+        if st.button("📥 تصدير Excel", key="export_xlsx_btn", use_container_width=True):
+            xlsx_bytes = export_to_excel(filtered)
+            st.download_button(
+                label="📥 تحميل Excel",
+                data=xlsx_bytes,
+                file_name="members_export.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_xlsx_btn"
+            )
+            st.toast("✅ تم تصدير الملف!", icon="📥")
+    
+    with col_export_all:
+        if st.button("📥 تصدير الكل (بدون فلتر)", key="export_all_btn", use_container_width=True):
+            all_csv = export_to_csv(students)
+            st.download_button(
+                label="📥 تحميل الكل CSV",
+                data=all_csv,
+                file_name="all_members_export.csv",
+                mime="text/csv",
+                key="download_all_btn"
+            )
+            st.toast("✅ تم تصدير جميع الأعضاء!", icon="📥")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # ===== Member Cards Grid =====
+    if filtered.empty:
+        st.warning("⚠️ لا توجد نتائج تطابق البحث.")
+        return
+    
+    # Store selected members in session state
+    if "selected_members" not in st.session_state:
+        st.session_state.selected_members = set()
+    
+    # Status update dropdown (appears at top if any member selected)
+    selected_ids = [sid for sid in st.session_state.selected_members if sid in filtered["student_id"].values]
+    if selected_ids:
+        with st.container():
+            st.markdown(f"<div class='bulk-action-bar' style='background:rgba(102,126,234,0.1);'>✅ تم اختيار {len(selected_ids)} طالبة</div>", unsafe_allow_html=True)
+            new_status = st.selectbox("تغيير حالة المختارين إلى:", 
+                                      ["Active", "Inactive", "Newcomer", "Leader"],
+                                      format_func=lambda x: {"Active": "نشط", "Inactive": "غير نشط", "Newcomer": "جديد", "Leader": "قائد"}.get(x, x),
+                                      key="bulk_status_change")
+            if st.button("تطبيق التغيير", key="apply_bulk_status", use_container_width=True):
+                for sid in selected_ids:
+                    db.update_student(sid, {"status": new_status})
+                st.session_state.selected_members = set()
+                st.success(f"✅ تم تحديث حالة {len(selected_ids)} طالبة!")
+                st.toast(f"✅ تم تحديث الحالة!", icon="🎉")
+                time.sleep(1)
+                st.rerun()
+    
+    # Display as grid of cards
+    st.markdown('<div class="member-grid">', unsafe_allow_html=True)
+    
+    for _, row in filtered.iterrows():
+        sid = row.get("student_id", "")
+        name = row.get("full_name", "")
+        section_name = row.get("section_name", "")
+        status = row.get("status", "active")
+        phone = row.get("phone", "")
+        parent_phone = row.get("parent_phone", "")
+        school = row.get("school", "")
+        age = row.get("age", 0)
+        birthdate = row.get("birthdate", "")
+        
+        # Generate avatar
+        avatar_color = get_avatar_color(name)
+        first_letter = name[0] if name else "?"
+        
+        # Generate QR code
+        qr_data = f"Member: {name}\nID: {sid}\nSection: {section_name}"
+        qr_b64 = generate_qr_base64(qr_data)
+        
+        # Status badge
+        badge_class = get_status_badge_class(status)
+        status_label = get_status_label(status)
+        
+        # Checkbox for selection
+        is_selected = sid in st.session_state.selected_members
+        
+        st.markdown(f"""
+        <div class="member-card">
+            <div style="display:flex; align-items:center; gap:0.8rem; margin-bottom:0.8rem;">
+                <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:700; font-size:1rem; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{name}</div>
+                    <div style="font-size:0.8rem; color:var(--text-secondary);">{section_name if section_name else 'بدون خدمة'}</div>
+                </div>
+                <div>
+                    <span class="status-badge {badge_class}">{status_label}</span>
+                </div>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.5rem;">
+                <div style="font-size:0.8rem; color:var(--text-secondary);">🎂 {age} سنة</div>
+                <div style="font-size:0.8rem; color:var(--text-secondary);">📞 {phone if phone else '—'}</div>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                <div style="font-size:0.75rem; color:var(--text-secondary);">🆔 {sid[:8]}...</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Checkbox for selection (using Streamlit widget)
+        col_check, col_status_change = st.columns([1, 3])
+        with col_check:
+            checked = st.checkbox("اختيار", value=is_selected, key=f"sel_{sid}")
+            if checked and sid not in st.session_state.selected_members:
+                st.session_state.selected_members.add(sid)
+                st.rerun()
+            elif not checked and sid in st.session_state.selected_members:
+                st.session_state.selected_members.discard(sid)
+                st.rerun()
+        
+        with col_status_change:
+            # Quick status change dropdown
+            current_status = status
+            new_s = st.selectbox("تغيير الحالة", 
+                                 ["", "Active", "Inactive", "Newcomer", "Leader"],
+                                 index=0,
+                                 format_func=lambda x: {"": "—", "Active": "نشط", "Inactive": "غير نشط", "Newcomer": "جديد", "Leader": "قائد"}.get(x, x),
+                                 key=f"status_{sid}")
+            if new_s and new_s != current_status:
+                db.update_student(sid, {"status": new_s})
+                st.toast(f"✅ تم تحديث حالة {name}", icon="✅")
+                time.sleep(0.5)
+                st.rerun()
+        
+        # ===== Member Details Expander =====
+        with st.expander(f"📋 تفاصيل {name}", expanded=False):
+            # Attendance history
+            st.markdown("#### 📅 سجل الحضور")
+            if not attendance.empty and "student_id" in attendance.columns:
+                student_att = attendance[attendance["student_id"] == sid].copy()
+                if not student_att.empty:
+                    if "date" in student_att.columns:
+                        student_att["date"] = pd.to_datetime(student_att["date"], errors="coerce")
+                        student_att = student_att.sort_values("date", ascending=False)
+                    present_count = len(student_att[student_att["status"] == "حاضر"]) if "status" in student_att.columns else 0
+                    absent_count = len(student_att[student_att["status"] == "غائب"]) if "status" in student_att.columns else 0
+                    col_p, col_a = st.columns(2)
+                    col_p.metric("✅ أيام الحضور", present_count)
+                    col_a.metric("❌ أيام الغياب", absent_count)
+                    st.dataframe(student_att[["date", "status", "notes"]].head(10), use_container_width=True)
+                else:
+                    st.info("لا توجد سجلات حضور.")
+            else:
+                st.info("لا توجد بيانات حضور.")
+            
+            st.markdown("#### 📞 بيانات التواصل")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"**رقم الهاتف:** {phone if phone else 'غير متاح'}")
+                st.markdown(f"**رقم ولي الأمر:** {parent_phone if parent_phone else 'غير متاح'}")
+            with col2:
+                st.markdown(f"**المدرسة:** {school if school else 'غير متاح'}")
+                st.markdown(f"**تاريخ الميلاد:** {birthdate if birthdate else 'غير متاح'}")
+            
+            # QR Code
+            if qr_b64:
+                st.markdown("#### 📱 QR Code")
+                st.markdown(f'<img src="data:image/png;base64,{qr_b64}" width="120" style="border-radius:8px;">', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # =============================================================================
 # Attendance, Follow-up, My Students, etc.
@@ -2969,6 +3410,11 @@ def main():
             elif choice == "👥 إدارة المستخدمين":
                 if st.session_state.user.get("role") == "System Admin":
                     show_user_management(db)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice == "🌟 إدارة الأعضاء":
+                if st.session_state.user.get("role") == "System Admin":
+                    show_member_management(db)
                 else:
                     st.error("🚫 غير مصرح")
             elif choice == "🏫 إدارة المراحل":
