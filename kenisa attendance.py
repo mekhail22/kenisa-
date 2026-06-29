@@ -1801,7 +1801,7 @@ def show_sidebar_navigation(db: Database):
                 ("🏫", "إدارة المراحل"),
                 ("⚡", "حضور سريع"),
                 ("📋", "تسجيل الحضور"),
-                ("📊", "لوحة تحكم الحضور"),
+                ("📈", "لوحة تحكم الحضور"),
                 ("💬", "الافتقاد"),
                 ("📝", "المسابقات والاختبارات"),
                 ("📊", "التقارير والإحصائيات"),
@@ -1826,7 +1826,7 @@ def show_sidebar_navigation(db: Database):
                 ("👩‍🎓", "طالباتي"),
                 ("⚡", "حضور سريع"),
                 ("📋", "تسجيل الحضور"),
-                ("📊", "لوحة تحكم الحضور"),
+                ("📈", "لوحة تحكم الحضور"),
                 ("💬", "الافتقاد"),
                 ("🏆", "درجات المسابقات"),
                 ("🔒", "تغيير كلمة المرور")
@@ -1868,6 +1868,14 @@ def show_sidebar_navigation(db: Database):
         
         if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn"):
             logout(db)
+
+    # Floating button to show sidebar when hidden
+    if not st.session_state.get("show_sidebar", True):
+        st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
+        if st.button("☰", key="show_sidebar_btn"):
+            st.session_state.show_sidebar = True
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     return current_choice
 
@@ -3934,13 +3942,15 @@ def main():
                 all_menus = {
                     "System Admin": [
                         "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🌟 إدارة الأعضاء", "🏫 إدارة المراحل",
-                        "📋 الحضور", "💬 الافتقاد", "📝 المسابقات والاختبارات",
+                        "⚡ حضور سريع", "📋 الحضور", "📈 لوحة تحكم الحضور",
+                        "💬 الافتقاد", "📝 المسابقات والاختبارات",
                         "📊 التقارير والإحصائيات", "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
                     ],
                     "Father Account": ["🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
                     "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
                                         "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
-                    "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
+                    "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "⚡ حضور سريع", "📋 الحضور",
+                                "📈 لوحة تحكم الحضور", "💬 الافتقاد",
                                 "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"]
                 }
                 valid_items = set()
@@ -3978,7 +3988,7 @@ def main():
                 show_quick_checkin(db)
             elif choice == "📋 الحضور":
                 show_attendance(db)
-            elif choice == "📊 لوحة تحكم الحضور":
+            elif choice == "📈 لوحة تحكم الحضور":
                 show_attendance_dashboard(db)
             elif choice == "💬 الافتقاد":
                 show_followup(db)
