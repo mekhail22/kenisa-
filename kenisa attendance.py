@@ -42,6 +42,62 @@ st.set_page_config(
 )
 
 # =============================================================================
+# نظام الصلاحيات البسيط
+# =============================================================================
+import hashlib
+import os
+
+AUDIT_LOG_FILE = "audit_log.csv"
+
+def hash_password(password: str) -> str:
+    """Hash password using SHA256."""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(password: str, hashed: str) -> bool:
+    """Verify password against hash."""
+    return hash_password(password) == hashed
+
+def load_audit_log():
+    """Load audit log from CSV."""
+    try:
+        df = pd.read_csv(AUDIT_LOG_FILE, encoding='utf-8-sig')
+        if df.empty:
+            return pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details"])
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details"])
+
+def save_audit_log(df):
+    """Save audit log to CSV."""
+    df.to_csv(AUDIT_LOG_FILE, index=False, encoding='utf-8-sig')
+
+def add_audit_log(user_id: str, user_name: str, action: str, details: str = ""):
+    """Add entry to audit log."""
+    df = load_audit_log()
+    new_entry = {
+        "timestamp": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
+        "user_id": user_id,
+        "user_name": user_name,
+        "action": action,
+        "details": details
+    }
+    df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+    save_audit_log(df)
+
+def get_current_user_role():
+    """Get current user's role from session."""
+    if st.session_state.get("authenticated") and st.session_state.get("user"):
+        return st.session_state.user.get("role", "")
+    return ""
+
+def has_permission(required_role: str):
+    """Check if current user has required permission."""
+    current_role = get_current_user_role()
+    if current_role == "System Admin":
+        return True
+    return current_role == required_role
+
+# =============================================================================
 # Telegram & Support
 # =============================================================================
 def get_telegram_config():
@@ -3815,9 +3871,13 @@ def show_events_page(db: Database):
                     max_att = event_row.get("max_attendees", "")
                     
                     st.markdown(f"**الفعالية:** {event_name}")
-                    if max_att and int(max_att) > 0:
+                    try:
+                        max_att_val = int(float(max_att)) if max_att and str(max_att).strip() else 0
+                    except (ValueError, TypeError):
+                        max_att_val = 0
+                    if max_att_val > 0:
                         current_rsvps = get_event_attendees_count(selected_event_id)
-                        st.markdown(f"**المسجلون:** {current_rsvps}/{max_att}")
+                        st.markdown(f"**المسجلون:** {current_rsvps}/{max_att_val}")
                     
                     user_id = user.get("user_id", "")
                     existing_rsvp = rsvps_df[(rsvps_df.event_id == selected_event_id) & (rsvps_df.student_id == user_id)] if not rsvps_df.empty else pd.DataFrame()
