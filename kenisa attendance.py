@@ -2044,13 +2044,94 @@ def show_dashboard(db: Database):
 # =============================================================================
 # إدارة المستخدمين (بما في ذلك إدارة المراحل)
 # =============================================================================
-def show_user_management(db: Database):
+def show_stages_management(db: Database):
+    """صفحة منفصلة لإدارة المراحل"""
+    st.markdown("<h2 class='main-header'>🏫 إدارة المراحل الدراسية</h2>", unsafe_allow_html=True)
+    stages = db.get_stages()
+    users = db.get_users()
+    
+    if not stages.empty:
+        if not users.empty and "user_id" in users.columns and "full_name" in users.columns:
+            stages_display = stages.merge(
+                users[["user_id", "full_name"]].rename(columns={"user_id":"manager_user_id", "full_name":"المسؤول"}), 
+                on="manager_user_id", how="left"
+            )
+        else:
+            stages_display = stages.copy()
+            stages_display["المسؤول"] = ""
+        st.dataframe(stages_display[["stage_id", "stage_name", "المسؤول"]], use_container_width=True)
+    else:
+        st.info("لا توجد مراحل مسجلة بعد.")
+    
+    with st.expander("➕ إضافة مرحلة جديدة", expanded=False):
+        with st.form("add_stage_form_standalone"):
+            stage_name = st.text_input("اسم المرحلة*", placeholder="مثال: KG1, KG2, الصف الأول...")
+            eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
+            manager_id = ""
+            if not eligible_users.empty:
+                manager_choice = st.selectbox("مسؤول المرحلة (اختياري)", ["None"] + eligible_users["user_id"].tolist(),
+                                              format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0])
+                manager_id = manager_choice if manager_choice != "None" else ""
+            else:
+                st.info("لا يوجد مستخدمون مؤهلون.")
+            if st.form_submit_button("إضافة"):
+                if not stage_name:
+                    st.error("يرجى إدخال اسم المرحلة")
+                else:
+                    db.add_stage({
+                        "stage_id": str(uuid.uuid4()),
+                        "stage_name": stage_name.strip(),
+                        "manager_user_id": manager_id
+                    })
+                    st.success("✅ تمت إضافة المرحلة بنجاح")
+                    st.toast("✅ تمت إضافة المرحلة بنجاح!", icon="🎉")
+                    time.sleep(1)
+                    st.rerun()
+    
+    if not stages.empty:
+        with st.expander("✏️ تعديل / حذف مرحلة"):
+            stage_sel = st.selectbox("اختر مرحلة", stages["stage_id"],
+                                     format_func=lambda x: stages[stages.stage_id==x]["stage_name"].values[0])
+            stage_row = stages[stages.stage_id == stage_sel].iloc[0].to_dict()
+            new_stage_name = st.text_input("اسم المرحلة", value=stage_row["stage_name"])
+            eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
+            current_mgr = stage_row.get("manager_user_id", "")
+            if not eligible_users.empty:
+                mgr_options = ["None"] + eligible_users["user_id"].tolist()
+                current_idx = mgr_options.index(current_mgr) if current_mgr in mgr_options else 0
+                new_manager = st.selectbox("مسؤول المرحلة", mgr_options, index=current_idx,
+                                           format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0])
+                new_mgr_id = new_manager if new_manager != "None" else ""
+            else:
+                new_mgr_id = ""
+            col1, col2 = st.columns(2)
+            if col1.button("تحديث المرحلة"):
+                db.update_stage(stage_sel, {"stage_name": new_stage_name, "manager_user_id": new_mgr_id})
+                st.success("تم التحديث")
+                st.toast("✅ تم تحديث المرحلة!", icon="✅")
+                time.sleep(1)
+                st.rerun()
+            if col2.button("حذف المرحلة"):
+                db.delete_stage(stage_sel)
+                st.success("تم حذف المرحلة")
+                st.toast("🗑️ تم حذف المرحلة", icon="⚠️")
+                time.sleep(1)
+                st.rerun()
+
+def show_user_management(db: Database, active_tab: int = 0):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
     users = db.get_users()
     sections = db.get_sections()
     stages = db.get_stages()
     students = db.get_students()
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول", "إدارة المراحل"])
+    
+    # If a specific tab is requested, show only that tab's content
+    if active_tab == 5:
+        show_stages_management(db)
+        return
+    
+    tab_names = ["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول", "إدارة المراحل"]
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(tab_names)
 
     with tab1:
         st.subheader("قائمة المستخدمين (خدام)")
@@ -3024,7 +3105,7 @@ def show_class_competition_scores(db: Database):
             c1.metric("متوسط الدرجات", f"{avg_score:.1f}")
             c2.metric("أعلى درجة", f"{max_score:.1f}")
             c3.metric("أقل درجة", f"{min_score:.1f}")
-
+ 
             if "اسم الطالبة" in filtered_df.columns:
                 st.markdown("---")
                 st.subheader("🏆 ترتيب الطالبات")
@@ -3360,38 +3441,21 @@ def main():
                 st.session_state.data_errors = errors
                 st.session_state.data_validated = True
 
-            if not st.session_state.show_sidebar:
-                st.markdown("""
-                <style>
-                section[data-testid="stSidebar"] {
-                    transform: translateX(100%) !important;
-                }
-                </style>
-                """, unsafe_allow_html=True)
-
-                st.markdown('<div class="floating-show-btn"></div>', unsafe_allow_html=True)
-                if st.button("☰", key="show_sidebar_btn"):
-                    st.session_state.show_sidebar = True
-                    st.rerun()
-            else:
-                st.markdown("""
-                <style>
-                section[data-testid="stSidebar"] {
-                    transform: translateX(0) !important;
-                }
-                </style>
-                """, unsafe_allow_html=True)
-
+            # Determine current page choice
+            if st.session_state.show_sidebar:
+                # Sidebar is visible - use its returned choice
                 choice = show_sidebar_navigation(db)
-
-            if not st.session_state.show_sidebar:
+            else:
+                # Sidebar is hidden - use stored choice with validation
                 choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
                 role = st.session_state.user.get("role", "")
-                menus = {
+                
+                # Define valid menu items for current role
+                all_menus = {
                     "System Admin": [
-                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 الحضور", "💬 الافتقاد",
-                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
-                        "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
+                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🌟 إدارة الأعضاء", "🏫 إدارة المراحل",
+                        "📋 الحضور", "💬 الافتقاد", "📝 المسابقات والاختبارات",
+                        "📊 التقارير والإحصائيات", "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
                     ],
                     "Father Account": ["🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
                     "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
@@ -3399,10 +3463,18 @@ def main():
                     "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
                                 "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"]
                 }
-                menu_items = menus.get(role, [])
-                if choice not in menu_items:
-                    choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
-                    st.session_state.menu_choice = choice
+                valid_items = set()
+                for r in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
+                    valid_items.update(all_menus.get(r, []))
+                
+                if choice not in valid_items:
+                    st.session_state.menu_choice = "🏠 لوحة التحكم"
+                    choice = "🏠 لوحة التحكم"
+            
+            # Safety: ensure choice is never None
+            if not choice:
+                choice = "🏠 لوحة التحكم"
+                st.session_state.menu_choice = choice
 
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if choice == "🏠 لوحة التحكم":
@@ -3419,7 +3491,7 @@ def main():
                     st.error("🚫 غير مصرح")
             elif choice == "🏫 إدارة المراحل":
                 if st.session_state.user.get("role") == "System Admin":
-                    show_user_management(db)
+                    show_stages_management(db)
                 else:
                     st.error("🚫 غير مصرح")
             elif choice == "👩‍🎓 طالباتي":
