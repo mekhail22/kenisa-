@@ -1800,16 +1800,18 @@ def show_sidebar_navigation(db: Database):
                 ("🌟", "إدارة الأعضاء"),
                 ("🏫", "إدارة المراحل"),
                 ("⚡", "حضور سريع"),
-                ("📋", "تسجيل الحضور"),
+                ("📋", "الحضور"),
                 ("📈", "لوحة تحكم الحضور"),
                 ("💬", "الافتقاد"),
                 ("📝", "المسابقات والاختبارات"),
+                ("📅", "الفعاليات"),
                 ("📊", "التقارير والإحصائيات"),
                 ("📜", "سجل العمليات"),
                 ("🔒", "تغيير كلمة المرور")
             ],
             "Father Account": [
                 ("🏠", "لوحة التحكم"),
+                ("📅", "الفعاليات"),
                 ("📊", "التقارير والإحصائيات"),
                 ("🔒", "تغيير كلمة المرور")
             ],
@@ -1818,6 +1820,7 @@ def show_sidebar_navigation(db: Database):
                 ("👩‍🎓", "طالباتي"),
                 ("💬", "الافتقاد"),
                 ("📝", "المسابقات والاختبارات"),
+                ("📅", "الفعاليات"),
                 ("📊", "التقارير والإحصائيات"),
                 ("🔒", "تغيير كلمة المرور")
             ],
@@ -1825,10 +1828,11 @@ def show_sidebar_navigation(db: Database):
                 ("🏠", "لوحة التحكم"),
                 ("👩‍🎓", "طالباتي"),
                 ("⚡", "حضور سريع"),
-                ("📋", "تسجيل الحضور"),
+                ("📋", "الحضور"),
                 ("📈", "لوحة تحكم الحضور"),
                 ("💬", "الافتقاد"),
                 ("🏆", "درجات المسابقات"),
+                ("📅", "الفعاليات"),
                 ("🔒", "تغيير كلمة المرور")
             ]
         }
@@ -3674,6 +3678,252 @@ def show_reports(db: Database):
         if st.button("📄 تصدير PDF", use_container_width=True, key="export_report_pdf"):
             st.info("📄 ميزة تصدير PDF قيد التطوير. يرجى استخدام CSV أو Excel للتصدير حالياً.")
 
+# =============================================================================
+# Events Page UI
+# =============================================================================
+def show_events_page(db: Database):
+    st.markdown("<h2 class='main-header'>📅 الفعاليات والمناسبات</h2>", unsafe_allow_html=True)
+    
+    user = st.session_state.user
+    events_df = load_events()
+    rsvps_df = load_event_rsvps()
+    students = db.get_students()
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 الفعاليات القادمة", "➕ إضافة فعالية", "🎫 تسجيل الحضور المتوقع", "✅ تسجيل حضور الفعالية"])
+    
+    with tab1:
+        st.subheader("📋 الفعاليات القادمة")
+        if events_df.empty:
+            st.info("لا توجد فعاليات مسجلة بعد.")
+        else:
+            events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
+            events_df = events_df.sort_values("event_date")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                event_type_filter = st.selectbox("تصفية حسب النوع", ["الكل"] + list(events_df["event_type"].unique()), key="event_type_filter")
+            with col2:
+                show_past = st.checkbox("عرض الفعاليات المنتهية", value=False, key="show_past_events")
+            
+            filtered_events = events_df.copy()
+            if event_type_filter != "الكل":
+                filtered_events = filtered_events[filtered_events.event_type == event_type_filter]
+            
+            today = get_cairo_now().replace(tzinfo=None)
+            if not show_past:
+                filtered_events = filtered_events[filtered_events.event_date >= today]
+            
+            if filtered_events.empty:
+                st.info("لا توجد فعاليات مطابقة.")
+            else:
+                for _, event in filtered_events.iterrows():
+                    event_id = event.get("event_id", "")
+                    event_name = event.get("event_name", "")
+                    event_date = event.get("event_date", "")
+                    location = event.get("location", "")
+                    event_type = event.get("event_type", "")
+                    description = event.get("description", "")
+                    max_attendees = event.get("max_attendees", "")
+                    
+                    if pd.notna(event_date):
+                        date_str = event_date.strftime("%Y-%m-%d %I:%M %p")
+                    else:
+                        date_str = "غير محدد"
+                    
+                    rsvp_count = get_event_attendees_count(event_id)
+                    type_emoji = {"اجتماع": "💬", "خدمة": "⛪", "رحلة": "🚌", "احتفال": "🎉"}.get(event_type, "📅")
+                    
+                    st.markdown(f"""
+                    <div class="card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
+                            <h3 style="margin:0; color:var(--text-primary);">{type_emoji} {event_name}</h3>
+                            <span style="background:var(--gold-light); color:var(--gold); padding:0.3rem 0.8rem; border-radius:20px; font-size:0.8rem; font-weight:600;">{event_type}</span>
+                        </div>
+                        <div style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:0.5rem;">📅 {date_str} | 📍 {location if location else 'غير محدد'}</div>
+                        {f'<div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.5rem;">👥 السعة: {max_attendees} شخص</div>' if max_attendees else ''}
+                        <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.8rem;">✅ المسجلون: {rsvp_count} {f'/ {max_attendees}' if max_attendees else ''}</div>
+                        {f'<div style="padding:0.8rem; background:var(--card-bg); border-radius:8px; margin-top:0.5rem;">{description}</div>' if description else ''}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if not rsvps_df.empty:
+                        event_rsvps = rsvps_df[rsvps_df.event_id == event_id]
+                        if not event_rsvps.empty:
+                            with st.expander(f"📋 قائمة المسجلين ({len(event_rsvps)})"):
+                                for _, rsvp in event_rsvps.iterrows():
+                                    st.write(f"👤 {rsvp.get('student_name', '')} - {rsvp.get('rsvp_status', '')}")
+    
+    with tab2:
+        st.subheader("➕ إضافة فعالية جديدة")
+        with st.form("add_event_form"):
+            event_name = st.text_input("اسم الفعالية*", placeholder="مثال: اجتماع شهري")
+            event_type = st.selectbox("نوع الفعالية*", ["اجتماع", "خدمة", "رحلة", "احتفال"])
+            event_date = st.date_input("تاريخ الفعالية*", value=get_cairo_now().date() + timedelta(days=7))
+            event_time = st.time_input("وقت الفعالية", value=None)
+            location = st.text_input("المكان", placeholder="مثال: قاعة الاجتماعات")
+            max_attendees = st.number_input("السعة القصوى (اختياري)", min_value=0, value=0, help="اتركه 0 لعدم تحديد سعة")
+            description = st.text_area("الوصف", placeholder="تفاصيل إضافية عن الفعالية...")
+            
+            submitted = st.form_submit_button("➕ إضافة الفعالية", use_container_width=True)
+            if submitted:
+                if not event_name or not event_date:
+                    st.error("يرجى ملء اسم الفعالية والتاريخ على الأقل")
+                else:
+                    if event_time:
+                        datetime_str = f"{event_date} {event_time}"
+                    else:
+                        datetime_str = f"{event_date} 00:00"
+                    
+                    event_data = {
+                        "event_name": event_name,
+                        "event_date": datetime_str,
+                        "location": location,
+                        "event_type": event_type,
+                        "description": description,
+                        "max_attendees": str(max_attendees) if max_attendees > 0 else "",
+                        "created_by": user.get("user_id", "")
+                    }
+                    
+                    event_id = add_event(db, event_data)
+                    st.success(f"✅ تم إضافة الفعالية بنجاح!")
+                    st.toast("✅ تم إضافة الفعالية!", icon="🎉")
+                    time.sleep(1)
+                    st.rerun()
+    
+    with tab3:
+        st.subheader("🎫 تسجيل الحضور المتوقع")
+        if events_df.empty:
+            st.info("لا توجد فعاليات للتسجيل فيها.")
+        else:
+            events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
+            events_df = events_df.sort_values("event_date")
+            event_options = events_df[events_df.event_date >= get_cairo_now().replace(tzinfo=None)]
+            
+            if event_options.empty:
+                st.info("لا توجد فعاليات مستقبلية.")
+            else:
+                selected_event_id = st.selectbox(
+                    "اختر الفعالية",
+                    event_options["event_id"].tolist(),
+                    format_func=lambda x: event_options[event_options.event_id == x]["event_name"].values[0],
+                    key="rsvp_event_select"
+                )
+                
+                if selected_event_id:
+                    event_row = event_options[event_options.event_id == selected_event_id].iloc[0]
+                    event_name = event_row.get("event_name", "")
+                    max_att = event_row.get("max_attendees", "")
+                    
+                    st.markdown(f"**الفعالية:** {event_name}")
+                    if max_att and int(max_att) > 0:
+                        current_rsvps = get_event_attendees_count(selected_event_id)
+                        st.markdown(f"**المسجلون:** {current_rsvps}/{max_att}")
+                    
+                    user_id = user.get("user_id", "")
+                    existing_rsvp = rsvps_df[(rsvps_df.event_id == selected_event_id) & (rsvps_df.student_id == user_id)] if not rsvps_df.empty else pd.DataFrame()
+                    
+                    if not existing_rsvp.empty:
+                        st.info("✅ أنت مسجل في هذه الفعالية بالفعل")
+                    else:
+                        if not students.empty:
+                            student_options = students[students["status"] == "active"] if "status" in students.columns else students
+                            if not student_options.empty:
+                                selected_student = st.selectbox(
+                                    "اختر العضو للتسجيل",
+                                    student_options["student_id"].tolist(),
+                                    format_func=lambda x: student_options[student_options.student_id == x]["full_name"].values[0],
+                                    key="rsvp_student_select"
+                                )
+                                
+                                if selected_student:
+                                    student_name = student_options[student_options.student_id == selected_student]["full_name"].values[0]
+                                    if st.button("✅ تسجيل الحضور المتوقع", use_container_width=True, key="rsvp_submit"):
+                                        success = add_event_rsvp(selected_event_id, selected_student, student_name)
+                                        if success:
+                                            st.success(f"✅ تم تسجيل {student_name} في الفعالية")
+                                            st.toast("✅ تم التسجيل!", icon="🎫")
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.warning("هذا العضو مسجل بالفعل")
+    
+    with tab4:
+        st.subheader("✅ تسجيل حضور الفعالية")
+        if events_df.empty:
+            st.info("لا توجد فعاليات.")
+        else:
+            events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
+            past_events = events_df[events_df.event_date < get_cairo_now().replace(tzinfo=None)]
+            
+            if past_events.empty:
+                st.info("لا توجد فعاليات منتهية.")
+            else:
+                selected_event_id = st.selectbox(
+                    "اختر الفعالية",
+                    past_events["event_id"].tolist(),
+                    format_func=lambda x: past_events[past_events.event_id == x]["event_name"].values[0],
+                    key="attendance_event_select"
+                )
+                
+                if selected_event_id:
+                    event_row = past_events[past_events.event_id == selected_event_id].iloc[0]
+                    event_name = event_row.get("event_name", "")
+                    st.markdown(f"**الفعالية:** {event_name}")
+                    
+                    event_rsvps = rsvps_df[rsvps_df.event_id == selected_event_id] if not rsvps_df.empty else pd.DataFrame()
+                    
+                    if event_rsvps.empty:
+                        st.info("لا يوجد مسجلين في هذه الفعالية.")
+                    else:
+                        st.markdown(f"**عدد المسجلين:** {len(event_rsvps)}")
+                        
+                        st.markdown("### تسجيل الحضور الفعلي")
+                        attendance_data = {}
+                        for _, rsvp in event_rsvps.iterrows():
+                            student_id = rsvp.get("student_id", "")
+                            student_name = rsvp.get("student_name", "")
+                            current_status = rsvp.get("actual_attendance", "")
+                            
+                            col1, col2 = st.columns([3, 2])
+                            col1.write(f"👤 {student_name}")
+                            
+                            status = col2.selectbox(
+                                "الحالة",
+                                ["", "حضر", "لم يحضر"],
+                                index=0 if not current_status else (1 if current_status == "حضر" else 2),
+                                key=f"att_{student_id}"
+                            )
+                            attendance_data[student_id] = status
+                        
+                        if st.button("💾 حفظ الحضور", use_container_width=True, key="save_event_attendance"):
+                            success_count = 0
+                            for student_id, status in attendance_data.items():
+                                if status:
+                                    if update_event_attendance(selected_event_id, student_id, status):
+                                        success_count += 1
+                            
+                            if success_count > 0:
+                                st.success(f"✅ تم تحديث حضور {success_count} عضو")
+                                st.toast("✅ تم حفظ الحضور!", icon="✅")
+                                time.sleep(1)
+                                st.rerun()
+                        
+                        st.markdown("---")
+                        st.subheader("📊 ملخص الحضور")
+                        if not event_rsvps.empty and "actual_attendance" in event_rsvps.columns:
+                            attended = len(event_rsvps[event_rsvps.actual_attendance == "حضر"])
+                            absent = len(event_rsvps[event_rsvps.actual_attendance == "لم يحضر"])
+                            not_recorded = len(event_rsvps[event_rsvps.actual_attendance == ""])
+                            
+                            col1, col2, col3 = st.columns(3)
+                            col1.metric("✅ حضر", attended)
+                            col2.metric("❌ لم يحضر", absent)
+                            col3.metric("⏳ لم يسجل", not_recorded)
+
+def get_events_badge_count():
+    upcoming = get_upcoming_events(days=3)
+    return len(upcoming)
+
 def show_logs(db: Database):
     st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
     logs = db.get_logs()
@@ -3688,6 +3938,112 @@ def show_logs(db: Database):
                 st.success("تم الحذف")
                 time.sleep(1)
                 st.rerun()
+
+# =============================================================================
+# Events Management System
+# =============================================================================
+def get_events_file_path():
+    return "events.csv"
+
+def load_events():
+    events_file = get_events_file_path()
+    try:
+        df = pd.read_csv(events_file, encoding='utf-8-sig')
+        if df.empty:
+            return pd.DataFrame(columns=["event_id", "event_name", "event_date", "location", "event_type", "description", "max_attendees", "created_by", "created_at"])
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["event_id", "event_name", "event_date", "location", "event_type", "description", "max_attendees", "created_by", "created_at"])
+
+def save_events(df):
+    events_file = get_events_file_path()
+    df.to_csv(events_file, index=False, encoding='utf-8-sig')
+
+def get_event_rsvps_file_path():
+    return "event_rsvps.csv"
+
+def load_event_rsvps():
+    rsvp_file = get_event_rsvps_file_path()
+    try:
+        df = pd.read_csv(rsvp_file, encoding='utf-8-sig')
+        if df.empty:
+            return pd.DataFrame(columns=["rsvp_id", "event_id", "student_id", "student_name", "rsvp_status", "rsvp_date", "actual_attendance"])
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["rsvp_id", "event_id", "student_id", "student_name", "rsvp_status", "rsvp_date", "actual_attendance"])
+
+def save_event_rsvps(df):
+    rsvp_file = get_event_rsvps_file_path()
+    df.to_csv(rsvp_file, index=False, encoding='utf-8-sig')
+
+def add_event(db, event_data):
+    events_df = load_events()
+    new_event = {
+        "event_id": str(uuid.uuid4()),
+        "event_name": event_data["event_name"],
+        "event_date": event_data["event_date"],
+        "location": event_data["location"],
+        "event_type": event_data["event_type"],
+        "description": event_data["description"],
+        "max_attendees": event_data.get("max_attendees", ""),
+        "created_by": event_data.get("created_by", st.session_state.user.get("user_id", "")),
+        "created_at": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    events_df = pd.concat([events_df, pd.DataFrame([new_event])], ignore_index=True)
+    save_events(events_df)
+    return new_event["event_id"]
+
+def delete_event(event_id):
+    events_df = load_events()
+    events_df = events_df[events_df.event_id != event_id]
+    save_events(events_df)
+    rsvps_df = load_event_rsvps()
+    rsvps_df = rsvps_df[rsvps_df.event_id != event_id]
+    save_event_rsvps(rsvps_df)
+
+def add_event_rsvp(event_id, student_id, student_name):
+    rsvps_df = load_event_rsvps()
+    existing = rsvps_df[(rsvps_df.event_id == event_id) & (rsvps_df.student_id == student_id)]
+    if not existing.empty:
+        return False
+    new_rsvp = {
+        "rsvp_id": str(uuid.uuid4()),
+        "event_id": event_id,
+        "student_id": student_id,
+        "student_name": student_name,
+        "rsvp_status": "متوقع الحضور",
+        "rsvp_date": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
+        "actual_attendance": ""
+    }
+    rsvps_df = pd.concat([rsvps_df, pd.DataFrame([new_rsvp])], ignore_index=True)
+    save_event_rsvps(rsvps_df)
+    return True
+
+def update_event_attendance(event_id, student_id, attendance_status):
+    rsvps_df = load_event_rsvps()
+    idx = rsvps_df[(rsvps_df.event_id == event_id) & (rsvps_df.student_id == student_id)].index
+    if len(idx) > 0:
+        rsvps_df.at[idx[0], "actual_attendance"] = attendance_status
+        save_event_rsvps(rsvps_df)
+        return True
+    return False
+
+def get_upcoming_events(days=3):
+    events_df = load_events()
+    if events_df.empty:
+        return pd.DataFrame()
+    events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
+    today = get_cairo_now().replace(tzinfo=None)
+    future_date = today + timedelta(days=days)
+    upcoming = events_df[(events_df.event_date >= today) & (events_df.event_date <= future_date)]
+    return upcoming.sort_values("event_date")
+
+def get_event_attendees_count(event_id):
+    rsvps_df = load_event_rsvps()
+    if rsvps_df.empty:
+        return 0
+    event_rsvps = rsvps_df[rsvps_df.event_id == event_id]
+    return len(event_rsvps)
 
 def change_password(db: Database):
     st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
@@ -4186,15 +4542,16 @@ def main():
                     "System Admin": [
                         "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🌟 إدارة الأعضاء", "🏫 إدارة المراحل",
                         "⚡ حضور سريع", "📋 الحضور", "📈 لوحة تحكم الحضور",
-                        "💬 الافتقاد", "📝 المسابقات والاختبارات",
+                        "💬 الافتقاد", "📝 المسابقات والاختبارات", "📅 الفعاليات",
                         "📊 التقارير والإحصائيات", "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
                     ],
-                    "Father Account": ["🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
+                    "Father Account": ["🏠 لوحة التحكم", "📅 الفعاليات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
                     "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
-                                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
+                                        "📝 المسابقات والاختبارات", "📅 الفعاليات",
+                                        "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
                     "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "⚡ حضور سريع", "📋 الحضور",
                                 "📈 لوحة تحكم الحضور", "💬 الافتقاد",
-                                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"]
+                                "🏆 درجات المسابقات", "📅 الفعاليات", "🔒 تغيير كلمة المرور"]
                 }
                 valid_items = set()
                 for r in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
@@ -4248,6 +4605,8 @@ def main():
                 show_class_competition_scores(db)
             elif choice == "📝 المسابقات والاختبارات":
                 show_quizzes(db)
+            elif choice == "📅 الفعاليات":
+                show_events_page(db)
             elif choice == "📊 التقارير والإحصائيات":
                 show_reports(db)
             elif choice == "📜 سجل العمليات":
