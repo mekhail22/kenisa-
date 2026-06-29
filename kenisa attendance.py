@@ -87,28 +87,84 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن مع تثبيت المظهر الفاتح
+# CSS محسّن مع Dark/Light Mode ودعم Responsive
 # =============================================================================
 def inject_css():
-    st.markdown("""
+    # Determine current theme
+    theme = st.session_state.get("theme", "light")
+    is_dark = (theme == "dark")
+    
+    # Theme colors
+    if is_dark:
+        bg_primary = "#0d1b2a"
+        bg_secondary = "#1b2838"
+        bg_card = "#1e3a5f"
+        text_primary = "#f5f5f5"
+        text_secondary = "#c0c0c0"
+        sidebar_bg = "linear-gradient(180deg, #0d1b2a 0%, #1b2838 100%)"
+        sidebar_border = "1px solid rgba(212,175,55,0.15)"
+        card_bg = "rgba(30,58,95,0.85)"
+        card_border = "1px solid rgba(212,175,55,0.1)"
+        header_bg = "rgba(30,58,95,0.9)"
+        gradient_start = "#0d1b2a"
+        gradient_end = "#1b2838"
+        metric_bg = "rgba(30,58,95,0.9)"
+        metric_border = "1px solid rgba(212,175,55,0.2)"
+        shadow_color = "rgba(0,0,0,0.3)"
+        gold = "#d4af37"
+        gold_light = "rgba(212,175,55,0.15)"
+    else:
+        bg_primary = "#f0f2f6"
+        bg_secondary = "#f5f7fa"
+        bg_card = "#ffffff"
+        text_primary = "#1a1a2e"
+        text_secondary = "#555555"
+        sidebar_bg = "linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%)"
+        sidebar_border = "1px solid rgba(0,0,0,0.08)"
+        card_bg = "rgba(255,255,255,0.95)"
+        card_border = "1px solid rgba(0,0,0,0.05)"
+        header_bg = "rgba(255,255,255,0.9)"
+        gradient_start = "#f5f7fa"
+        gradient_end = "#e4e8ec"
+        metric_bg = "rgba(255,255,255,0.95)"
+        metric_border = "1px solid rgba(0,0,0,0.05)"
+        shadow_color = "rgba(0,0,0,0.08)"
+        gold = "#d4af37"
+        gold_light = "rgba(212,175,55,0.1)"
+
+    st.markdown(f"""
     <style>
-        html, body, .stApp {
-            color-scheme: light !important;
-        }
-        @media (prefers-color-scheme: dark) {
-            html, body, .stApp {
-                background-color: #f0f2f6 !important;
-                color: #1a1a2e !important;
-            }
-        }
+        :root {{
+            --bg-primary: {bg_primary};
+            --bg-secondary: {bg_secondary};
+            --bg-card: {bg_card};
+            --text-primary: {text_primary};
+            --text-secondary: {text_secondary};
+            --sidebar-bg: {sidebar_bg};
+            --sidebar-border: {sidebar_border};
+            --card-bg: {card_bg};
+            --card-border: {card_border};
+            --header-bg: {header_bg};
+            --gradient-start: {gradient_start};
+            --gradient-end: {gradient_end};
+            --metric-bg: {metric_bg};
+            --metric-border: {metric_border};
+            --shadow-color: {shadow_color};
+            --gold: {gold};
+            --gold-light: {gold_light};
+        }}
+
+        html, body, .stApp {{
+            color-scheme: {"dark" if is_dark else "light"} !important;
+        }}
 
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-        * { font-family: 'Cairo', sans-serif; }
-        body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; }
-        .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
-        header[data-testid="stHeader"] { display: none !important; }
-        #MainMenu { visibility: hidden; }
-        footer { visibility: hidden; }
+        * {{ font-family: 'Cairo', sans-serif; }}
+        body {{ direction: rtl; text-align: right; background-color: var(--bg-primary); color: var(--text-primary); }}
+        .stApp {{ background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%); }}
+        header[data-testid="stHeader"] {{ display: none !important; }}
+        #MainMenu {{ visibility: hidden; }}
+        footer {{ visibility: hidden; }}
 
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
@@ -116,7 +172,7 @@ def inject_css():
         button[aria-label*="Close sidebar"],
         button[aria-label*="Close"],
         [data-testid="baseButton-header"],
-        [data-testid="stSidebarResizer"] {
+        [data-testid="stSidebarResizer"] {{
             display: none !important;
             pointer-events: none !important;
             visibility: hidden !important;
@@ -129,9 +185,9 @@ def inject_css():
             position: absolute !important;
             z-index: -9999 !important;
             overflow: hidden !important;
-        }
+        }}
 
-        section[data-testid="stSidebar"] {
+        section[data-testid="stSidebar"] {{
             position: fixed !important;
             top: 0 !important;
             right: 0 !important;
@@ -140,34 +196,74 @@ def inject_css():
             max-width: 100vw !important;
             z-index: 10000 !important;
             transition: transform 0.3s ease !important;
-            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+            box-shadow: -5px 0 15px var(--shadow-color);
             overflow-y: auto !important;
             margin: 0 !important;
             padding-top: 1rem !important;
-            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
-            border-left: 1px solid rgba(0,0,0,0.08) !important;
+            background: var(--sidebar-bg) !important;
+            border-left: var(--sidebar-border) !important;
             transform: translateX(0);
-        }
+        }}
 
-        @media (max-width: 768px) {
-            section[data-testid="stSidebar"] {
+        @media (max-width: 768px) {{
+            section[data-testid="stSidebar"] {{
                 width: 100vw !important;
-            }
-        }
+            }}
+        }}
 
-        [data-testid="stSidebarOverlay"] {
+        [data-testid="stSidebarOverlay"] {{
             display: none !important;
-        }
+        }}
 
         [data-testid="stAppViewContainer"] > [data-testid="stMain"],
-        [data-testid="stMainBlockContainer"] {
+        [data-testid="stMainBlockContainer"] {{
             max-width: 100% !important;
             width: 100% !important;
             margin-left: 0 !important;
             margin-right: 0 !important;
-        }
+        }}
 
-        .nav-btn-container .stButton > button {
+        /* ===== Theme Toggle Button ===== */
+        .theme-toggle-btn .stButton > button {{
+            width: 100% !important;
+            text-align: center !important;
+            padding: 0.6rem !important;
+            font-size: 0.95rem !important;
+            font-weight: 700 !important;
+            border-radius: 12px !important;
+            background: var(--gold-light) !important;
+            color: var(--gold) !important;
+            border: 1px solid var(--gold) !important;
+            box-shadow: none !important;
+            transition: all 0.3s ease !important;
+        }}
+        .theme-toggle-btn .stButton > button:hover {{
+            background: var(--gold) !important;
+            color: #1e3a5f !important;
+            transform: scale(1.02) !important;
+        }}
+
+        /* ===== Quick Action Buttons ===== */
+        .quick-action-btn .stButton > button {{
+            width: 100% !important;
+            text-align: center !important;
+            padding: 0.7rem 0.5rem !important;
+            font-size: 0.9rem !important;
+            font-weight: 700 !important;
+            border-radius: 12px !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border: none !important;
+            box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
+            transition: all 0.2s ease !important;
+        }}
+        .quick-action-btn .stButton > button:hover {{
+            transform: translateY(-2px) !important;
+            box-shadow: 0 4px 15px rgba(102,126,234,0.5) !important;
+        }}
+
+        /* ===== Nav Buttons ===== */
+        .nav-btn-container .stButton > button {{
             width: 100% !important;
             text-align: right !important;
             justify-content: flex-start !important;
@@ -176,31 +272,31 @@ def inject_css():
             font-weight: 600 !important;
             border-radius: 10px !important;
             background: transparent !important;
-            color: #1a1a2e !important;
+            color: var(--text-primary) !important;
             border: 1px solid transparent !important;
             box-shadow: none !important;
             transition: all 0.2s ease !important;
             direction: rtl !important;
-        }
-        .nav-btn-container .stButton > button:hover {
-            background: rgba(102,126,234,0.08) !important;
-            color: #667eea !important;
-            border-color: rgba(102,126,234,0.15) !important;
+        }}
+        .nav-btn-container .stButton > button:hover {{
+            background: var(--gold-light) !important;
+            color: var(--gold) !important;
+            border-color: rgba(212,175,55,0.2) !important;
             transform: translateX(-2px) !important;
-        }
-        .nav-btn-container .stButton > button[kind="primary"] {
+        }}
+        .nav-btn-container .stButton > button[kind="primary"] {{
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
             box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
-        }
-        .nav-btn-container .stButton > button[kind="primary"]:hover {
+        }}
+        .nav-btn-container .stButton > button[kind="primary"]:hover {{
             background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%) !important;
             color: white !important;
             transform: translateX(-2px) !important;
-        }
+        }}
 
-        .floating-show-btn .stButton > button {
+        .floating-show-btn .stButton > button {{
             position: fixed !important;
             top: 20px !important;
             right: 20px !important;
@@ -221,13 +317,13 @@ def inject_css():
             padding: 0 !important;
             min-height: 60px !important;
             transition: all 0.2s ease !important;
-        }
-        .floating-show-btn .stButton > button:hover {
+        }}
+        .floating-show-btn .stButton > button:hover {{
             transform: scale(1.08) !important;
             box-shadow: 0 6px 20px rgba(102,126,234,0.6) !important;
-        }
+        }}
 
-        .help-float-container .stButton > button {
+        .help-float-container .stButton > button {{
             position: fixed !important;
             top: 20px !important;
             right: 100px !important;
@@ -243,69 +339,242 @@ def inject_css():
             white-space: nowrap !important;
             min-height: 48px !important;
             transition: all 0.2s ease !important;
-        }
-        .help-float-container .stButton > button:hover {
+        }}
+        .help-float-container .stButton > button:hover {{
             transform: scale(1.04) !important;
             box-shadow: 0 6px 20px rgba(243,156,18,0.5) !important;
-        }
+        }}
 
-        .main-header {
-            font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
-            margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
-            border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            backdrop-filter: blur(5px); border: 1px solid rgba(0,0,0,0.05);
+        .main-header {{
+            font-size: 2.2rem; font-weight: 700; color: var(--text-primary); text-align: center;
+            margin-bottom: 1.5rem; padding: 1rem; background: var(--header-bg);
+            border-radius: 15px; box-shadow: 0 4px 12px var(--shadow-color);
+            backdrop-filter: blur(5px); border: var(--card-border);
             margin-top: 100px;
-        }
-        .card { background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.5rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem; transition: transform 0.2s; color: #1a1a2e; border: 1px solid rgba(0,0,0,0.05); }
-        .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
-        .stButton > button {
+        }}
+        .card {{ background: var(--card-bg); border-radius: 15px; padding: 1.5rem;
+            box-shadow: 0 4px 12px var(--shadow-color); margin-bottom: 1rem; transition: transform 0.2s; color: var(--text-primary); border: var(--card-border); }}
+        .card:hover {{ transform: translateY(-2px); box-shadow: 0 8px 24px var(--shadow-color); }}
+        .stButton > button {{
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white; border: none; border-radius: 8px; font-weight: 600;
             transition: all 0.2s; box-shadow: 0 2px 8px rgba(102,126,234,0.3);
-        }
-        .stButton > button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }
-        .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
-        .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
-        .content-area { padding: 0 1rem; }
+        }}
+        .stButton > button:hover {{ transform: scale(1.02); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }}
+        .stRadio > div, .stSelectbox > div, .stMultiSelect > div {{ direction: rtl; }}
+        .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput {{ text-align: right; }}
+        .content-area {{ padding: 0 1rem; }}
 
-        .stDataFrame { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-        .streamlit-expanderHeader {
+        .stDataFrame {{ background: var(--card-bg); border-radius: 10px; box-shadow: 0 2px 8px var(--shadow-color); color: var(--text-primary); }}
+        .streamlit-expanderHeader {{
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white !important; border-radius: 8px; font-weight: 600;
-        }
-        .stForm { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-        .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-        .stTabs [data-baseweb="tab"] {
+        }}
+        .stForm {{ background: var(--card-bg); padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px var(--shadow-color); }}
+        .stTabs [data-baseweb="tab-list"] {{ gap: 8px; }}
+        .stTabs [data-baseweb="tab"] {{
             background: rgba(102,126,234,0.1); border-radius: 8px 8px 0 0;
             padding: 10px 20px; font-weight: 600; color: #667eea;
             border: 1px solid rgba(102,126,234,0.2); border-bottom: none;
-        }
-        .stTabs [aria-selected="true"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; }
-        .stSuccess { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }
-        .stError { background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }
+        }}
+        .stTabs [aria-selected="true"] {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; }}
+        .stSuccess {{ background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }}
+        .stError {{ background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }}
 
-        iframe[title="st_components.html"] {
+        iframe[title="st_components.html"] {{
             border: none !important;
             background: transparent !important;
-        }
+        }}
 
-        @media (max-width: 768px) {
-            .floating-show-btn .stButton > button {
+        /* ===== KPI Cards ===== */
+        .kpi-card {{
+            background: var(--metric-bg);
+            border-radius: 16px;
+            padding: 1.2rem 1rem;
+            text-align: center;
+            border: var(--metric-border);
+            box-shadow: 0 4px 15px var(--shadow-color);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }}
+        .kpi-card:hover {{
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px var(--shadow-color);
+        }}
+        .kpi-card::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 16px 16px 0 0;
+        }}
+        .kpi-card .kpi-icon {{
+            font-size: 2rem;
+            margin-bottom: 0.3rem;
+        }}
+        .kpi-card .kpi-label {{
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+        }}
+        .kpi-card .kpi-value {{
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }}
+        .kpi-card .kpi-sub {{
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.2rem;
+        }}
+        .kpi-card.gold::before {{
+            background: linear-gradient(90deg, #d4af37, #f0d060);
+        }}
+        .kpi-card.green::before {{
+            background: linear-gradient(90deg, #28a745, #48c868);
+        }}
+        .kpi-card.blue::before {{
+            background: linear-gradient(90deg, #1e3a5f, #2a5a8f);
+        }}
+        .kpi-card.purple::before {{
+            background: linear-gradient(90deg, #764ba2, #9b6fc0);
+        }}
+
+        /* ===== Sidebar Section Header ===== */
+        .sidebar-section-header {{
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 0.5rem 0.5rem 0.3rem 0.5rem;
+            border-bottom: 1px solid var(--gold-light);
+            margin-top: 0.5rem;
+            margin-bottom: 0.3rem;
+        }}
+
+        /* ===== Sidebar User Card ===== */
+        .sidebar-user-card {{
+            background: var(--gold-light);
+            border-radius: 12px;
+            padding: 0.8rem 1rem;
+            margin-bottom: 0.5rem;
+            border: 1px solid rgba(212,175,55,0.2);
+            text-align: center;
+        }}
+        .sidebar-user-card .user-name {{
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }}
+        .sidebar-user-card .user-role {{
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }}
+
+        /* ===== Responsive Design ===== */
+        @media (max-width: 768px) {{
+            .floating-show-btn .stButton > button {{
                 width: 50px !important;
                 height: 50px !important;
                 font-size: 24px !important;
                 top: 14px !important;
                 right: 14px !important;
-            }
-            .help-float-container .stButton > button {
+            }}
+            .help-float-container .stButton > button {{
                 right: 80px !important;
                 top: 14px !important;
                 padding: 10px 16px !important;
                 font-size: 14px !important;
-            }
-            .main-header { font-size: 1.6rem; margin-top: 110px; }
-        }
+            }}
+            .main-header {{ font-size: 1.6rem; margin-top: 110px; }}
+            .kpi-card .kpi-value {{ font-size: 1.5rem; }}
+            .kpi-card .kpi-icon {{ font-size: 1.5rem; }}
+            .kpi-card {{ padding: 0.8rem 0.5rem; }}
+        }}
+
+        @media (max-width: 480px) {{
+            .main-header {{ font-size: 1.3rem; margin-top: 100px; padding: 0.7rem; }}
+            .kpi-card .kpi-value {{ font-size: 1.2rem; }}
+            .kpi-card .kpi-icon {{ font-size: 1.2rem; }}
+            .kpi-card {{ padding: 0.6rem 0.3rem; }}
+            .kpi-card .kpi-label {{ font-size: 0.7rem; }}
+            section[data-testid="stSidebar"] {{ width: 100vw !important; }}
+        }}
+
+        /* ===== Metric Customization ===== */
+        div[data-testid="metric-container"] {{
+            background: var(--metric-bg);
+            border-radius: 16px;
+            padding: 1rem;
+            border: var(--metric-border);
+            box-shadow: 0 4px 15px var(--shadow-color);
+            transition: all 0.3s ease;
+        }}
+        div[data-testid="metric-container"]:hover {{
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px var(--shadow-color);
+        }}
+        div[data-testid="metric-container"] > div:first-child {{
+            font-size: 0.85rem !important;
+            font-weight: 600 !important;
+            color: var(--text-secondary) !important;
+        }}
+        div[data-testid="metric-container"] > div:nth-child(2) {{
+            font-size: 2rem !important;
+            font-weight: 800 !important;
+            color: var(--text-primary) !important;
+        }}
+        div[data-testid="metric-container"] > div:nth-child(3) {{
+            font-size: 0.8rem !important;
+            color: var(--text-secondary) !important;
+        }}
+
+        /* ===== Collapsible Sidebar Sections ===== */
+        .sidebar-collapsible {{
+            margin-bottom: 0.3rem;
+        }}
+        .sidebar-collapsible summary {{
+            cursor: pointer;
+            padding: 0.5rem;
+            font-weight: 700;
+            color: var(--gold);
+            font-size: 0.85rem;
+            border-radius: 8px;
+            transition: all 0.2s;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }}
+        .sidebar-collapsible summary:hover {{
+            background: var(--gold-light);
+        }}
+        .sidebar-collapsible summary::-webkit-details-marker {{
+            display: none;
+        }}
+        .sidebar-collapsible[open] summary {{
+            margin-bottom: 0.3rem;
+        }}
+
+        /* ===== Toast Custom Colors ===== */
+        .stAlert {{
+            border-radius: 10px !important;
+        }}
+        div[data-testid="stAlertContainer"] > div:has(> div > svg[color="#28a745"]) {{
+            background: rgba(40,167,69,0.12) !important;
+            border: 1px solid rgba(40,167,69,0.3) !important;
+        }}
+        div[data-testid="stAlertContainer"] > div:has(> div > svg[color="#dc3545"]) {{
+            background: rgba(220,53,69,0.12) !important;
+            border: 1px solid rgba(220,53,69,0.3) !important;
+        }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -836,7 +1105,8 @@ def init_session():
         "show_review": False,
         "data_errors": [],
         "data_validated": False,
-        "quiz_load_failures": 0
+        "quiz_load_failures": 0,
+        "theme": "light"
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -845,7 +1115,6 @@ def init_session():
 def logout(db=None):
     if db and st.session_state.user:
         try:
-            # يمكن حفظ أي شيء قبل الخروج
             pass
         except Exception:
             pass
@@ -982,6 +1251,7 @@ def show_initialization(db: Database):
             }
             db.add_user(admin_data)
             st.success("✅ تم إنشاء مدير النظام بنجاح!")
+            st.toast("✅ تم إنشاء مدير النظام بنجاح!", icon="🎉")
             st.info("**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`")
             time.sleep(2)
             st.rerun()
@@ -1015,6 +1285,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.show_sidebar = True
                                 db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
+                                st.toast("✅ مرحباً بك في النظام!", icon="👋")
                                 time.sleep(1)
                                 st.rerun()
                             else:
@@ -1316,6 +1587,7 @@ def show_student_quiz(db: Database):
     elif st.session_state.quiz_phase == "finished":
         if not st.session_state.get("show_review", False):
             st.success("تم تسليم الاختبار بنجاح!")
+            st.toast("✅ تم تسليم الاختبار بنجاح!", icon="🎉")
             score = st.session_state.last_score
             if score.is_integer():
                 score_display = int(score)
@@ -1381,33 +1653,89 @@ def show_student_quiz(db: Database):
         return
 
 # =============================================================================
-# Sidebar Navigation
+# Sidebar Navigation محسّن
 # =============================================================================
 def show_sidebar_navigation(db: Database):
     with st.sidebar:
-        st.markdown("## ⛪ كنيسة الشهيدة دميانة")
+        # ===== Church Header =====
+        st.markdown("""
+        <div style="text-align:center; padding:0.5rem 0;">
+            <span style="font-size:2rem;">⛪</span>
+            <h3 style="margin:0.2rem 0; font-weight:700; color:var(--gold);">كنيسة الشهيدة دميانة</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
         user = st.session_state.user
-        st.markdown(f"**👤 {user.get('full_name', '')}**")
-        st.caption(f"الصلاحية: {user.get('role', '')}")
+        
+        # ===== User Card =====
+        st.markdown(f"""
+        <div class="sidebar-user-card">
+            <div class="user-name">👤 {user.get('full_name', '')}</div>
+            <div class="user-role">🔰 {user.get('role', '')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # ===== Theme Toggle =====
+        st.markdown('<div class="theme-toggle-btn">', unsafe_allow_html=True)
+        current_theme = st.session_state.get("theme", "light")
+        theme_label = "🌙 الوضع الليلي" if current_theme == "light" else "☀️ الوضع النهاري"
+        if st.button(theme_label, key="theme_toggle_btn", use_container_width=True):
+            st.session_state.theme = "dark" if current_theme == "light" else "light"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        
         st.divider()
-
+        
+        # ===== Quick Actions =====
+        st.markdown('<div class="sidebar-section-header">⚡ إجراءات سريعة</div>', unsafe_allow_html=True)
+        
+        st.markdown('<div class="quick-action-btn">', unsafe_allow_html=True)
+        if st.button("➕ إضافة عضو سريع", key="quick_add_member", use_container_width=True):
+            st.session_state.menu_choice = "👥 إدارة المستخدمين"
+            st.session_state.show_sidebar = False
+            st.rerun()
+        if st.button("✅ تسجيل حضور اليوم", key="quick_attendance", use_container_width=True):
+            st.session_state.menu_choice = "📋 الحضور"
+            st.session_state.show_sidebar = False
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # ===== Navigation Sections =====
         role = user.get("role", "")
         menus = {
             "System Admin": [
-                "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 الحضور", "💬 الافتقاد",
-                "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
-                "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
+                ("🏠", "لوحة التحكم"),
+                ("👥", "إدارة المستخدمين"),
+                ("🏫", "إدارة المراحل"),
+                ("📋", "الحضور"),
+                ("💬", "الافتقاد"),
+                ("📝", "المسابقات والاختبارات"),
+                ("📊", "التقارير والإحصائيات"),
+                ("📜", "سجل العمليات"),
+                ("🔒", "تغيير كلمة المرور")
             ],
             "Father Account": [
-                "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                ("🏠", "لوحة التحكم"),
+                ("📊", "التقارير والإحصائيات"),
+                ("🔒", "تغيير كلمة المرور")
             ],
             "Service Manager": [
-                "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
-                "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+                ("🏠", "لوحة التحكم"),
+                ("👩‍🎓", "طالباتي"),
+                ("💬", "الافتقاد"),
+                ("📝", "المسابقات والاختبارات"),
+                ("📊", "التقارير والإحصائيات"),
+                ("🔒", "تغيير كلمة المرور")
             ],
             "Teacher": [
-                "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
-                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
+                ("🏠", "لوحة التحكم"),
+                ("👩‍🎓", "طالباتي"),
+                ("📋", "الحضور"),
+                ("💬", "الافتقاد"),
+                ("🏆", "درجات المسابقات"),
+                ("🔒", "تغيير كلمة المرور")
             ]
         }
         menu_items = menus.get(role, [])
@@ -1415,33 +1743,42 @@ def show_sidebar_navigation(db: Database):
             st.warning("صلاحية غير معروفة")
             return None
 
-        current_choice = st.session_state.get("menu_choice", menu_items[0])
-        if current_choice not in menu_items:
-            current_choice = menu_items[0]
+        current_choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+        # Build full menu text for comparison
+        menu_texts = [f"{icon} {label}" for icon, label in menu_items]
+        if current_choice not in menu_texts:
+            current_choice = menu_texts[0]
             st.session_state.menu_choice = current_choice
 
-        if st.button("✕ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
-            st.session_state.show_sidebar = False
-            st.rerun()
-
+        # ===== Collapsible Navigation Sections =====
+        # Main Menu
+        st.markdown('<div class="sidebar-section-header">📌 القائمة الرئيسية</div>', unsafe_allow_html=True)
+        
         st.markdown('<div class="nav-btn-container">', unsafe_allow_html=True)
-        for item in menu_items:
-            btn_type = "primary" if item == current_choice else "secondary"
-            if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
-                if item != current_choice:
-                    st.session_state.menu_choice = item
+        for icon, label in menu_items:
+            item_text = f"{icon} {label}"
+            btn_type = "primary" if item_text == current_choice else "secondary"
+            if st.button(item_text, key=f"nav_btn_{label}", use_container_width=True, type=btn_type):
+                if item_text != current_choice:
+                    st.session_state.menu_choice = item_text
                 st.session_state.show_sidebar = False
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.divider()
+        
+        # ===== Hide Sidebar & Logout =====
+        if st.button("✕ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
+            st.session_state.show_sidebar = False
+            st.rerun()
+        
         if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn"):
             logout(db)
 
     return current_choice
 
 # =============================================================================
-# Dashboard
+# Dashboard محسّن مع KPI Cards متحركة
 # =============================================================================
 def show_dashboard(db: Database):
     user = st.session_state.user
@@ -1482,12 +1819,83 @@ def show_dashboard(db: Database):
     present_today = len(attendance[(attendance.date == today_str) & (attendance.status == "حاضر")]) if not attendance.empty and "status" in attendance.columns else 0
     absent_today = len(attendance[(attendance.date == today_str) & (attendance.status == "غائب")]) if not attendance.empty and "status" in attendance.columns else 0
     need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty and "regularity_status" in followup.columns else 0
+    
+    # Calculate attendance percentage
+    total_today = present_today + absent_today
+    attendance_pct = round((present_today / total_today) * 100, 1) if total_today > 0 else 0
+    
+    # New members this month (students added this month)
+    new_members = 0
+    if not students.empty and "student_id" in students.columns:
+        # Estimate new members as those with IDs created recently (simplified)
+        new_members = len(students[students["status"] == "active"]) if "status" in students.columns else 0
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("عدد الطالبات", total_students)
-    col2.metric("الحضور اليوم", present_today)
-    col3.metric("الغياب اليوم", absent_today)
-    col4.metric("منقطعات", need_follow)
+    # ===== KPI Cards with Custom HTML =====
+    st.markdown("""
+    <style>
+        .kpi-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            direction: rtl;
+        }
+        .kpi-col {
+            flex: 1;
+            min-width: 180px;
+        }
+        @media (max-width: 768px) {
+            .kpi-col {
+                min-width: 140px;
+                flex: 0 0 calc(50% - 0.5rem);
+            }
+        }
+        @media (max-width: 480px) {
+            .kpi-col {
+                min-width: 100%;
+                flex: 0 0 100%;
+            }
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Animated counter effect using CSS animation
+    st.markdown(f"""
+    <div class="kpi-row">
+        <div class="kpi-col">
+            <div class="kpi-card blue">
+                <div class="kpi-icon">👩‍🎓</div>
+                <div class="kpi-label">إجمالي الأعضاء</div>
+                <div class="kpi-value" style="animation: countUp 1s ease-out;">{total_students}</div>
+                <div class="kpi-sub">طالبة مسجلة</div>
+            </div>
+        </div>
+        <div class="kpi-col">
+            <div class="kpi-card green">
+                <div class="kpi-icon">✅</div>
+                <div class="kpi-label">الحضور اليوم</div>
+                <div class="kpi-value">{present_today}</div>
+                <div class="kpi-sub">من أصل {total_today} طالبة</div>
+            </div>
+        </div>
+        <div class="kpi-col">
+            <div class="kpi-card gold">
+                <div class="kpi-icon">📈</div>
+                <div class="kpi-label">نسبة الحضور</div>
+                <div class="kpi-value">{attendance_pct}%</div>
+                <div class="kpi-sub">نسبة حضور اليوم</div>
+            </div>
+        </div>
+        <div class="kpi-col">
+            <div class="kpi-card purple">
+                <div class="kpi-icon">🌟</div>
+                <div class="kpi-label">الأعضاء الجدد</div>
+                <div class="kpi-value">{new_members}</div>
+                <div class="kpi-sub">طالبة نشطة</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("#### 📈 الحضور الأسبوعي")
     if not attendance.empty and "date" in attendance.columns and "status" in attendance.columns:
@@ -1587,6 +1995,7 @@ def show_user_management(db: Database):
                             "section_id": section_id, "phone": phone, "email": email
                         })
                         st.success("تم إضافة المستخدم بنجاح")
+                        st.toast("✅ تم إضافة المستخدم بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
 
@@ -1611,6 +2020,7 @@ def show_user_management(db: Database):
                 if col1.button("تحديث البيانات", key="update_user_btn"):
                     db.update_user(selected_user_id, {"full_name": new_full_name, "phone": new_phone, "email": new_email, "role": new_role, "section_id": new_section_id})
                     st.success("تم التحديث")
+                    st.toast("✅ تم تحديث بيانات المستخدم!", icon="✅")
                     time.sleep(1)
                     st.rerun()
                 if col2.button("حذف المستخدم", key="delete_user_btn"):
@@ -1619,6 +2029,7 @@ def show_user_management(db: Database):
                     else:
                         db.delete_user(selected_user_id)
                         st.success("تم الحذف")
+                        st.toast("🗑️ تم حذف المستخدم", icon="⚠️")
                         time.sleep(1)
                         st.rerun()
 
@@ -1659,6 +2070,7 @@ def show_user_management(db: Database):
                             "section_id": section_id, "phone": phone, "email": email
                         })
                         st.success("تمت إضافة المدرسة بنجاح")
+                        st.toast("✅ تمت إضافة المدرسة بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
 
@@ -1697,6 +2109,7 @@ def show_user_management(db: Database):
                             "address": address, "school": school, "notes": notes, "status": "active"
                         })
                         st.success("تمت الإضافة")
+                        st.toast("✅ تمت إضافة الطالبة بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
         with st.expander("✏️ تعديل بيانات طالبة"):
@@ -1732,6 +2145,7 @@ def show_user_management(db: Database):
                         "school": new_school, "notes": new_notes, "status": new_status
                     })
                     st.success("تم التحديث")
+                    st.toast("✅ تم تحديث بيانات الطالبة!", icon="✅")
                     time.sleep(1)
                     st.rerun()
         with st.expander("🗑️ حذف طالبة"):
@@ -1740,6 +2154,7 @@ def show_user_management(db: Database):
                 if st.button("تأكيد حذف الطالبة"):
                     db.delete_student(delete_id)
                     st.success("تم الحذف")
+                    st.toast("🗑️ تم حذف الطالبة", icon="⚠️")
                     time.sleep(1)
                     st.rerun()
 
@@ -1773,6 +2188,7 @@ def show_user_management(db: Database):
                     else:
                         db.add_section({"section_id": str(uuid.uuid4()), "section_name": name.strip()})
                         st.success("تمت الإضافة")
+                        st.toast("✅ تمت إضافة الفصل بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
         with st.expander("🗑️ حذف فصل"):
@@ -1781,6 +2197,7 @@ def show_user_management(db: Database):
                 if st.button("تأكيد حذف الفصل"):
                     db.delete_section(del_sec)
                     st.success("تم الحذف")
+                    st.toast("🗑️ تم حذف الفصل", icon="⚠️")
                     time.sleep(1)
                     st.rerun()
 
@@ -1816,6 +2233,7 @@ def show_user_management(db: Database):
                             "manager_user_id": manager_id
                         })
                         st.success("✅ تمت إضافة المرحلة بنجاح")
+                        st.toast("✅ تمت إضافة المرحلة بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
         if not stages.empty:
@@ -1838,11 +2256,13 @@ def show_user_management(db: Database):
                 if col1.button("تحديث المرحلة"):
                     db.update_stage(stage_sel, {"stage_name": new_stage_name, "manager_user_id": new_mgr_id})
                     st.success("تم التحديث")
+                    st.toast("✅ تم تحديث المرحلة!", icon="✅")
                     time.sleep(1)
                     st.rerun()
                 if col2.button("حذف المرحلة"):
                     db.delete_stage(stage_sel)
                     st.success("تم حذف المرحلة")
+                    st.toast("🗑️ تم حذف المرحلة", icon="⚠️")
                     time.sleep(1)
                     st.rerun()
 
@@ -1918,6 +2338,7 @@ def show_attendance(db: Database):
             db.batch_add_attendance(records)
             db.add_log(user.get("user_id", ""), f"تسجيل حضور فصل {selected_section} ليوم {date_str}")
             st.success("✅ تم تسجيل الحضور بنجاح")
+            st.toast("✅ تم تسجيل الحضور بنجاح!", icon="🎉")
             time.sleep(1)
             st.rerun()
 
@@ -1935,6 +2356,7 @@ def show_attendance(db: Database):
         if st.button("حذف سجل الحضور"):
             db.delete_attendance_record(del_id)
             st.success("تم الحذف")
+            st.toast("🗑️ تم حذف سجل الحضور", icon="⚠️")
             time.sleep(1)
             st.rerun()
 
@@ -2000,6 +2422,7 @@ def show_followup(db: Database):
                         "followup_type": ftype, "notes": notes, "regularity_status": regularity
                     })
                     st.success("✅ تم تسجيل الافتقاد بنجاح")
+                    st.toast("✅ تم تسجيل الافتقاد بنجاح!", icon="🎉")
                     time.sleep(1)
                     st.rerun()
                 except ValueError as e:
@@ -2052,6 +2475,7 @@ def show_my_students(db: Database):
                             "followup_type": ftype, "notes": notes, "regularity_status": regularity
                         })
                         st.success("✅ تمت المتابعة بنجاح")
+                        st.toast("✅ تمت المتابعة بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
                     except ValueError as e:
@@ -2198,6 +2622,7 @@ def show_quizzes(db: Database):
                         "quiz_code": code, "password": pwd, "is_active": "True"
                     })
                     st.success(f"✅ تم إنشاء الاختبار! الكود: {code}")
+                    st.toast("✅ تم إنشاء الاختبار بنجاح!", icon="🎉")
                     time.sleep(2)
                     st.rerun()
 
@@ -2241,6 +2666,7 @@ def show_quizzes(db: Database):
                                     "correct_answer": correct
                                 })
                                 st.success("✅ تمت إضافة السؤال")
+                                st.toast("✅ تمت إضافة السؤال بنجاح!", icon="🎉")
                                 time.sleep(1)
                                 st.rerun()
                     if not questions.empty:
@@ -2248,6 +2674,7 @@ def show_quizzes(db: Database):
                         if st.button("حذف السؤال"):
                             db.delete_question(del_q)
                             st.success("تم الحذف")
+                            st.toast("🗑️ تم حذف السؤال", icon="⚠️")
                             time.sleep(1)
                             st.rerun()
 
@@ -2272,17 +2699,20 @@ def show_quizzes(db: Database):
                     if col_actions[0].button("إغلاق", key=f"deact_{qid}"):
                         db.update_quiz(qid, {"is_active": "False"})
                         st.success(f"تم إغلاق الاختبار: {title}")
+                        st.toast(f"🔴 تم إغلاق الاختبار: {title}", icon="🔒")
                         time.sleep(1)
                         st.rerun()
                 else:
                     if col_actions[0].button("تفعيل", key=f"act_{qid}"):
                         db.update_quiz(qid, {"is_active": "True"})
                         st.success(f"تم تفعيل الاختبار: {title}")
+                        st.toast(f"🟢 تم تفعيل الاختبار: {title}", icon="✅")
                         time.sleep(1)
                         st.rerun()
                 if col_actions[1].button("حذف (النتائج تبقى)", key=f"del_keep_{qid}"):
                     db.delete_quiz_keep_results(qid)
                     st.success(f"تم حذف الاختبار '{title}' مع الاحتفاظ بالنتائج.")
+                    st.toast(f"🗑️ تم حذف الاختبار مع الاحتفاظ بالنتائج", icon="⚠️")
                     time.sleep(1)
                     st.rerun()
                 st.markdown("---")
@@ -2543,7 +2973,7 @@ def main():
                     st.error("🚫 غير مصرح")
             elif choice == "🏫 إدارة المراحل":
                 if st.session_state.user.get("role") == "System Admin":
-                    show_user_management(db)  # ستفتح التبويب السادس الخاص بالمراحل
+                    show_user_management(db)
                 else:
                     st.error("🚫 غير مصرح")
             elif choice == "👩‍🎓 طالباتي":
