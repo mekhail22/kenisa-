@@ -3385,43 +3385,292 @@ def show_reports(db: Database):
     section_id = user.get("section_id", "")
     attendance = db.get_attendance()
     students = db.get_students()
+    sections = db.get_sections()
 
     if role == "Teacher" and section_id:
-        if not attendance.empty and "section_id" in attendance.columns:
-            attendance = attendance[attendance.section_id == section_id]
         if not students.empty and "section_id" in students.columns:
             students = students[students.section_id == section_id]
+        if not attendance.empty and "section_id" in attendance.columns:
+            attendance = attendance[attendance.section_id == section_id]
+        if not sections.empty and "section_id" in sections.columns:
+            sections = sections[sections.section_id == section_id]
 
     if attendance.empty:
         st.info("لا توجد بيانات حضور.")
         return
     if "date" in attendance.columns:
         attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
-    st.subheader("📅 تقرير الغياب الشهري")
-    col1, col2 = st.columns(2)
-    month = col1.selectbox("الشهر", range(1,13), index=get_cairo_now().month-1)
-    year = col2.number_input("السنة", value=get_cairo_now().year, min_value=2020)
+
+    # ===== Report Builder =====
+    st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+    st.markdown("### 📋 منشئ التقارير")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        report_type = st.selectbox(
+            "نوع التقرير",
+            ["تقرير الحضور الأسبوعي", "تقرير الحضور الشهري", "تقرير الأعضاء الجدد", "تقرير الأعضاء الغائبين"],
+            key="report_type"
+        )
+    with col2:
+        date_from = st.date_input("من تاريخ", get_cairo_now().date() - timedelta(days=30), key="report_from")
+    with col3:
+        date_to = st.date_input("إلى تاريخ", get_cairo_now().date(), key="report_to")
+    
+    # Additional filters
+    if not sections.empty:
+        section_filter = st.multiselect(
+            "تصفية حسب الخدمة",
+            options=sections["section_id"].tolist(),
+            format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0] if x in sections["section_id"].values else x,
+            default=sections["section_id"].tolist() if "report_sections" not in st.session_state else st.session_state.report_sections,
+            key="report_sections"
+        )
+    else:
+        section_filter = []
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Convert dates
+    date_from_str = date_from.strftime("%Y-%m-%d")
+    date_to_str = date_to.strftime("%Y-%m-%d")
+    
+    # Filter data by date range
     if "date" in attendance.columns:
-        monthly = attendance[(attendance.date.dt.month == month) & (attendance.date.dt.year == year)]
-        if not monthly.empty:
-            summary = monthly.groupby(["student_id", "status"]).size().reset_index(name="count")
-            pivot = summary.pivot(index="student_id", columns="status", values="count").fillna(0).reset_index()
-            if not students.empty:
-                pivot = pivot.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-            st.dataframe(pivot, use_container_width=True)
-            fig = px.pie(monthly, names="status", title=f"نسب الحضور لشهر {month}/{year}")
+        mask = (attendance.date >= date_from_str) & (attendance.date <= date_to_str)
+        period_attendance = attendance[mask].copy()
+    else:
+        period_attendance = pd.DataFrame()
+    
+    # Filter by sections if selected
+    if section_filter and not period_attendance.empty and "section_id" in period_attendance.columns:
+        period_attendance = period_attendance[period_attendance.section_id.isin(section_filter)]
+    
+    # ===== Summary KPI Cards =====
+    st.markdown("### 📊 ملخص الفترة")
+    if not period_attendance.empty:
+        # Calculate KPIs
+        total_records = len(period_attendance)
+        present_count = len(period_attendance[period_attendance.status == "حاضر"]) if "status" in period_attendance.columns else 0
+        absent_count = len(period_attendance[period_attendance.status == "غائب"]) if "status" in period_attendance.columns else 0
+        late_count = len(period_attendance[period_attendance.status == "متأخر"]) if "status" in period_attendance.columns else 0
+        
+        attendance_rate = round((present_count / total_records) * 100, 1) if total_records > 0 else 0
+        
+        # Calculate unique students
+        unique_students = period_attendance["student_id"].nunique() if "student_id" in period_attendance.columns else 0
+        
+        # Find students needing followup
+        students_needing_followup = get_students_needing_followup(db)
+        followup_count = len(students_needing_followup)
+        
+        # Calculate days in period
+        days_count = (date_to - date_from).days + 1
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("📅 إجمالي الحضور في الفترة", f"{present_count}", f"من {total_records} سجل")
+        col2.metric("📈 متوسط الحضور اليومي", f"{round(present_count/days_count, 1) if days_count > 0 else 0}", f"للمدة {days_count} يوم")
+        col3.metric("🏫 أكثر خدمة حضوراً", "غير متاح", help="يتطلب بيانات أكثر تفصيلاً")
+        col4.metric("⚠️ بحاجة لمتابعة", f"{followup_count}", "طالبة")
+        
+        st.markdown("---")
+    else:
+        st.warning("لا توجد بيانات للفترة المحددة.")
+        return
+    
+    # ===== Interactive Charts =====
+    st.markdown("### 📈 الرسوم البيانية")
+    
+    col_chart1, col_chart2 = st.columns(2)
+    
+    with col_chart1:
+        st.subheader("📊 الحضور عبر الزمن")
+        if not period_attendance.empty and "date" in period_attendance.columns and "status" in period_attendance.columns:
+            # Group by date and status
+            daily_summary = period_attendance.groupby(["date", "status"]).size().reset_index(name="العدد")
+            
+            if not daily_summary.empty:
+                fig = px.line(
+                    daily_summary, 
+                    x="date", 
+                    y="العدد",
+                    color="status",
+                    labels={"date": "التاريخ", "العدد": "عدد الطالبات", "status": "الحالة"},
+                    color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"},
+                    title="الحضور اليومي"
+                )
+                fig.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    hovermode='x unified'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("لا توجد بيانات للعرض")
+        else:
+            st.info("لا توجد بيانات كافية")
+    
+    with col_chart2:
+        st.subheader("📊 مقارنة الحضور بين الخدمات")
+        if not period_attendance.empty and "section_id" in period_attendance.columns:
+            # Merge with section names
+            if not sections.empty:
+                section_att = period_attendance.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
+            else:
+                section_att = period_attendance.copy()
+                section_att["section_name"] = section_att["section_id"]
+            
+            if "section_name" in section_att.columns and "status" in section_att.columns:
+                section_summary = section_att.groupby(["section_name", "status"]).size().reset_index(name="العدد")
+                
+                if not section_summary.empty:
+                    # Create grouped bar chart
+                    fig = px.bar(
+                        section_summary,
+                        x="section_name",
+                        y="العدد",
+                        color="status",
+                        labels={"section_name": "الخدمة", "العدد": "عدد الطالبات", "status": "الحالة"},
+                        color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"},
+                        title="الحضور حسب الخدمة",
+                        barmode="group"
+                    )
+                    fig.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        xaxis_tickangle=-45
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("لا توجد بيانات للعرض")
+            else:
+                st.info("لا توجد بيانات كافية")
+        else:
+            st.info("لا توجد بيانات كافية")
+    
+    # Pie chart - full width
+    st.subheader("🥧 نسبة الحضور مقابل الغياب")
+    if not period_attendance.empty and "status" in period_attendance.columns:
+        status_summary = period_attendance["status"].value_counts().reset_index()
+        status_summary.columns = ["الحالة", "العدد"]
+        
+        if not status_summary.empty:
+            fig = px.pie(
+                status_summary,
+                names="الحالة",
+                values="العدد",
+                title="توزيع الحالات",
+                hole=0.4,
+                color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"}
+            )
+            fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("لا توجد بيانات لهذا الشهر.")
-
+            st.info("لا توجد بيانات")
+    else:
+        st.info("لا توجد بيانات كافية")
+    
     st.markdown("---")
-    st.subheader("🏆 أكثر 10 طالبات غياباً")
-    if not attendance.empty and "status" in attendance.columns and "student_id" in attendance.columns:
-        absent_counts = attendance[attendance.status == "غائب"].groupby("student_id").size().reset_index(name="أيام الغياب")
-        absent_counts = absent_counts.sort_values("أيام الغياب", ascending=False).head(10)
-        if not students.empty:
-            absent_counts = absent_counts.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-        st.dataframe(absent_counts[["full_name", "أيام الغياب"]], use_container_width=True)
+    
+    # ===== Detailed Table =====
+    st.markdown("### 📋 جدول التفاصيل")
+    
+    if report_type == "تقرير الأعضاء الغائبين":
+        st.subheader("❌ الأعضاء الغائبين")
+        if not period_attendance.empty:
+            absent_df = period_attendance[period_attendance.status == "غائب"].copy() if "status" in period_attendance.columns else pd.DataFrame()
+            if not absent_df.empty and not students.empty:
+                absent_df = absent_df.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+                absent_df = absent_df[["full_name", "date", "status", "notes"]].sort_values("date", ascending=False)
+                st.dataframe(absent_df, use_container_width=True)
+            else:
+                st.info("لا يوجد غياب في الفترة المحددة")
+        else:
+            st.info("لا توجد بيانات")
+    
+    elif report_type == "تقرير الحضور الأسبوعي":
+        st.subheader("📅 ملخص أسبوعي")
+        if not period_attendance.empty and "date" in period_attendance.columns:
+            # Add week number
+            period_attendance["week"] = period_attendance["date"].dt.isocalendar().week
+            
+            weekly_summary = period_attendance.groupby(["week", "status"]).size().reset_index(name="العدد")
+            if not weekly_summary.empty:
+                st.dataframe(weekly_summary, use_container_width=True)
+            else:
+                st.info("لا توجد بيانات")
+        else:
+            st.info("لا توجد بيانات")
+    
+    else:
+        # Default: show all records
+        if not period_attendance.empty:
+            display_df = period_attendance.copy()
+            if not students.empty:
+                display_df = display_df.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+                display_df = display_df[["full_name", "date", "status", "notes"]]
+            else:
+                display_df = display_df[["date", "student_id", "status", "notes"]]
+            st.dataframe(display_df.sort_values("date", ascending=False), use_container_width=True)
+        else:
+            st.info("لا توجد بيانات")
+    
+    st.markdown("---")
+    
+    # ===== Export Options =====
+    st.markdown("### 📥 تصدير التقرير")
+    
+    col_export1, col_export2, col_export3 = st.columns(3)
+    
+    with col_export1:
+        if st.button("📥 تصدير CSV", use_container_width=True, key="export_report_csv"):
+            if not period_attendance.empty:
+                # Prepare export data
+                export_df = period_attendance.copy()
+                if not students.empty:
+                    export_df = export_df.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+                    export_df = export_df[["full_name", "date", "status", "notes"]]
+                else:
+                    export_df = export_df[["date", "student_id", "status", "notes"]]
+                
+                csv_data = export_to_csv(export_df, f"تقرير_{report_type}_{date_from_str}_{date_to_str}.csv")
+                st.download_button(
+                    label="📥 تحميل CSV",
+                    data=csv_data,
+                    file_name=f"تقرير_{report_type}_{date_from_str}_{date_to_str}.csv",
+                    mime="text/csv",
+                    key="download_report_csv"
+                )
+                st.toast("✅ تم تجهيز الملف للتحميل", icon="📥")
+            else:
+                st.warning("لا توجد بيانات للتصدير")
+    
+    with col_export2:
+        if st.button("📥 تصدير Excel", use_container_width=True, key="export_report_excel"):
+            if not period_attendance.empty:
+                # Prepare export data
+                export_df = period_attendance.copy()
+                if not students.empty:
+                    export_df = export_df.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+                    export_df = export_df[["full_name", "date", "status", "notes"]]
+                else:
+                    export_df = export_df[["date", "student_id", "status", "notes"]]
+                
+                excel_data = export_to_excel(export_df, f"تقرير_{report_type}_{date_from_str}_{date_to_str}.xlsx")
+                st.download_button(
+                    label="📥 تحميل Excel",
+                    data=excel_data,
+                    file_name=f"تقرير_{report_type}_{date_from_str}_{date_to_str}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_report_excel"
+                )
+                st.toast("✅ تم تجهيز الملف للتحميل", icon="📥")
+            else:
+                st.warning("لا توجد بيانات للتصدير")
+    
+    with col_export3:
+        if st.button("📄 تصدير PDF", use_container_width=True, key="export_report_pdf"):
+            st.info("📄 ميزة تصدير PDF قيد التطوير. يرجى استخدام CSV أو Excel للتصدير حالياً.")
 
 def show_logs(db: Database):
     st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
@@ -3714,7 +3963,7 @@ def show_attendance_dashboard(db: Database):
     with col_chart1:
         st.subheader("📈 الحضور اليومي لآخر 7 أيام")
         if "date" in attendance.columns and "status" in attendance.columns:
-            last_week = get_cairo_now() - timedelta(days=7)
+            last_week = get_cairo_now().replace(tzinfo=None) - timedelta(days=7)
             recent = attendance[attendance.date >= last_week]
             
             if not recent.empty:
