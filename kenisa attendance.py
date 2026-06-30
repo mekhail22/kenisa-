@@ -42,12 +42,14 @@ st.set_page_config(
 )
 
 # =============================================================================
-# نظام الصلاحيات البسيط
+# نظام الصلاحيات والأمان
 # =============================================================================
 import hashlib
 import os
+from user_agents import parse
 
 AUDIT_LOG_FILE = "audit_log.csv"
+USERS_FILE = "users.csv"
 
 def hash_password(password: str) -> str:
     """Hash password using SHA256."""
@@ -57,31 +59,141 @@ def verify_password(password: str, hashed: str) -> bool:
     """Verify password against hash."""
     return hash_password(password) == hashed
 
+def load_users() -> pd.DataFrame:
+    """Load users from CSV."""
+    try:
+        df = pd.read_csv(USERS_FILE, encoding='utf-8-sig')
+        if df.empty:
+            return pd.DataFrame(columns=["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email", "created_at"])
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email", "created_at"])
+
+def save_users(df: pd.DataFrame):
+    """Save users to CSV."""
+    df.to_csv(USERS_FILE, index=False, encoding='utf-8-sig')
+
+def get_client_info():
+    """Get client browser, OS, device type, and screen size from session state or request."""
+    try:
+        ua_string = st.session_state.get('user_agent', '')
+        if ua_string:
+            user_agent = parse(ua_string)
+            browser = user_agent.browser.family if user_agent.browser else "Unknown"
+            os_name = user_agent.os.family if user_agent.os else "Unknown"
+            device_type = "Mobile" if user_agent.is_mobile else ("Tablet" if user_agent.is_tablet else "Desktop")
+        else:
+            browser = "Unknown"
+            os_name = "Unknown"
+            device_type = "Desktop"
+        
+        screen_width = st.session_state.get('screen_width', 'Unknown')
+        screen_height = st.session_state.get('screen_height', 'Unknown')
+        
+        return {
+            'browser': browser,
+            'os': os_name,
+            'device_type': device_type,
+            'screen_width': screen_width,
+            'screen_height': screen_height
+        }
+    except Exception:
+        return {'browser': 'Unknown', 'os': 'Unknown', 'device_type': 'Desktop', 'screen_width': 'Unknown', 'screen_height': 'Unknown'}
+
+def get_ip_address():
+    """Get client IP address (Streamlit limitation - returns server IP in most cases)."""
+    try:
+        # Try to get from query params (if passed from frontend)
+        ip = st.query_params.get('ip', ['Unknown'])[0]
+        if ip and ip != 'Unknown':
+            return ip
+        # Fallback: try to use external service
+        try:
+            response = requests.get('https://api.ipify.org?format=json', timeout=2)
+            if response.status_code == 200:
+                return response.json().get('ip', 'Unknown')
+        except:
+            pass
+        return 'Streamlit-Server'
+    except Exception:
+        return 'Unknown'
+
+def mask_ip(ip: str) -> str:
+    """Mask IP address for privacy (keep first 2 octets for IPv4)."""
+    if not ip or ip in ['Unknown', 'Streamlit-Server']:
+        return '***.***.***.***'
+    parts = ip.split('.')
+    if len(parts) == 4:
+        return f"{parts[0]}.{parts[1]}.***.***"
+    return '***.***.***.***'
+
+def get_location_from_ip(ip: str) -> dict:
+    """Get approximate location from IP address using free API."""
+    if not ip or ip in ['Unknown', 'Streamlit-Server']:
+        return {'country': 'Unknown', 'city': 'Unknown', 'region': 'Unknown'}
+    
+    try:
+        # Using ipapi.co (free tier: 1000 requests/day)
+        response = requests.get(f'https://ipapi.co/{ip}/json/', timeout=3)
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                'country': data.get('country_name', 'Unknown'),
+                'city': data.get('city', 'Unknown'),
+                'region': data.get('region', 'Unknown')
+            }
+    except Exception:
+        pass
+    
+    # Fallback if API fails
+    return {'country': 'Unknown', 'city': 'Unknown', 'region': 'Unknown'}
+
 def load_audit_log():
     """Load audit log from CSV."""
     try:
         df = pd.read_csv(AUDIT_LOG_FILE, encoding='utf-8-sig')
         if df.empty:
-            return pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details"])
+            return pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details",
+                                         "browser", "os", "device_type", "screen_size", "ip_masked",
+                                         "country", "city", "region", "privacy_consent"])
         return df
     except FileNotFoundError:
-        return pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details"])
+        return pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details",
+                                     "browser", "os", "device_type", "screen_size", "ip_masked",
+                                     "country", "city", "region", "privacy_consent"])
 
 def save_audit_log(df):
     """Save audit log to CSV."""
     df.to_csv(AUDIT_LOG_FILE, index=False, encoding='utf-8-sig')
 
-def add_audit_log(user_id: str, user_name: str, action: str, details: str = ""):
-    """Add entry to audit log."""
-    df = load_audit_log()
+def add_audit_log(user_id: str, user_name: str, action: str, details: str = "", privacy_consent: bool = True):
+    """Add entry to audit log with device info and location."""
+    client_info = get_client_info()
+    ip_address = get_ip_address()
+    location = get_location_from_ip(ip_address)
+    
     new_entry = {
         "timestamp": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
         "user_id": user_id,
         "user_name": user_name,
         "action": action,
-        "details": details
+        "details": details,
+        "browser": client_info['browser'],
+        "os": client_info['os'],
+        "device_type": client_info['device_type'],
+        "screen_size": f"{client_info['screen_width']}x{client_info['screen_height']}",
+        "ip_masked": mask_ip(ip_address),
+        "country": location['country'],
+        "city": location['city'],
+        "region": location['region'],
+        "privacy_consent": "✅ Agreed" if privacy_consent else "❌ Not Agreed"
     }
+    
+    df = load_audit_log()
     df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+    # Keep only last 1000 records to prevent file bloat
+    if len(df) > 1000:
+        df = df.tail(1000)
     save_audit_log(df)
 
 def get_current_user_role():
@@ -93,7 +205,7 @@ def get_current_user_role():
 def has_permission(required_role: str):
     """Check if current user has required permission."""
     current_role = get_current_user_role()
-    if current_role == "System Admin":
+    if current_role == "Admin":
         return True
     return current_role == required_role
 
@@ -1314,6 +1426,7 @@ def init_session():
         "authenticated": False,
         "user": None,
         "token": None,
+        "privacy_consent": False,
         "student_quiz": None,
         "student_quiz_started": False,
         "quiz_phase": "enter_name",
@@ -1336,7 +1449,10 @@ def init_session():
         "data_errors": [],
         "data_validated": False,
         "quiz_load_failures": 0,
-        "theme": "light"
+        "theme": "light",
+        "user_agent": "",
+        "screen_width": "Unknown",
+        "screen_height": "Unknown"
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1495,9 +1611,17 @@ def show_login_page(db: Database, jwt_secret: str):
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم").strip()
             password = st.text_input("كلمة المرور", type="password").strip()
+            st.markdown("---")
+            privacy_consent = st.checkbox(
+                "✅ أوافق على جمع بيانات الدخول (المتصفح، النظام،时间的) لأغراض أمنية",
+                value=False,
+                help="نقوم بجمع معلومات أساسية عن جهازك وتصفحك لحماية النظام"
+            )
             if st.form_submit_button("تسجيل الدخول", use_container_width=True):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
+                elif not privacy_consent:
+                    st.error("⚠️ يجب الموافقة على سياسة الخصوصية للمتابعة")
                 else:
                     with st.spinner("جاري التحقق..."):
                         users = db.get_users()
@@ -1511,9 +1635,11 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.token = token
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
+                                st.session_state.privacy_consent = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
                                 st.session_state.show_sidebar = True
-                                db.add_log(user["user_id"], "تسجيل الدخول")
+                                db.add_log(user["user_id"], "تسجيل الدخول", privacy_consent=True)
+                                add_audit_log(user["user_id"], user.get("full_name", ""), "تسجيل الدخول", privacy_consent=True)
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 st.toast("✅ مرحباً بك في النظام!", icon="👋")
                                 time.sleep(1)
@@ -4084,6 +4210,165 @@ def show_logs(db: Database):
                 time.sleep(1)
                 st.rerun()
 
+def show_audit_log(db: Database):
+    """Display login/access audit log with device and location info."""
+    st.markdown("<h2 class='main-header'>🔐 سجل الدخول والعمليات</h2>", unsafe_allow_html=True)
+    
+    user = st.session_state.user
+    role = user.get("role", "")
+    
+    # Only System Admin can view audit log
+    if role != "System Admin":
+        st.error("🚫 غير مصرح لك بعرض سجل الدخول")
+        return
+    
+    audit_df = load_audit_log()
+    
+    if audit_df.empty:
+        st.info("لا توجد سجلات دخول بعد.")
+        return
+    
+    # Convert timestamp
+    if "timestamp" in audit_df.columns:
+        audit_df["timestamp"] = pd.to_datetime(audit_df["timestamp"], errors="coerce")
+        audit_df = audit_df.sort_values("timestamp", ascending=False)
+    
+    # Summary stats
+    st.markdown("### 📊 ملخص السجلات")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    total_records = len(audit_df)
+    unique_users = audit_df["user_name"].nunique() if "user_name" in audit_df.columns else 0
+    
+    with col1:
+        st.metric("📋 إجمالي السجلات", total_records)
+    with col2:
+        st.metric("👥 مستخدمين فريدين", unique_users)
+    with col3:
+        if "device_type" in audit_df.columns:
+            desktop_count = len(audit_df[audit_df["device_type"] == "Desktop"])
+            st.metric("🖥️ عمليات من سطح المكتب", desktop_count)
+    with col4:
+        if "privacy_consent" in audit_df.columns:
+            consent_count = len(audit_df[audit_df["privacy_consent"] == "✅ Agreed"])
+            st.metric("✅ موافقات الخصوصية", consent_count)
+    
+    st.markdown("---")
+    
+    # Filters
+    st.markdown("### 🔍 تصفية السجلات")
+    col_filter1, col_filter2, col_filter3 = st.columns(3)
+    
+    with col_filter1:
+        if "user_name" in audit_df.columns:
+            user_options = ["الكل"] + sorted(audit_df["user_name"].dropna().unique().tolist())
+            filter_user = st.selectbox("المستخدم", user_options, key="audit_filter_user")
+        else:
+            filter_user = "الكل"
+    
+    with col_filter2:
+        if "action" in audit_df.columns:
+            action_options = ["الكل"] + sorted(audit_df["action"].dropna().unique().tolist())
+            filter_action = st.selectbox("الإجراء", action_options, key="audit_filter_action")
+        else:
+            filter_action = "الكل"
+    
+    with col_filter3:
+        if "device_type" in audit_df.columns:
+            device_options = ["الكل"] + sorted(audit_df["device_type"].dropna().unique().tolist())
+            filter_device = st.selectbox("نوع الجهاز", device_options, key="audit_filter_device")
+        else:
+            filter_device = "الكل"
+    
+    # Apply filters
+    filtered_audit = audit_df.copy()
+    
+    if filter_user != "الكل" and "user_name" in filtered_audit.columns:
+        filtered_audit = filtered_audit[filtered_audit["user_name"] == filter_user]
+    
+    if filter_action != "الكل" and "action" in filtered_audit.columns:
+        filtered_audit = filtered_audit[filtered_audit["action"] == filter_action]
+    
+    if filter_device != "الكل" and "device_type" in filtered_audit.columns:
+        filtered_audit = filtered_audit[filtered_audit["device_type"] == filter_device]
+    
+    st.markdown(f"<div style='margin:1rem 0;'><strong>📊 السجلات المعروضة:</strong> {len(filtered_audit)} من {total_records}</div>", unsafe_allow_html=True)
+    
+    # Display table
+    if not filtered_audit.empty:
+        # Select and rename columns for display
+        display_columns = {}
+        
+        if "timestamp" in filtered_audit.columns:
+            display_columns["timestamp"] = "التاريخ والوقت"
+        if "user_name" in filtered_audit.columns:
+            display_columns["user_name"] = "اسم المستخدم"
+        if "action" in filtered_audit.columns:
+            display_columns["action"] = "الإجراء"
+        if "details" in filtered_audit.columns:
+            display_columns["details"] = "التفاصيل"
+        if "browser" in filtered_audit.columns:
+            display_columns["browser"] = "المتصفح"
+        if "os" in filtered_audit.columns:
+            display_columns["os"] = "نظام التشغيل"
+        if "device_type" in filtered_audit.columns:
+            display_columns["device_type"] = "نوع الجهاز"
+        if "screen_size" in filtered_audit.columns:
+            display_columns["screen_size"] = "حجم الشاشة"
+        if "ip_masked" in filtered_audit.columns:
+            display_columns["ip_masked"] = "IP (مجهز)"
+        if "country" in filtered_audit.columns:
+            display_columns["country"] = "الدولة"
+        if "city" in filtered_audit.columns:
+            display_columns["city"] = "المدينة"
+        if "privacy_consent" in filtered_audit.columns:
+            display_columns["privacy_consent"] = "الخصوصية"
+        
+        # Filter available columns
+        available_cols = [k for k in display_columns.keys() if k in filtered_audit.columns]
+        display_df = filtered_audit[available_cols].copy()
+        display_df.columns = [display_columns[c] for c in available_cols]
+        
+        # Format timestamp
+        if "التاريخ والوقت" in display_df.columns:
+            display_df["التاريخ والوقت"] = display_df["التاريخ والوقت"].apply(
+                lambda x: x.strftime("%Y-%m-%d %I:%M:%S %p") if pd.notna(x) else ""
+            )
+        
+        st.dataframe(display_df, use_container_width=True, height=600)
+        
+        # Export options
+        st.markdown("---")
+        st.markdown("### 📥 تصدير السجلات")
+        
+        col_exp1, col_exp2 = st.columns(2)
+        
+        with col_exp1:
+            if st.button("📥 تصدير CSV", use_container_width=True, key="export_audit_csv"):
+                csv_data = export_to_csv(display_df, "audit_log_export.csv")
+                st.download_button(
+                    label="📥 تحميل CSV",
+                    data=csv_data,
+                    file_name=f"audit_log_{get_cairo_now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    key="download_audit_csv"
+                )
+                st.toast("✅ تم تجهيز الملف للتحميل", icon="📥")
+        
+        with col_exp2:
+            if st.button("📥 تصدير Excel", use_container_width=True, key="export_audit_excel"):
+                excel_data = export_to_excel(display_df, "audit_log_export.xlsx")
+                st.download_button(
+                    label="📥 تحميل Excel",
+                    data=excel_data,
+                    file_name=f"audit_log_{get_cairo_now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_audit_excel"
+                )
+                st.toast("✅ تم تجهيز الملف للتحميل", icon="📥")
+    else:
+        st.info("لا توجد سجلات مطابقة للتصفية المحددة.")
+
 # =============================================================================
 # Events Management System (Google Sheets)
 # =============================================================================
@@ -4629,12 +4914,12 @@ def main():
                 
                 # Define valid menu items for current role
                 all_menus = {
-                    "System Admin": [
-                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🌟 إدارة الأعضاء", "🏫 إدارة المراحل",
-                        "⚡ حضور سريع", "📋 الحضور", "📈 لوحة تحكم الحضور",
-                        "💬 الافتقاد", "📝 المسابقات والاختبارات", "📅 الفعاليات",
-                        "📊 التقارير والإحصائيات", "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
-                    ],
+            "System Admin": [
+                "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🌟 إدارة الأعضاء", "🏫 إدارة المراحل",
+                "⚡ حضور سريع", "📋 الحضور", "📈 لوحة تحكم الحضور",
+                "💬 الافتقاد", "📝 المسابقات والاختبارات", "📅 الفعاليات",
+                "📊 التقارير والإحصائيات", "📜 سجل العمليات", "🔐 سجل الدخول", "🔒 تغيير كلمة المرور"
+            ],
                     "Father Account": ["🏠 لوحة التحكم", "📅 الفعاليات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
                     "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
                                         "📝 المسابقات والاختبارات", "📅 الفعاليات",
