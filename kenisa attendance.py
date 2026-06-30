@@ -4099,7 +4099,7 @@ def show_events_page(db: Database):
                                 if selected_student:
                                     student_name = student_options[student_options.student_id == selected_student]["full_name"].values[0]
                                     if st.button("✅ تسجيل الحضور المتوقع", use_container_width=True, key="rsvp_submit"):
-                                        success = add_event_rsvp(selected_event_id, selected_student, student_name)
+                                        success = add_event_rsvp(db, selected_event_id, selected_student, student_name)
                                         if success:
                                             st.success(f"✅ تم تسجيل {student_name} في الفعالية")
                                             st.toast("✅ تم التسجيل!", icon="🎫")
@@ -4160,7 +4160,7 @@ def show_events_page(db: Database):
                             success_count = 0
                             for student_id, status in attendance_data.items():
                                 if status:
-                                    if update_event_attendance(selected_event_id, student_id, status):
+                                    if update_event_attendance(db, selected_event_id, student_id, status):
                                         success_count += 1
                             
                             if success_count > 0:
