@@ -16,4 +16,4 @@ pytz
 streamlit-camera-input-live
 pyzbar
 opencv-python-headless
-  
+numpy
