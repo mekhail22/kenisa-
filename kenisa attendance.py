@@ -18,6 +18,19 @@ from io import BytesIO, StringIO
 import base64
 import csv
 
+try:
+    from streamlit_camera_input_live import camera_input_live
+    CAMERA_AVAILABLE = True
+except ImportError:
+    CAMERA_AVAILABLE = False
+
+try:
+    from pyzbar import pyzbar
+    from PIL import Image
+    PYzbAR_AVAILABLE = True
+except ImportError:
+    PYzbAR_AVAILABLE = False
+
 # =============================================================================
 # الإعدادات العامة والثوابت
 # =============================================================================
@@ -1405,6 +1418,25 @@ class Database:
         df = self.get_logs()
         df = df[df.log_id != log_id]
         self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
+
+    # --- AuditLog (Google Sheets) for persistent security logging ---
+    def get_audit_logs_sheet(self):
+        return self._sheet_to_df("AuditLog")
+
+    def add_audit_log_sheet(self, entry: dict):
+        """Save audit log entry to Google Sheets for persistence on cloud."""
+        df = self.get_audit_logs_sheet()
+        if df.empty:
+            df = pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details",
+                                       "browser", "os", "device_type", "screen_size", "ip_masked",
+                                       "country", "city", "region", "privacy_consent"])
+        df = pd.concat([df, pd.DataFrame([entry])], ignore_index=True)
+        # Keep only last 2000 records
+        if len(df) > 2000:
+            df = df.tail(2000)
+        self._df_to_sheet("AuditLog", df, ["timestamp", "user_id", "user_name", "action", "details",
+                                           "browser", "os", "device_type", "screen_size", "ip_masked",
+                                           "country", "city", "region", "privacy_consent"])
 
 # =============================================================================
 # JWT & Session Helpers
@@ -4676,17 +4708,85 @@ def show_quick_checkin(db: Database):
             st.info("لا توجد بيانات حضور")
     
     with tab2:
-        st.markdown('<div class="card" style="text-align:center; padding:2rem;">', unsafe_allow_html=True)
         st.markdown("#### 📷 مسح QR Code")
-        st.info("⚠️ تحتاج تثبيت streamlit-camera-input-live لتشغيل ماسح QR Code")
-        st.markdown("""
-        <div style="padding:2rem; background:var(--gold-light); border-radius:12px; margin:1rem 0;">
-            <span style="font-size:3rem;">📷</span>
-            <p style="font-size:1.1rem; font-weight:600; margin-top:0.5rem;">كاميرا المسح ستظهر هنا</p>
-            <p style="font-size:0.9rem; color:var(--text-secondary);">قم بتوجيه الكاميرا نحو QR Code الخاص بالطالبة</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        if not CAMERA_AVAILABLE or not PYzbAR_AVAILABLE:
+            st.warning("⚠️ المكتبات المطلوبة غير مثبتة. يرجى تثبيت streamlit-camera-input-live و pyzbar")
+            st.code("pip install streamlit-camera-input-live pyzbar opencv-python-headless")
+        else:
+            st.info("وجه الكاميرا نحو QR Code الخاص بالطالبة")
+            camera_image = camera_input_live("التقاط صورة", key="qr_camera")
+            if camera_image is not None:
+                image = Image.open(camera_image)
+                decoded_objects = pyzbar.decode(image)
+                if decoded_objects:
+                    qr_text = decoded_objects[0].data.decode("utf-8", errors="ignore")
+                    st.success(f"✅ تم قراءة QR Code: {qr_text}")
+                    # Try to extract student info from QR text
+                    name = None
+                    sid = None
+                    for part in qr_text.splitlines():
+                        if part.startswith("Member:"):
+                            name = part.replace("Member:", "").strip()
+                        elif part.startswith("ID:"):
+                            sid = part.replace("ID:", "").strip()
+                    if not name or not sid:
+                        st.warning("⚠️ لم يتم التعرف على بيانات الطالبة من QR Code")
+                    else:
+                        # Check if student exists
+                        student_match = students[(students["student_id"] == sid) | (students["full_name"] == name)]
+                        if student_match.empty:
+                            st.error(f"❌ الطالبة {name} غير موجودة في النظام")
+                        else:
+                            student_row = student_match.iloc[0]
+                            section_name = student_row.get("section_name", "بدون خدمة")
+                            st.markdown(f"""
+                            <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0;">
+                                <div class="member-avatar" style="background:{get_avatar_color(name)};">{name[0]}</div>
+                                <div style="flex:1;">
+                                    <div style="font-weight:700; font-size:1.1rem;">{name}</div>
+                                    <div style="font-size:0.85rem; color:var(--text-secondary);">{section_name}</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            col_present, col_absent = st.columns(2)
+                            with col_present:
+                                if st.button("✅ تسجيل حضور", use_container_width=True, type="primary", key="qr_present"):
+                                    today_str = get_cairo_now().strftime("%Y-%m-%d")
+                                    existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
+                                    record_id = str(uuid.uuid4())
+                                    if not existing.empty and sid in existing["student_id"].values:
+                                        record_id = existing[existing.student_id == sid]["record_id"].values[0]
+                                    db.batch_add_attendance([{
+                                        "record_id": record_id, "date": today_str, "student_id": sid,
+                                        "status": "حاضر", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
+                                        "section_id": student_row.get("section_id", "")
+                                    }])
+                                    db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع QR - {name}")
+                                    add_attendance_record(sid, name, "حاضر", method="QR")
+                                    st.success(f"✅ تم تسجيل حضور {name}")
+                                    st.toast(f"✅ تم تسجيل حضور {name}!", icon="✅")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            with col_absent:
+                                if st.button("❌ تسجيل غياب", use_container_width=True, key="qr_absent"):
+                                    today_str = get_cairo_now().strftime("%Y-%m-%d")
+                                    existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
+                                    record_id = str(uuid.uuid4())
+                                    if not existing.empty and sid in existing["student_id"].values:
+                                        record_id = existing[existing.student_id == sid]["record_id"].values[0]
+                                    db.batch_add_attendance([{
+                                        "record_id": record_id, "date": today_str, "student_id": sid,
+                                        "status": "غائب", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
+                                        "section_id": student_row.get("section_id", "")
+                                    }])
+                                    db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع QR - {name}")
+                                    add_attendance_record(sid, name, "غائب", method="QR")
+                                    st.warning(f"❌ تم تسجيل غياب {name}")
+                                    st.toast(f"❌ تم تسجيل غياب {name}", icon="⚠️")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                else:
+                    st.info("لم يتم التعرف على QR Code. حاول مرة أخرى.")
     
     # ===== Attendance History Table (last 10 records) =====
     st.markdown("---")
