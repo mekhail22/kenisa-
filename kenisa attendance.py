@@ -27,9 +27,9 @@ except ImportError:
 try:
     from pyzbar import pyzbar
     from PIL import Image
-    PYzbAR_AVAILABLE = True
+    PYZBAR_AVAILABLE = True
 except ImportError:
-    PYzbAR_AVAILABLE = False
+    PYZBAR_AVAILABLE = False
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -4709,7 +4709,7 @@ def show_quick_checkin(db: Database):
     
     with tab2:
         st.markdown("#### 📷 مسح QR Code")
-        if not CAMERA_AVAILABLE or not PYzbAR_AVAILABLE:
+        if not CAMERA_AVAILABLE or not PYZBAR_AVAILABLE:
             st.warning("⚠️ المكتبات المطلوبة غير مثبتة. يرجى تثبيت streamlit-camera-input-live و pyzbar")
             st.code("pip install streamlit-camera-input-live pyzbar opencv-python-headless")
         else:
