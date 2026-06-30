@@ -49,6 +49,37 @@ import os
 
 AUDIT_LOG_FILE = "audit_log.csv"
 USERS_FILE = "users.csv"
+ATTENDANCE_HISTORY_FILE = "attendance_history.csv"
+
+def load_attendance_history() -> pd.DataFrame:
+    """Load attendance history from CSV file."""
+    try:
+        df = pd.read_csv(ATTENDANCE_HISTORY_FILE, encoding='utf-8-sig')
+        if df.empty:
+            return pd.DataFrame(columns=["timestamp", "student_id", "student_name", "status", "method"])
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["timestamp", "student_id", "student_name", "status", "method"])
+
+def save_attendance_history(df: pd.DataFrame):
+    """Save attendance history DataFrame to CSV file."""
+    df.to_csv(ATTENDANCE_HISTORY_FILE, index=False, encoding='utf-8-sig')
+
+def add_attendance_record(student_id: str, student_name: str, status: str, method: str = "يدوي"):
+    """Add a new attendance record with current timestamp to history CSV."""
+    df = load_attendance_history()
+    new_record = {
+        "timestamp": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
+        "student_id": student_id,
+        "student_name": student_name,
+        "status": status,
+        "method": method
+    }
+    df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
+    # Keep only last 1000 records to prevent file bloat
+    if len(df) > 1000:
+        df = df.tail(1000)
+    save_attendance_history(df)
 
 def hash_password(password: str) -> str:
     """Hash password using SHA256."""
@@ -891,6 +922,7 @@ class Database:
     def _ensure_required_sheets(self):
         """Ensure all required sheets exist with proper headers."""
         sheets_config = {
+            "Logs": ["log_id", "timestamp", "user_id", "action", "details"],
             "Events": ["event_id", "event_name", "event_date", "location", "event_type",
                        "description", "max_attendees", "created_by", "created_at"],
             "EventRSVPs": ["rsvp_id", "event_id", "student_id", "student_name",
@@ -4477,7 +4509,7 @@ def show_print_all_qr_codes(db: Database):
 # Quick Check-in
 # =============================================================================
 def show_quick_checkin(db: Database):
-    """Quick attendance check-in with search autocomplete."""
+    """Quick attendance check-in with search autocomplete and QR placeholder."""
     st.markdown("<h2 class='main-header'>⚡ تسجيل حضور سريع</h2>", unsafe_allow_html=True)
     
     user = st.session_state.user
@@ -4507,133 +4539,172 @@ def show_quick_checkin(db: Database):
     else:
         students["section_name"] = ""
     
-    # Search with autocomplete
-    st.markdown('<div class="filter-container">', unsafe_allow_html=True)
-    search_term = st.text_input("🔍 بحث بالاسم", placeholder="اكتب اسم الطالبة...", key="quick_checkin_search")
-    st.markdown('</div>', unsafe_allow_html=True)
+    # ===== Tabs: Manual Check-in & QR Scanner =====
+    tab1, tab2 = st.tabs(["⌨️ تسجيل يدوي", "📷 مسح QR Code"])
     
-    if search_term:
-        filtered = students[students["full_name"].astype(str).str.contains(search_term, na=False, case=False)]
-        if not filtered.empty:
-            selected_student = st.selectbox(
-                "اختر الطالبة",
-                filtered["student_id"].tolist(),
-                format_func=lambda x: filtered[filtered.student_id == x]["full_name"].values[0],
-                key="selected_student_checkin"
-            )
-            
-            if selected_student:
-                student_row = filtered[filtered.student_id == selected_student].iloc[0]
-                name = student_row.get("full_name", "")
-                section_name = student_row.get("section_name", "")
-                sid = selected_student
-                
-                # Display member info
-                avatar_color = get_avatar_color(name)
-                first_letter = name[0] if name else "?"
-                
-                st.markdown(f"""
-                <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0;">
-                    <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
-                    <div style="flex:1;">
-                        <div style="font-weight:700; font-size:1.1rem;">{name}</div>
-                        <div style="font-size:0.85rem; color:var(--text-secondary);">{section_name if section_name else 'بدون خدمة'}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Quick check-in buttons
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("✅ حضور", use_container_width=True, type="primary", key="quick_present"):
-                        today_str = get_cairo_now().strftime("%Y-%m-%d")
-                        existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
-                        
-                        record_id = str(uuid.uuid4())
-                        if not existing.empty and sid in existing["student_id"].values:
-                            record_id = existing[existing.student_id == sid]["record_id"].values[0]
-                        
-                        db.batch_add_attendance([{
-                            "record_id": record_id,
-                            "date": today_str,
-                            "student_id": sid,
-                            "status": "حاضر",
-                            "notes": "تسجيل سريع",
-                            "recorded_by": user.get("user_id", ""),
-                            "section_id": student_row.get("section_id", "")
-                        }])
-                        db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع - {name}")
-                        st.success(f"✅ تم تسجيل حضور {name}")
-                        st.toast(f"✅ تم تسجيل حضور {name}!", icon="✅")
-                        time.sleep(0.5)
-                        st.rerun()
-                
-                with col2:
-                    if st.button("❌ غياب", use_container_width=True, key="quick_absent"):
-                        today_str = get_cairo_now().strftime("%Y-%m-%d")
-                        existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
-                        
-                        record_id = str(uuid.uuid4())
-                        if not existing.empty and sid in existing["student_id"].values:
-                            record_id = existing[existing.student_id == sid]["record_id"].values[0]
-                        
-                        db.batch_add_attendance([{
-                            "record_id": record_id,
-                            "date": today_str,
-                            "student_id": sid,
-                            "status": "غائب",
-                            "notes": "تسجيل سريع",
-                            "recorded_by": user.get("user_id", ""),
-                            "section_id": student_row.get("section_id", "")
-                        }])
-                        db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع - {name}")
-                        st.warning(f"❌ تم تسجيل غياب {name}")
-                        st.toast(f"❌ تم تسجيل غياب {name}", icon="⚠️")
-                        time.sleep(0.5)
-                        st.rerun()
-        else:
-            st.warning("⚠️ لا توجد نتائج")
-    
-    # Today's attendance list
-    st.markdown("---")
-    st.subheader("📋 الحاضرين اليوم")
-    today_str = get_cairo_now().strftime("%Y-%m-%d")
-    today_attendance = db.get_attendance()
-    
-    if not today_attendance.empty and "date" in today_attendance.columns:
-        today_attendance = today_attendance[today_attendance.date == today_str]
+    with tab1:
+        # Search with autocomplete
+        st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+        search_term = st.text_input("🔍 بحث بالاسم", placeholder="اكتب اسم الطالبة...", key="quick_checkin_search")
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        if not today_attendance.empty:
-            # Merge with student names
-            if "student_id" in today_attendance.columns and not students.empty:
-                today_attendance = today_attendance.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+        if search_term:
+            filtered = students[students["full_name"].astype(str).str.contains(search_term, na=False, case=False)]
+            if not filtered.empty:
+                selected_student = st.selectbox(
+                    "اختر الطالبة",
+                    filtered["student_id"].tolist(),
+                    format_func=lambda x: filtered[filtered.student_id == x]["full_name"].values[0],
+                    key="selected_student_checkin"
+                )
+                
+                if selected_student:
+                    student_row = filtered[filtered.student_id == selected_student].iloc[0]
+                    name = student_row.get("full_name", "")
+                    section_name = student_row.get("section_name", "")
+                    sid = selected_student
+                    
+                    # Display member info
+                    avatar_color = get_avatar_color(name)
+                    first_letter = name[0] if name else "?"
+                    
+                    st.markdown(f"""
+                    <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0;">
+                        <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
+                        <div style="flex:1;">
+                            <div style="font-weight:700; font-size:1.1rem;">{name}</div>
+                            <div style="font-size:0.85rem; color:var(--text-secondary);">{section_name if section_name else 'بدون خدمة'}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Quick check-in buttons
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ حضور", use_container_width=True, type="primary", key="quick_present"):
+                            today_str = get_cairo_now().strftime("%Y-%m-%d")
+                            existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
+                            
+                            record_id = str(uuid.uuid4())
+                            if not existing.empty and sid in existing["student_id"].values:
+                                record_id = existing[existing.student_id == sid]["record_id"].values[0]
+                            
+                            db.batch_add_attendance([{
+                                "record_id": record_id,
+                                "date": today_str,
+                                "student_id": sid,
+                                "status": "حاضر",
+                                "notes": "تسجيل سريع",
+                                "recorded_by": user.get("user_id", ""),
+                                "section_id": student_row.get("section_id", "")
+                            }])
+                            db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع - {name}")
+                            # Save to attendance history CSV
+                            add_attendance_record(sid, name, "حاضر", method="يدوي")
+                            st.success(f"✅ تم تسجيل حضور {name}")
+                            st.toast(f"✅ تم تسجيل حضور {name}!", icon="✅")
+                            time.sleep(0.5)
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("❌ غياب", use_container_width=True, key="quick_absent"):
+                            today_str = get_cairo_now().strftime("%Y-%m-%d")
+                            existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
+                            
+                            record_id = str(uuid.uuid4())
+                            if not existing.empty and sid in existing["student_id"].values:
+                                record_id = existing[existing.student_id == sid]["record_id"].values[0]
+                            
+                            db.batch_add_attendance([{
+                                "record_id": record_id,
+                                "date": today_str,
+                                "student_id": sid,
+                                "status": "غائب",
+                                "notes": "تسجيل سريع",
+                                "recorded_by": user.get("user_id", ""),
+                                "section_id": student_row.get("section_id", "")
+                            }])
+                            db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع - {name}")
+                            # Save to attendance history CSV
+                            add_attendance_record(sid, name, "غائب", method="يدوي")
+                            st.warning(f"❌ تم تسجيل غياب {name}")
+                            st.toast(f"❌ تم تسجيل غياب {name}", icon="⚠️")
+                            time.sleep(0.5)
+                            st.rerun()
+            else:
+                st.warning("⚠️ لا توجد نتائج")
+        
+        # Today's attendance list
+        st.markdown("---")
+        st.subheader("📋 الحاضرين اليوم")
+        today_str = get_cairo_now().strftime("%Y-%m-%d")
+        today_attendance = db.get_attendance()
+        
+        if not today_attendance.empty and "date" in today_attendance.columns:
+            today_attendance = today_attendance[today_attendance.date == today_str]
             
-            if "status" in today_attendance.columns:
-                present = today_attendance[today_attendance.status == "حاضر"]
-                absent = today_attendance[today_attendance.status == "غائب"]
+            if not today_attendance.empty:
+                # Merge with student names
+                if "student_id" in today_attendance.columns and not students.empty:
+                    today_attendance = today_attendance.merge(students[["student_id", "full_name"]], on="student_id", how="left")
                 
-                col_p, col_a = st.columns(2)
-                col_p.metric("✅ الحاضرون", len(present))
-                col_a.metric("❌ الغائبون", len(absent))
-                
-                st.markdown("#### الحاضرين:")
-                if not present.empty:
-                    for _, att in present.iterrows():
-                        att_time = get_cairo_now().strftime("%I:%M %p")
-                        st.write(f"✅ {att.get('full_name', '')} - {att_time}")
-                else:
-                    st.info("لا يوجد حضور حتى الآن")
-                
-                st.markdown("#### الغائبون:")
-                if not absent.empty:
-                    for _, att in absent.iterrows():
-                        st.write(f"❌ {att.get('full_name', '')}")
-                else:
-                    st.info("لا يوجد غياب")
+                if "status" in today_attendance.columns:
+                    present = today_attendance[today_attendance.status == "حاضر"]
+                    absent = today_attendance[today_attendance.status == "غائب"]
+                    
+                    col_p, col_a = st.columns(2)
+                    col_p.metric("✅ الحاضرون", len(present))
+                    col_a.metric("❌ الغائبون", len(absent))
+                    
+                    st.markdown("#### الحاضرين:")
+                    if not present.empty:
+                        for _, att in present.iterrows():
+                            att_time = get_cairo_now().strftime("%I:%M %p")
+                            st.write(f"✅ {att.get('full_name', '')} - {att_time}")
+                    else:
+                        st.info("لا يوجد حضور حتى الآن")
+                    
+                    st.markdown("#### الغائبون:")
+                    if not absent.empty:
+                        for _, att in absent.iterrows():
+                            st.write(f"❌ {att.get('full_name', '')}")
+                    else:
+                        st.info("لا يوجد غياب")
+            else:
+                st.info("لا توجد سجلات حضور لهذا اليوم")
         else:
-            st.info("لا توجد سجلات حضور لهذا اليوم")
+            st.info("لا توجد بيانات حضور")
+    
+    with tab2:
+        st.markdown('<div class="card" style="text-align:center; padding:2rem;">', unsafe_allow_html=True)
+        st.markdown("#### 📷 مسح QR Code")
+        st.info("⚠️ تحتاج تثبيت streamlit-camera-input-live لتشغيل ماسح QR Code")
+        st.markdown("""
+        <div style="padding:2rem; background:var(--gold-light); border-radius:12px; margin:1rem 0;">
+            <span style="font-size:3rem;">📷</span>
+            <p style="font-size:1.1rem; font-weight:600; margin-top:0.5rem;">كاميرا المسح ستظهر هنا</p>
+            <p style="font-size:0.9rem; color:var(--text-secondary);">قم بتوجيه الكاميرا نحو QR Code الخاص بالطالبة</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # ===== Attendance History Table (last 10 records) =====
+    st.markdown("---")
+    st.subheader("📜 آخر 10 تسجيلات حضور")
+    history_df = load_attendance_history()
+    if not history_df.empty:
+        # Sort by timestamp descending and take last 10
+        history_df = history_df.sort_values("timestamp", ascending=False).head(10)
+        # Rename columns for display
+        display_history = history_df.rename(columns={
+            "timestamp": "الوقت",
+            "student_name": "الاسم",
+            "status": "الحالة",
+            "method": "طريقة التسجيل"
+        })
+        st.dataframe(display_history[["الوقت", "الاسم", "الحالة", "طريقة التسجيل"]], use_container_width=True)
     else:
-        st.info("لا توجد بيانات حضور")
+        st.info("لا توجد تسجيلات حضور سابقة.")
 
 # =============================================================================
 # Attendance Dashboard with Charts
