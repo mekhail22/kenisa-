@@ -46,7 +46,6 @@ st.set_page_config(
 # =============================================================================
 import hashlib
 import os
-from user_agents import parse
 
 AUDIT_LOG_FILE = "audit_log.csv"
 USERS_FILE = "users.csv"
@@ -77,23 +76,14 @@ def get_client_info():
     """Get client browser, OS, device type, and screen size from session state or request."""
     try:
         ua_string = st.session_state.get('user_agent', '')
-        if ua_string:
-            user_agent = parse(ua_string)
-            browser = user_agent.browser.family if user_agent.browser else "Unknown"
-            os_name = user_agent.os.family if user_agent.os else "Unknown"
-            device_type = "Mobile" if user_agent.is_mobile else ("Tablet" if user_agent.is_tablet else "Desktop")
-        else:
-            browser = "Unknown"
-            os_name = "Unknown"
-            device_type = "Desktop"
         
         screen_width = st.session_state.get('screen_width', 'Unknown')
         screen_height = st.session_state.get('screen_height', 'Unknown')
         
         return {
-            'browser': browser,
-            'os': os_name,
-            'device_type': device_type,
+            'browser': 'Unknown',
+            'os': 'Unknown',
+            'device_type': 'Desktop',
             'screen_width': screen_width,
             'screen_height': screen_height
         }
@@ -4387,12 +4377,12 @@ def add_event(db, event_data):
     db.add_event(new_event)
     return new_event["event_id"]
 
-def delete_event(event_id):
+def delete_event(db, event_id):
     db.delete_event(event_id)
     # Also delete all RSVPs for this event
     db.delete_event_rsvps(event_id)
 
-def add_event_rsvp(event_id, student_id, student_name):
+def add_event_rsvp(db, event_id, student_id, student_name):
     new_rsvp = {
         "rsvp_id": str(uuid.uuid4()),
         "event_id": event_id,
@@ -4404,7 +4394,7 @@ def add_event_rsvp(event_id, student_id, student_name):
     }
     return db.add_event_rsvp(new_rsvp)
 
-def update_event_attendance(event_id, student_id, attendance_status):
+def update_event_attendance(db, event_id, student_id, attendance_status):
     return db.update_event_attendance(event_id, student_id, attendance_status)
 
 def get_upcoming_events(db, days=3):
