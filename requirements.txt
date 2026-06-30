@@ -18,6 +18,4 @@ qrcode>=8.0
 Pillow>=10.0.0
 python-dateutil>=2.8.0
 pytz>=2023.0
-streamlit-camera-input-live
-pyzbar
-opencv-python-headless
+opencv-contrib-python
