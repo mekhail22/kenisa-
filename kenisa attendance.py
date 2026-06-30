@@ -784,6 +784,22 @@ class Database:
     def __init__(self, creds, spreadsheet_id):
         self.client = gspread.authorize(creds)
         self.spreadsheet = self.client.open_by_key(spreadsheet_id)
+        self._ensure_required_sheets()
+
+    def _ensure_required_sheets(self):
+        """Ensure all required sheets exist with proper headers."""
+        sheets_config = {
+            "Events": ["event_id", "event_name", "event_date", "location", "event_type",
+                       "description", "max_attendees", "created_by", "created_at"],
+            "EventRSVPs": ["rsvp_id", "event_id", "student_id", "student_name",
+                           "rsvp_status", "rsvp_date", "actual_attendance"]
+        }
+        for sheet_name, columns in sheets_config.items():
+            try:
+                ws = self.spreadsheet.worksheet(sheet_name)
+            except gspread.WorksheetNotFound:
+                ws = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=len(columns))
+                ws.append_row(columns)
 
     def _get_or_create_worksheet(self, name, columns):
         Database._rate_limit()
