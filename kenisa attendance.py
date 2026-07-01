@@ -28,15 +28,32 @@ except ImportError:
 
 try:
     from PIL import Image
-    from pyzbar import pyzbar
-    PYNBAR_AVAILABLE = True
+    PYPLACE_AVAILABLE = True
 except ImportError:
-    PYNBAR_AVAILABLE = False
+    PYPLACE_AVAILABLE = False
     Image = None
-    pyzbar = None
 
-# Browser-based QR scanner fallback
-BROWSER_QR_AVAILABLE = True  # Always available via JavaScript
+# Note: pyzbar removed due to system library dependency (libzbar) not available on Streamlit Cloud
+# Using a browser-based QR scanner instead
+
+# Browser-based QR scanner fallback  
+def decode_qr_from_image(image):
+    """
+    Decode QR code from a PIL Image using browser-based approach.
+    Falls back to OpenCV if available, otherwise shows a message.
+    """
+    if CV2_AVAILABLE:
+        try:
+            import cv2
+            import numpy as np
+            gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
+            detector = cv2.QRCodeDetector()
+            data, bbox, _ = detector.detectAndDecode(gray)
+            if data:
+                return data
+        except Exception as e:
+            pass
+    return None
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -1540,7 +1557,6 @@ def init_session():
         "authenticated": False,
         "user": None,
         "token": None,
-        "privacy_consent": False,
         "student_quiz": None,
         "student_quiz_started": False,
         "quiz_phase": "enter_name",
@@ -1775,20 +1791,24 @@ def show_login_page(db: Database, jwt_secret: str):
     
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
+        st.warning("""
+        ⚠️ **تنبيه هام - سياسة الأمان والخصوصية**
+        
+        عند تسجيل الدخول، يقوم النظام تلقائياً بتسجيل:
+        - عنوان IP (مشفر)
+        - نوع المتصفح ونظام التشغيل
+        - نوع الجهاز
+        
+        هذه البيانات تستخدم **لأغراض أمنية فقط** لحماية النظام ومراقبة النشاط المشبوه.
+        """)
+        
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم").strip()
             password = st.text_input("كلمة المرور", type="password").strip()
             st.markdown("---")
-            privacy_consent = st.checkbox(
-                "✅ أوافق على جمع بيانات الدخول (المتصفح، نظام التشغيل، نوع الجهاز) لأغراض أمنية",
-                value=False,
-                help="نقوم بجمع معلومات أساسية عن جهازك وتصفحك لحماية النظام"
-            )
-            if st.form_submit_button("تسجيل الدخول", use_container_width=True):
+            if st.form_submit_button("🔐 تسجيل الدخول", use_container_width=True, type="primary"):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
-                elif not privacy_consent:
-                    st.error("⚠️ يجب الموافقة على سياسة الخصوصية للمتابعة")
                 else:
                     with st.spinner("جاري التحقق..."):
                         users = db.get_users()
@@ -1802,7 +1822,6 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.token = token
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
-                                st.session_state.privacy_consent = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
                                 st.session_state.show_sidebar = True
                                 db.add_log(user.get("user_id", ""), "تسجيل الدخول")
@@ -5535,7 +5554,7 @@ def show_bulk_attendance(db: Database):
     else:
         selected_section = st.selectbox("اختر الفصل", sections["section_id"],
                                        format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0])
-    
+
     section_students = students[students.section_id == selected_section] if not students.empty and "section_id" in students.columns else pd.DataFrame()
     if section_students.empty:
         st.info("لا توجد طالبات في هذا الفصل.")
