@@ -4489,10 +4489,17 @@ def validate_qr_code(db: Database, qr_data: str, students_df: pd.DataFrame) -> d
 
 def check_duplicate_attendance(db: Database, student_id: str, date_str: str) -> bool:
     """Check if student already has attendance record for today."""
-    existing = db.get_attendance_by_date_section(date_str, "")
-    if existing.empty or "student_id" not in existing.columns:
+    attendance = db.get_attendance()
+    if attendance.empty or "student_id" not in attendance.columns or "date" not in attendance.columns:
         return False
-    return student_id in existing["student_id"].values
+    # Convert date column to datetime for comparison
+    if not pd.api.types.is_datetime64_any_dtype(attendance["date"]):
+        attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
+    # Filter for matching date and student
+    today_att = attendance[attendance["date"] == date_str]
+    if today_att.empty:
+        return False
+    return student_id in today_att["student_id"].values
 
 def auto_register_absence(db: Database, absence_time: str = "09:00"):
     """Background thread function to auto-register absence for students who didn't check in."""
@@ -5346,76 +5353,74 @@ def show_quick_checkin(db: Database):
                         st.session_state.qr_scan_result = None
                         st.rerun()
                 else:
-                    # No duplicate - show student info and action buttons
-                    section_name = ""
-                    if not sections.empty and section_id in sections["section_id"].values:
-                        section_name = sections[sections.section_id == section_id]["section_name"].values[0]
+                    # Valid QR - automatically mark ONLY this scanned girl as present
+                    student_id = validation['student_id']
+                    student_name = validation['student_name']
+                    section_id = validation['section_id']
                     
-                    avatar_color = get_avatar_color(student_name)
-                    first_letter = student_name[0] if student_name else "?"
+                    # Check duplicate attendance
+                    today_str = get_cairo_now().strftime("%Y-%m-%d")
+                    is_duplicate = check_duplicate_attendance(db, student_id, today_str)
                     
-                    st.markdown(f"""
-                    <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0; border: 2px solid #28a745;">
-                        <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
-                        <div style="flex:1;">
-                            <div style="font-weight:700; font-size:1.1rem;">✅ QR Code صالح - {student_name}</div>
-                            <div style="font-size:0.85rem; color:var(--text-secondary);">{section_name if section_name else 'بدون خدمة'}</div>
+                    if is_duplicate:
+                        st.warning(f"⚠️ تم تسجيل حضور {student_name} مسبقاً اليوم!")
+                        st.info("لا يمكن تسجيل الحضور أكثر من مرة في نفس اليوم.")
+                        log_details_operation(
+                            db=db,
+                            student_id=student_id,
+                            student_name=student_name,
+                            status="Duplicate",
+                            operation_type="QR_Scan_Duplicate",
+                            qr_data=raw_qr_data,
+                            device_info="QR Scanner",
+                            notes="محاولة تسجيل مكرر في نفس اليوم"
+                        )
+                        if st.button("حسناً", key="duplicate_ok"):
+                            st.session_state.qr_scan_result = None
+                            st.rerun()
+                    else:
+                        # Show scanned student info
+                        section_name = ""
+                        if not sections.empty and section_id in sections["section_id"].values:
+                            section_name = sections[sections.section_id == section_id]["section_name"].values[0]
+                        
+                        avatar_color = get_avatar_color(student_name)
+                        first_letter = student_name[0] if student_name else "?"
+                        
+                        st.markdown(f"""
+                        <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0; border: 2px solid #28a745;">
+                            <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:1.1rem;">✅ تم تسجيل حضور {student_name}</div>
+                                <div style="font-size:0.85rem; color:var(--text-secondary);">{section_name if section_name else 'بدون خدمة'}</div>
+                            </div>
                         </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    col_present, col_absent = st.columns(2)
-                    with col_present:
-                        if st.button("✅ تسجيل حضور", use_container_width=True, type="primary", key="qr_present"):
-                            record_id = str(uuid.uuid4())
-                            db.batch_add_attendance([{
-                                "record_id": record_id, "date": today_str, "student_id": student_id,
-                                "status": "حاضر", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
-                                "section_id": section_id
-                            }])
-                            db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع QR - {student_name}")
-                            add_attendance_record(student_id, student_name, "حاضر", method="QR")
-                            log_details_operation(
-                                db=db,
-                                student_id=student_id,
-                                student_name=student_name,
-                                status="Present",
-                                operation_type="QR_Checkin_Success",
-                                qr_data=raw_qr_data,
-                                device_info="QR Scanner",
-                                notes="تم التسجيل بنجاح"
-                            )
-                            st.success(f"✅ تم تسجيل حضور {student_name}")
-                            st.toast(f"✅ تم تسجيل حضور {student_name}!", icon="✅")
-                            time.sleep(0.5)
-                            st.session_state.qr_scan_result = None
-                            st.rerun()
-                    
-                    with col_absent:
-                        if st.button("❌ تسجيل غياب", use_container_width=True, key="qr_absent"):
-                            record_id = str(uuid.uuid4())
-                            db.batch_add_attendance([{
-                                "record_id": record_id, "date": today_str, "student_id": student_id,
-                                "status": "غائب", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
-                                "section_id": section_id
-                            }])
-                            add_attendance_record(student_id, student_name, "غائب", method="QR")
-                            db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع QR - {student_name}")
-                            log_details_operation(
-                                db=db,
-                                student_id=student_id,
-                                student_name=student_name,
-                                status="Absent",
-                                operation_type="QR_Checkin_Absent",
-                                qr_data=raw_qr_data,
-                                device_info="QR Scanner",
-                                notes="تم تسجيل الغياب"
-                            )
-                            st.warning(f"❌ تم تسجيل غياب {student_name}")
-                            st.toast(f"❌ تم تسجيل غياب {student_name}", icon="⚠️")
-                            time.sleep(0.5)
-                            st.session_state.qr_scan_result = None
-                            st.rerun()
+                        """, unsafe_allow_html=True)
+                        
+                        # Automatically mark ONLY this student as present
+                        record_id = str(uuid.uuid4())
+                        db.batch_add_attendance([{
+                            "record_id": record_id, "date": today_str, "student_id": student_id,
+                            "status": "حاضر", "notes": "تسجيل تلقائي QR", "recorded_by": user.get("user_id", ""),
+                            "section_id": section_id
+                        }])
+                        db.add_log(user.get("user_id", ""), f"تسجيل حضور تلقائي QR - {student_name}")
+                        add_attendance_record(student_id, student_name, "حاضر", method="QR")
+                        log_details_operation(
+                            db=db,
+                            student_id=student_id,
+                            student_name=student_name,
+                            status="Present",
+                            operation_type="QR_Checkin_Auto",
+                            qr_data=raw_qr_data,
+                            device_info="QR Scanner",
+                            notes="تسجيل تلقائي عند مسح الكود"
+                        )
+                        st.success(f"✅ تم تسجيل حضور {student_name} تلقائياً")
+                        st.toast(f"✅ تم تسجيل حضور {student_name}!", icon="✅")
+                        time.sleep(1)
+                        st.session_state.qr_scan_result = None
+                        st.rerun()
     
     # ===== Attendance History Table (last 10 records) =====
     st.markdown("---")
