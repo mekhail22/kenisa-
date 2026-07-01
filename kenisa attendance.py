@@ -28,15 +28,15 @@ except ImportError:
 
 try:
     from PIL import Image
-except ImportError:
-    Image = None
-
-try:
     from pyzbar import pyzbar
     PYNBAR_AVAILABLE = True
 except ImportError:
     PYNBAR_AVAILABLE = False
+    Image = None
     pyzbar = None
+
+# Browser-based QR scanner fallback
+BROWSER_QR_AVAILABLE = True  # Always available via JavaScript
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -4716,156 +4716,260 @@ def show_quick_checkin(db: Database):
     
     with tab2:
         st.markdown("#### 📷 مسح QR Code")
+        st.info("📱 وجه الكاميرا نحو QR Code للطالبة")
+        
+        # Browser-based QR scanner using HTML5 and JavaScript (no Python library needed)
+        qr_scanner_html = """
+        <div id="qr-scanner-container" style="width: 100%; max-width: 640px; margin: 0 auto; padding: 1rem; background: var(--card-bg); border-radius: 12px;">
+            <div id="qr-scanner" style="width: 100%; min-height: 300px; background: #000; border-radius: 8px; position: relative;">
+                <video id="video" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;" playsinline></video>
+                <canvas id="canvas" style="display: none;"></canvas>
+                <div id="qr-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 2px solid #d4af37; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);"></div>
+            </div>
+            <div id="qr-status" style="margin-top: 1rem; padding: 0.8rem; background: var(--gold-light); border-radius: 8px; text-align: center; font-weight: 600; color: var(--text-primary);">
+                ⏳ جاري تشغيل الكاميرا...
+            </div>
+            <button id="start-scan-btn" style="margin-top: 1rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1rem;">
+                📷 بدء المسح
+            </button>
+        </div>
 
-        if not CV2_AVAILABLE:
-            st.warning("⚠️ مكتبة OpenCV غير مثبتة. يُرجى تثبيتها لاستخدام هذه الميزة.")
-            st.code("pip install opencv-python", language="bash")
-            st.info("📱 يمكنك استخدام التسجيل اليدوي في التبويب الأول")
-        else:
-            st.info("📱 اختر طريقة مسح QR Code:")
+        <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+        <script>
+            let video = document.getElementById('video');
+            let canvas = document.getElementById('canvas');
+            let ctx = canvas.getContext('2d');
+            let scanning = false;
+            let stream = null;
 
-            scan_method = st.radio(
-                "طريقة المسح",
-                ["📷 الكاميرا", "📁 رفع صورة"],
-                horizontal=True,
-                key="qr_scan_method"
-            )
+            function startCamera() {
+                const statusDiv = document.getElementById('qr-status');
+                const startBtn = document.getElementById('start-scan-btn');
+                
+                if (scanning) {
+                    stopCamera();
+                    return;
+                }
 
-            image = None
+                navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    } 
+                })
+                .then(function(mediaStream) {
+                    stream = mediaStream;
+                    video.srcObject = mediaStream;
+                    video.setAttribute('playsinline', true);
+                    video.play();
+                    scanning = true;
+                    statusDiv.innerHTML = '✅ الكامiera تعمل - وجّهها نحو QR Code';
+                    statusDiv.style.background = 'rgba(40,167,69,0.15)';
+                    startBtn.innerHTML = '⏹️ إيقاف المسح';
+                    startBtn.style.background = 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
+                    requestAnimationFrame(tick);
+                })
+                .catch(function(err) {
+                    console.error("Camera error:", err);
+                    statusDiv.innerHTML = '❌ خطأ في الوصول للكاميرا: ' + err.message;
+                    statusDiv.style.background = 'rgba(220,53,69,0.15)';
+                });
+            }
 
-            if scan_method == "📷 الكاميرا":
-                camera_image = st.camera_input(
-                    "وجه الكاميرا نحو QR Code واضغط التقاط",
-                    key="qr_camera_input",
-                    help="تأكد من إضاءة جيدة ووضوح QR Code"
-                )
-                if camera_image is not None:
-                    image = Image.open(camera_image)
+            function stopCamera() {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                scanning = false;
+                const statusDiv = document.getElementById('qr-status');
+                const startBtn = document.getElementById('start-scan-btn');
+                statusDiv.innerHTML = '⏹️ الكاميرا متوقفة';
+                statusDiv.style.background = 'var(--gold-light)';
+                startBtn.innerHTML = '📷 بدء المسح';
+                startBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            }
+
+            function tick() {
+                if (!scanning) return;
+                
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    
+                    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    let code = jsQR(imageData.data, imageData.width, imageData.height, {
+                        inversionAttempts: 'dontInvert'
+                    });
+                    
+                    if (code) {
+                        // QR Code found!
+                        stopCamera();
+                        
+                        // Parse QR data
+                        const parts = code.data.split('\\n');
+                        let name = "";
+                        let sid = "";
+                        
+                        parts.forEach(part => {
+                            const trimmed = part.trim();
+                            if (trimmed.startsWith("Member:")) {
+                                name = trimmed.replace("Member:", "").trim();
+                            } else if (trimmed.startsWith("ID:")) {
+                                sid = trimmed.replace("ID:", "").trim();
+                            }
+                        });
+
+                        // Send result to Streamlit
+                        window.parent.postMessage({
+                            type: 'QR_CODE_SCANNED',
+                            data: { 
+                                name: name, 
+                                student_id: sid, 
+                                raw: code.data 
+                            }
+                        }, '*');
+                        
+                        return;
+                    }
+                }
+                requestAnimationFrame(tick);
+            }
+
+            // Start button handler
+            document.getElementById('start-scan-btn').addEventListener('click', startCamera);
+
+            // Auto-start on load
+            window.addEventListener('load', function() {
+                setTimeout(startCamera, 500);
+            });
+
+            // Cleanup on unload
+            window.addEventListener('beforeunload', function() {
+                stopCamera();
+            });
+        </script>
+        """
+        
+        st.components.v1.html(qr_scanner_html, height=550, scrolling=False)
+        
+        # Initialize session state for QR result
+        if 'qr_scan_result' not in st.session_state:
+            st.session_state.qr_scan_result = None
+        
+        # JavaScript listener for QR scan results
+        js_listener = """
+        <script>
+        // Listen for QR scan results from scanner
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'QR_CODE_SCANNED') {
+                const qrData = event.data.data;
+                sessionStorage.setItem('qr_scan_result', JSON.stringify(qrData));
+                // Reload to pass data to Streamlit
+                setTimeout(function() {
+                    window.location.reload();
+                }, 100);
+            }
+        });
+        
+        // On page load, check if there's a QR result in sessionStorage
+        window.addEventListener('load', function() {
+            const stored = sessionStorage.getItem('qr_scan_result');
+            if (stored) {
+                try {
+                    const qrData = JSON.parse(stored);
+                    // Send to parent window (Streamlit)
+                    window.parent.postMessage({
+                        type: 'QR_CODE_SCANNED',
+                        data: qrData
+                    }, '*');
+                    // Clear from sessionStorage
+                    sessionStorage.removeItem('qr_scan_result');
+                } catch(e) {
+                    console.error('Error parsing QR data:', e);
+                }
+            }
+        });
+        </script>
+        <div id="qr-result-trigger" style="display: none;"></div>
+        """
+        st.components.v1.html(js_listener, height=0)
+        
+        # Process QR scan result
+        if st.session_state.get('qr_scan_result'):
+            result = st.session_state.qr_scan_result
+            name = result.get('name', '')
+            sid = result.get('student_id', '')
+            
+            if name and sid:
+                student_match = students[(students["student_id"] == sid) | (students["full_name"] == name)]
+                if not student_match.empty:
+                    student_row = student_match.iloc[0]
+                    section_name = student_row.get("section_name", "بدون خدمة")
+                    
+                    st.markdown(f"""
+                    <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0;">
+                        <div class="member-avatar" style="background:{get_avatar_color(name)};">{name[0]}</div>
+                        <div style="flex:1;">
+                            <div style="font-weight:700; font-size:1.1rem;">{name}</div>
+                            <div style="font-size:0.85rem; color:var(--text-secondary);">{section_name}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col_present, col_absent = st.columns(2)
+                    with col_present:
+                        if st.button("✅ تسجيل حضور", use_container_width=True, type="primary", key="qr_present"):
+                            today_str = get_cairo_now().strftime("%Y-%m-%d")
+                            existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
+                            record_id = str(uuid.uuid4())
+                            if not existing.empty and sid in existing["student_id"].values:
+                                record_id = existing[existing.student_id == sid]["record_id"].values[0]
+                            db.batch_add_attendance([{
+                                "record_id": record_id, "date": today_str, "student_id": sid,
+                                "status": "حاضر", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
+                                "section_id": student_row.get("section_id", "")
+                            }])
+                            db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع QR - {name}")
+                            add_attendance_record(sid, name, "حاضر", method="QR")
+                            st.success(f"✅ تم تسجيل حضور {name}")
+                            st.toast(f"✅ تم تسجيل حضور {name}!", icon="✅")
+                            time.sleep(0.5)
+                            st.session_state.qr_scan_result = None
+                            st.rerun()
+                    
+                    with col_absent:
+                        if st.button("❌ تسجيل غياب", use_container_width=True, key="qr_absent"):
+                            today_str = get_cairo_now().strftime("%Y-%m-%d")
+                            existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
+                            record_id = str(uuid.uuid4())
+                            if not existing.empty and sid in existing["student_id"].values:
+                                record_id = existing[existing.student_id == sid]["record_id"].values[0]
+                            db.batch_add_attendance([{
+                                "record_id": record_id, "date": today_str, "student_id": sid,
+                                "status": "غائب", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
+                                "section_id": student_row.get("section_id", "")
+                            }])
+                            add_attendance_record(sid, name, "غائب", method="QR")
+                            db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع QR - {name}")
+                            st.warning(f"❌ تم تسجيل غياب {name}")
+                            st.toast(f"❌ تم تسجيل غياب {name}", icon="⚠️")
+                            time.sleep(0.5)
+                            st.session_state.qr_scan_result = None
+                            st.rerun()
+                else:
+                    st.error(f"❌ الطالبة غير موجودة في النظام")
+                    if st.button("إعادة المحاولة", key="retry_qr"):
+                        st.session_state.qr_scan_result = None
+                        st.rerun()
             else:
-                uploaded_file = st.file_uploader(
-                    "اختر صورة QR Code",
-                    type=["png", "jpg", "jpeg"],
-                    key="qr_upload_input"
-                )
-                if uploaded_file is not None:
-                    image = Image.open(uploaded_file)
-
-            if image is not None:
-                with st.spinner("جاري قراءة QR Code..."):
-                    # Convert PIL to numpy array
-                    img_array = np.array(image)
-
-                    # Convert RGB to BGR for OpenCV
-                    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
-                        img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-
-                    # Initialize QR detector
-                    detector = cv2.QRCodeDetector()
-                    data, bbox, _ = detector.detectAndDecode(img_array)
-
-                    if data and data.strip():
-                        st.success("✅ تم قراءة QR Code بنجاح!")
-
-                        # Parse QR data
-                        lines = data.strip().split('\n')
-                        parsed = {}
-                        for line in lines:
-                            line = line.strip()
-                            if line.startswith("Member:"):
-                                parsed['name'] = line.replace("Member:", "").strip()
-                            elif line.startswith("ID:"):
-                                parsed['sid'] = line.replace("ID:", "").strip()
-                            elif line.startswith("Section:"):
-                                parsed['section'] = line.replace("Section:", "").strip()
-
-                        name = parsed.get('name', '')
-                        sid = parsed.get('sid', '')
-
-                        if not name or not sid:
-                            st.warning("⚠️ QR Code لا يحتوي على بيانات صالحة للنظام")
-                            st.text(f"المحتوى المقروء: {data}")
-                        else:
-                            # Find student in database
-                            student_match = students[
-                                (students["student_id"] == sid) |
-                                (students["full_name"] == name)
-                            ]
-
-                            if student_match.empty:
-                                st.error("❌ الطالبة غير موجودة في النظام")
-                                st.text(f"البحث عن: {name} | ID: {sid}")
-                            else:
-                                student_row = student_match.iloc[0]
-                                student_name = student_row.get("full_name", name)
-                                student_sid = student_row.get("student_id", sid)
-                                section_name = student_row.get("section_name", "بدون خدمة")
-
-                                # Display member card
-                                avatar_color = get_avatar_color(student_name)
-                                first_letter = student_name[0] if student_name else "?"
-
-                                st.markdown(f"""
-                                <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0;">
-                                    <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
-                                    <div style="flex:1;">
-                                        <div style="font-weight:700; font-size:1.1rem;">{student_name}</div>
-                                        <div style="font-size:0.85rem; color:var(--text-secondary);">{section_name}</div>
-                                    </div>
-                                </div>
-                                """, unsafe_allow_html=True)
-
-                                # Action buttons
-                                col_present, col_absent = st.columns(2)
-                                with col_present:
-                                    if st.button("✅ تسجيل حضور", use_container_width=True, type="primary", key="qr_present_btn"):
-                                        today_str = get_cairo_now().strftime("%Y-%m-%d")
-                                        existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
-
-                                        record_id = str(uuid.uuid4())
-                                        if not existing.empty and student_sid in existing["student_id"].values:
-                                            record_id = existing[existing.student_id == student_sid]["record_id"].values[0]
-
-                                        db.batch_add_attendance([{
-                                            "record_id": record_id, "date": today_str, "student_id": student_sid,
-                                            "status": "حاضر", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
-                                            "section_id": student_row.get("section_id", "")
-                                        }])
-                                        db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع QR - {student_name}")
-                                        add_attendance_record(student_sid, student_name, "حاضر", method="QR")
-                                        st.success(f"✅ تم تسجيل حضور {student_name}")
-                                        st.toast(f"✅ تم تسجيل حضور {student_name}!", icon="✅")
-                                        time.sleep(0.5)
-                                        st.rerun()
-
-                                with col_absent:
-                                    if st.button("❌ تسجيل غياب", use_container_width=True, key="qr_absent_btn"):
-                                        today_str = get_cairo_now().strftime("%Y-%m-%d")
-                                        existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
-
-                                        record_id = str(uuid.uuid4())
-                                        if not existing.empty and student_sid in existing["student_id"].values:
-                                            record_id = existing[existing.student_id == student_sid]["record_id"].values[0]
-
-                                        db.batch_add_attendance([{
-                                            "record_id": record_id, "date": today_str, "student_id": student_sid,
-                                            "status": "غائب", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
-                                            "section_id": student_row.get("section_id", "")
-                                        }])
-                                        add_attendance_record(student_sid, student_name, "غائب", method="QR")
-                                        db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع QR - {student_name}")
-                                        st.warning(f"❌ تم تسجيل غياب {student_name}")
-                                        st.toast(f"❌ تم تسجيل غياب {student_name}", icon="⚠️")
-                                        time.sleep(0.5)
-                                        st.rerun()
-                    else:
-                        st.error("❌ لم يتم التعرف على QR Code في الصورة")
-                        st.markdown("""
-                        **نصائح للمسح الناجح:**
-                        - تأكد من إضاءة كافية
-                        - اجعل QR Code في منتصف الإطار
-                        - تجنب الاهتزاز أثناء التقاط الصورة
-                        - تأكد من عدم وجود انعكاسات على QR Code
-                        """)    
+                st.warning("⚠️ لم يتم التعرف على بيانات الطالبة من QR Code")
+                if st.button("إعادة المحاولة", key="retry_qr"):
+                    st.session_state.qr_scan_result = None
+                    st.rerun()
+    
     # ===== Attendance History Table (last 10 records) =====
     st.markdown("---")
     st.subheader("📜 آخر 10 تسجيلات حضور")
