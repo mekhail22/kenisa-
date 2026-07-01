@@ -28,11 +28,14 @@ except ImportError:
 
 try:
     from PIL import Image
+except ImportError:
+    Image = None
+
+try:
     from pyzbar import pyzbar
     PYNBAR_AVAILABLE = True
 except ImportError:
     PYNBAR_AVAILABLE = False
-    Image = None
     pyzbar = None
 
 # =============================================================================
@@ -4713,8 +4716,156 @@ def show_quick_checkin(db: Database):
     
     with tab2:
         st.markdown("#### 📷 مسح QR Code")
-        if not PYNBAR_AVAILABLE:
-            st.warning("⚠️ ميزة مسح QR Code غير متاحة حالياً لعدم توفر مكتبة القراءة. يُرجى استخدام التسجيل اليدوي.")
+
+        if not CV2_AVAILABLE:
+            st.warning("⚠️ مكتبة OpenCV غير مثبتة. يُرجى تثبيتها لاستخدام هذه الميزة.")
+            st.code("pip install opencv-python", language="bash")
+            st.info("📱 يمكنك استخدام التسجيل اليدوي في التبويب الأول")
+        else:
+            st.info("📱 اختر طريقة مسح QR Code:")
+
+            scan_method = st.radio(
+                "طريقة المسح",
+                ["📷 الكاميرا", "📁 رفع صورة"],
+                horizontal=True,
+                key="qr_scan_method"
+            )
+
+            image = None
+
+            if scan_method == "📷 الكاميرا":
+                camera_image = st.camera_input(
+                    "وجه الكاميرا نحو QR Code واضغط التقاط",
+                    key="qr_camera_input",
+                    help="تأكد من إضاءة جيدة ووضوح QR Code"
+                )
+                if camera_image is not None:
+                    image = Image.open(camera_image)
+            else:
+                uploaded_file = st.file_uploader(
+                    "اختر صورة QR Code",
+                    type=["png", "jpg", "jpeg"],
+                    key="qr_upload_input"
+                )
+                if uploaded_file is not None:
+                    image = Image.open(uploaded_file)
+
+            if image is not None:
+                with st.spinner("جاري قراءة QR Code..."):
+                    # Convert PIL to numpy array
+                    img_array = np.array(image)
+
+                    # Convert RGB to BGR for OpenCV
+                    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+                        img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+
+                    # Initialize QR detector
+                    detector = cv2.QRCodeDetector()
+                    data, bbox, _ = detector.detectAndDecode(img_array)
+
+                    if data and data.strip():
+                        st.success("✅ تم قراءة QR Code بنجاح!")
+
+                        # Parse QR data
+                        lines = data.strip().split('\n')
+                        parsed = {}
+                        for line in lines:
+                            line = line.strip()
+                            if line.startswith("Member:"):
+                                parsed['name'] = line.replace("Member:", "").strip()
+                            elif line.startswith("ID:"):
+                                parsed['sid'] = line.replace("ID:", "").strip()
+                            elif line.startswith("Section:"):
+                                parsed['section'] = line.replace("Section:", "").strip()
+
+                        name = parsed.get('name', '')
+                        sid = parsed.get('sid', '')
+
+                        if not name or not sid:
+                            st.warning("⚠️ QR Code لا يحتوي على بيانات صالحة للنظام")
+                            st.text(f"المحتوى المقروء: {data}")
+                        else:
+                            # Find student in database
+                            student_match = students[
+                                (students["student_id"] == sid) |
+                                (students["full_name"] == name)
+                            ]
+
+                            if student_match.empty:
+                                st.error("❌ الطالبة غير موجودة في النظام")
+                                st.text(f"البحث عن: {name} | ID: {sid}")
+                            else:
+                                student_row = student_match.iloc[0]
+                                student_name = student_row.get("full_name", name)
+                                student_sid = student_row.get("student_id", sid)
+                                section_name = student_row.get("section_name", "بدون خدمة")
+
+                                # Display member card
+                                avatar_color = get_avatar_color(student_name)
+                                first_letter = student_name[0] if student_name else "?"
+
+                                st.markdown(f"""
+                                <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0;">
+                                    <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
+                                    <div style="flex:1;">
+                                        <div style="font-weight:700; font-size:1.1rem;">{student_name}</div>
+                                        <div style="font-size:0.85rem; color:var(--text-secondary);">{section_name}</div>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                                # Action buttons
+                                col_present, col_absent = st.columns(2)
+                                with col_present:
+                                    if st.button("✅ تسجيل حضور", use_container_width=True, type="primary", key="qr_present_btn"):
+                                        today_str = get_cairo_now().strftime("%Y-%m-%d")
+                                        existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
+
+                                        record_id = str(uuid.uuid4())
+                                        if not existing.empty and student_sid in existing["student_id"].values:
+                                            record_id = existing[existing.student_id == student_sid]["record_id"].values[0]
+
+                                        db.batch_add_attendance([{
+                                            "record_id": record_id, "date": today_str, "student_id": student_sid,
+                                            "status": "حاضر", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
+                                            "section_id": student_row.get("section_id", "")
+                                        }])
+                                        db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع QR - {student_name}")
+                                        add_attendance_record(student_sid, student_name, "حاضر", method="QR")
+                                        st.success(f"✅ تم تسجيل حضور {student_name}")
+                                        st.toast(f"✅ تم تسجيل حضور {student_name}!", icon="✅")
+                                        time.sleep(0.5)
+                                        st.rerun()
+
+                                with col_absent:
+                                    if st.button("❌ تسجيل غياب", use_container_width=True, key="qr_absent_btn"):
+                                        today_str = get_cairo_now().strftime("%Y-%m-%d")
+                                        existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
+
+                                        record_id = str(uuid.uuid4())
+                                        if not existing.empty and student_sid in existing["student_id"].values:
+                                            record_id = existing[existing.student_id == student_sid]["record_id"].values[0]
+
+                                        db.batch_add_attendance([{
+                                            "record_id": record_id, "date": today_str, "student_id": student_sid,
+                                            "status": "غائب", "notes": "تسجيل سريع QR", "recorded_by": user.get("user_id", ""),
+                                            "section_id": student_row.get("section_id", "")
+                                        }])
+                                        add_attendance_record(student_sid, student_name, "غائب", method="QR")
+                                        db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع QR - {student_name}")
+                                        st.warning(f"❌ تم تسجيل غياب {student_name}")
+                                        st.toast(f"❌ تم تسجيل غياب {student_name}", icon="⚠️")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                    else:
+                        st.error("❌ لم يتم التعرف على QR Code في الصورة")
+                        st.markdown("""
+                        **نصائح للمسح الناجح:**
+                        - تأكد من إضاءة كافية
+                        - اجعل QR Code في منتصف الإطار
+                        - تجنب الاهتزاز أثناء التقاط الصورة
+                        - تأكد من عدم وجود انعكاسات على QR Code
+                        """)
         else:
             st.info("وجه الكاميرا نحو QR Code الخاص بالطالبة")
             camera_image = st.camera_input("التقاط صورة", key="qr_camera")
