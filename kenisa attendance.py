@@ -126,20 +126,61 @@ def save_users(df: pd.DataFrame):
 def get_client_info():
     """Get client browser, OS, device type, and screen size from session state or request."""
     try:
-        ua_string = st.session_state.get('user_agent', '')
-        
+        # Try to get from session state (set via JavaScript on login page)
+        browser = st.session_state.get('client_browser', st.session_state.get('user_agent', 'Unknown'))
+        os = st.session_state.get('client_os', 'Unknown')
+        device_type = st.session_state.get('client_device', 'Desktop')
         screen_width = st.session_state.get('screen_width', 'Unknown')
         screen_height = st.session_state.get('screen_height', 'Unknown')
         
+        # Parse browser from user agent if still unknown
+        if browser == 'Unknown' or not browser:
+            ua_string = st.session_state.get('user_agent', '')
+            if ua_string:
+                browser = _parse_browser(ua_string)
+                os = _parse_os(ua_string)
+        
         return {
-            'browser': 'Unknown',
-            'os': 'Unknown',
-            'device_type': 'Desktop',
+            'browser': browser,
+            'os': os,
+            'device_type': device_type,
             'screen_width': screen_width,
             'screen_height': screen_height
         }
     except Exception:
         return {'browser': 'Unknown', 'os': 'Unknown', 'device_type': 'Desktop', 'screen_width': 'Unknown', 'screen_height': 'Unknown'}
+
+def _parse_browser(user_agent):
+    """Parse browser name from user agent string."""
+    if not user_agent:
+        return 'Unknown'
+    ua_lower = user_agent.lower()
+    if 'chrome' in ua_lower and 'edg' not in ua_lower:
+        return 'Chrome'
+    elif 'safari' in ua_lower and 'chrome' not in ua_lower:
+        return 'Safari'
+    elif 'firefox' in ua_lower:
+        return 'Firefox'
+    elif 'edg' in ua_lower:
+        return 'Edge'
+    elif 'opera' in ua_lower or 'opr' in ua_lower:
+        return 'Opera'
+    return 'Other'
+
+def _parse_os(user_agent):
+    """Parse OS from user agent string."""
+    if not user_agent:
+        return 'Unknown'
+    ua_lower = user_agent.lower()
+    if 'windows' in ua_lower:
+        return 'Windows'
+    elif 'mac' in ua_lower or 'ios' in ua_lower:
+        return 'Mac/iOS'
+    elif 'android' in ua_lower:
+        return 'Android'
+    elif 'linux' in ua_lower:
+        return 'Linux'
+    return 'Other'
 
 def get_ip_address():
     """Get client IP address (Streamlit limitation - returns server IP in most cases)."""
@@ -1667,6 +1708,59 @@ def show_initialization(db: Database):
 def show_login_page(db: Database, jwt_secret: str):
     st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة</h1>", unsafe_allow_html=True)
     show_initialization(db)
+    
+    # Captu browser and device info via JavaScript
+    st.markdown("""
+    <script>
+    (function() {
+        try {
+            // Get browser info
+            const ua = navigator.userAgent;
+            let browser = 'Unknown';
+            if (ua.indexOf('Chrome') > -1 && ua.indexOf('Edg') === -1) browser = 'Chrome';
+            else if (ua.indexOf('Safari') > -1 && ua.indexOf('Chrome') === -1) browser = 'Safari';
+            else if (ua.indexOf('Firefox') > -1) browser = 'Firefox';
+            else if (ua.indexOf('Edg') > -1) browser = 'Edge';
+            else if (ua.indexOf('Opera') > -1 || ua.indexOf('OPR') > -1) browser = 'Opera';
+            
+            // Get OS
+            let os = 'Unknown';
+            if (ua.indexOf('Windows') > -1) os = 'Windows';
+            else if (ua.indexOf('Mac') > -1 || ua.indexOf('iOS') > -1) os = 'Mac/iOS';
+            else if (ua.indexOf('Android') > -1) os = 'Android';
+            else if (ua.indexOf('Linux') > -1) os = 'Linux';
+            
+            // Get device type
+            let device = 'Desktop';
+            if (ua.indexOf('Mobile') > -1 || ua.indexOf('Android') > -1) device = 'Mobile';
+            else if (ua.indexOf('Tablet') > -1 || (ua.indexOf('iPad') > -1)) device = 'Tablet';
+            
+            // Get screen size
+            const width = window.screen.width;
+            const height = window.screen.height;
+            
+            // Store in sessionStorage for retrieval
+            sessionStorage.setItem('client_browser', browser);
+            sessionStorage.setItem('client_os', os);
+            sessionStorage.setItem('client_device', device);
+            sessionStorage.setItem('screen_width', width);
+            sessionStorage.setItem('screen_height', height);
+            
+            // Send to Streamlit via query params
+            const params = new URLSearchParams(window.location.search);
+            params.set('browser', browser);
+            params.set('os', os);
+            params.set('device', device);
+            params.set('width', width);
+            params.set('height', height);
+            window.history.replaceState({}, '', '?' + params.toString());
+        } catch(e) {
+            console.error('Error capturing client info:', e);
+        }
+    })();
+    </script>
+    """, unsafe_allow_html=True)
+    
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
         with st.form("login_form"):
@@ -4721,8 +4815,8 @@ def show_quick_checkin(db: Database):
         # Browser-based QR scanner using HTML5 and JavaScript (no Python library needed)
         qr_scanner_html = """
         <div id="qr-scanner-container" style="width: 100%; max-width: 640px; margin: 0 auto; padding: 1rem; background: var(--card-bg); border-radius: 12px;">
-            <div id="qr-scanner" style="width: 100%; min-height: 300px; background: #000; border-radius: 8px; position: relative;">
-                <video id="video" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;" playsinline></video>
+            <div id="qr-scanner" style="width: 100%; height: 400px; background: #000; border-radius: 8px; position: relative; overflow: hidden;">
+                <video id="video" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;" playsinline autoplay muted></video>
                 <canvas id="canvas" style="display: none;"></canvas>
                 <div id="qr-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 2px solid #d4af37; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);"></div>
             </div>
@@ -4751,24 +4845,37 @@ def show_quick_checkin(db: Database):
                     return;
                 }
 
+                // Ensure video element is ready
+                if (!video) {
+                    statusDiv.innerHTML = '❌ خطأ: عنصر الفيديو غير موجود';
+                    return;
+                }
+
                 navigator.mediaDevices.getUserMedia({ 
                     video: { 
                         facingMode: 'environment',
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
                     } 
                 })
                 .then(function(mediaStream) {
                     stream = mediaStream;
                     video.srcObject = mediaStream;
                     video.setAttribute('playsinline', true);
-                    video.play();
-                    scanning = true;
-                    statusDiv.innerHTML = '✅ الكامiera تعمل - وجّهها نحو QR Code';
-                    statusDiv.style.background = 'rgba(40,167,69,0.15)';
-                    startBtn.innerHTML = '⏹️ إيقاف المسح';
-                    startBtn.style.background = 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
-                    requestAnimationFrame(tick);
+                    video.setAttribute('autoplay', true);
+                    video.setAttribute('muted', true);
+                    video.play().then(function() {
+                        scanning = true;
+                        statusDiv.innerHTML = '✅ الكاميرا تعمل - وجّهها نحو QR Code';
+                        statusDiv.style.background = 'rgba(40,167,69,0.15)';
+                        startBtn.innerHTML = '⏹️ إيقاف المسح';
+                        startBtn.style.background = 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
+                        requestAnimationFrame(tick);
+                    }).catch(function(err) {
+                        console.error("Video play error:", err);
+                        statusDiv.innerHTML = '❌ خطأ في تشغيل الفيديو: ' + err.message;
+                        statusDiv.style.background = 'rgba(220,53,69,0.15)';
+                    });
                 })
                 .catch(function(err) {
                     console.error("Camera error:", err);
