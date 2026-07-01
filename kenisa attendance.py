@@ -27,6 +27,7 @@ except ImportError:
     np = None
 
 from PIL import Image
+from pyzbar import pyzbar
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -4706,19 +4707,18 @@ def show_quick_checkin(db: Database):
     
     with tab2:
         st.markdown("#### 📷 مسح QR Code")
-        if not CV2_AVAILABLE:
-            st.warning("⚠️ مكتبة OpenCV غير مثبتة. ميزة مسح QR Code غير متاحة حالياً.")
-            st.info("يمكنك استخدام تبويب \"تسجيل يدوي\" لتسجيل الحضور بدلاً من ذلك.")
-        else:
-            st.info("وجه الكاميرا نحو QR Code الخاص بالطالبة")
-            camera_image = st.camera_input("التقاط صورة", key="qr_camera")
-            if camera_image is not None:
+        st.info("وجه الكاميرا نحو QR Code الخاص بالطالبة")
+        camera_image = st.camera_input("التقاط صورة", key="qr_camera")
+        if camera_image is not None:
+            try:
                 pil_image = Image.open(camera_image)
-                gray = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2GRAY)
-                detector = cv2.QRCodeDetector()
-                data, bbox, _ = detector.detectAndDecode(gray)
-                if data:
-                    parts = data.splitlines() if "\n" in data else [data]
+                # Decode QR code using pyzbar
+                decoded_objects = pyzbar.decode(pil_image)
+                
+                if decoded_objects:
+                    # Get the first QR code found
+                    qr_data = decoded_objects[0].data.decode('utf-8')
+                    parts = qr_data.splitlines() if "\n" in qr_data else [qr_data]
                     name = ""
                     sid = ""
                     for part in parts:
@@ -4727,6 +4727,7 @@ def show_quick_checkin(db: Database):
                             name = part.replace("Member:", "").strip()
                         elif part.startswith("ID:"):
                             sid = part.replace("ID:", "").strip()
+                    
                     if not name or not sid:
                         st.warning("⚠️ لم يتم التعرف على بيانات الطالبة من QR Code")
                     else:
@@ -4784,6 +4785,8 @@ def show_quick_checkin(db: Database):
                                     st.rerun()
                 else:
                     st.info("لم يتم التعرف على QR Code. حاول مرة أخرى.")
+            except Exception as e:
+                st.error(f"❌ خطأ في قراءة QR Code: {str(e)}")
     
     # ===== Attendance History Table (last 10 records) =====
     st.markdown("---")
