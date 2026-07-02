@@ -5325,23 +5325,23 @@ def show_quick_checkin(db: Database):
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Automatically mark ONLY this student as absent
+                        # Automatically mark ONLY this student as present
                         record_id = str(uuid.uuid4())
                         db.batch_add_attendance([{
                             "record_id": record_id, "date": today_str, "student_id": student_id,
-                            "status": "غائب", "notes": "تسجيل غياب تلقائي QR", "recorded_by": user.get("user_id", ""),
+                            "status": "حاضر", "notes": "تسجيل حضور تلقائي QR", "recorded_by": user.get("user_id", ""),
                             "section_id": section_id
                         }])
-                        db.add_log(user.get("user_id", ""), f"تسجيل غياب تلقائي QR - {student_name}")
+                        db.add_log(user.get("user_id", ""), f"تسجيل حضور تلقائي QR - {student_name}")
                         log_details_operation(
                             db=db,
                             student_id=student_id,
                             student_name=student_name,
-                            status="Absent",
-                            operation_type="QR_Checkin_Absence",
+                            status="Present",
+                            operation_type="QR_Checkin",
                             qr_data=raw_qr_data,
                             device_info="QR Scanner",
-                            notes="تسجيل غياب تلقائي عند مسح الكود"
+                            notes="تسجيل حضور تلقائي عند مسح الكود"
                         )
                         st.success(f"✅ تم تسجيل حضور {student_name} تلقائياً")
                         st.toast(f"✅ تم تسجيل حضور {student_name}!", icon="✅")
