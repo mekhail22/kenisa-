@@ -16,7 +16,6 @@ import threading
 import qrcode
 from io import BytesIO, StringIO
 import base64
-import csv
 
 try:
     import numpy as np
@@ -84,40 +83,6 @@ st.set_page_config(
 import hashlib
 import os
 
-AUDIT_LOG_FILE = "audit_log.csv"
-USERS_FILE = "users.csv"
-ATTENDANCE_HISTORY_FILE = "attendance_history.csv"
-
-def load_attendance_history() -> pd.DataFrame:
-    """Load attendance history from CSV file."""
-    try:
-        df = pd.read_csv(ATTENDANCE_HISTORY_FILE, encoding='utf-8-sig')
-        if df.empty:
-            return pd.DataFrame(columns=["timestamp", "student_id", "student_name", "status", "method"])
-        return df
-    except FileNotFoundError:
-        return pd.DataFrame(columns=["timestamp", "student_id", "student_name", "status", "method"])
-
-def save_attendance_history(df: pd.DataFrame):
-    """Save attendance history DataFrame to CSV file."""
-    df.to_csv(ATTENDANCE_HISTORY_FILE, index=False, encoding='utf-8-sig')
-
-def add_attendance_record(student_id: str, student_name: str, status: str, method: str = "يدوي"):
-    """Add a new attendance record with current timestamp to history CSV."""
-    df = load_attendance_history()
-    new_record = {
-        "timestamp": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
-        "student_id": student_id,
-        "student_name": student_name,
-        "status": status,
-        "method": method
-    }
-    df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
-    # Keep only last 1000 records to prevent file bloat
-    if len(df) > 1000:
-        df = df.tail(1000)
-    save_attendance_history(df)
-
 def hash_password(password: str) -> str:
     """Hash password using SHA256."""
     return hashlib.sha256(password.encode()).hexdigest()
@@ -126,19 +91,6 @@ def verify_password(password: str, hashed: str) -> bool:
     """Verify password against hash."""
     return hash_password(password) == hashed
 
-def load_users() -> pd.DataFrame:
-    """Load users from CSV."""
-    try:
-        df = pd.read_csv(USERS_FILE, encoding='utf-8-sig')
-        if df.empty:
-            return pd.DataFrame(columns=["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email", "created_at"])
-        return df
-    except FileNotFoundError:
-        return pd.DataFrame(columns=["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email", "created_at"])
-
-def save_users(df: pd.DataFrame):
-    """Save users to CSV."""
-    df.to_csv(USERS_FILE, index=False, encoding='utf-8-sig')
 
 def get_client_info():
     """Get client browser, OS, device type, and screen size from session state or request."""
@@ -247,32 +199,14 @@ def get_location_from_ip(ip: str) -> dict:
     # Fallback if API fails
     return {'country': 'Unknown', 'city': 'Unknown', 'region': 'Unknown'}
 
-def load_audit_log():
-    """Load audit log from CSV."""
-    try:
-        df = pd.read_csv(AUDIT_LOG_FILE, encoding='utf-8-sig')
-        if df.empty:
-            return pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details",
-                                         "browser", "os", "device_type", "screen_size", "ip_masked",
-                                         "country", "city", "region", "privacy_consent"])
-        return df
-    except FileNotFoundError:
-        return pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details",
-                                     "browser", "os", "device_type", "screen_size", "ip_masked",
-                                     "country", "city", "region", "privacy_consent"])
-
-def save_audit_log(df):
-    """Save audit log to CSV."""
-    df.to_csv(AUDIT_LOG_FILE, index=False, encoding='utf-8-sig')
-
-def add_audit_log(user_id: str, user_name: str, action: str, details: str = "", privacy_consent: bool = True):
-    """Add entry to audit log with device info and location."""
+def log_security_event(db, user_id, user_name, action, details=""):
     client_info = get_client_info()
     ip_address = get_ip_address()
     location = get_location_from_ip(ip_address)
-    
-    new_entry = {
-        "timestamp": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
+
+    entry = {
+        "log_id": str(uuid.uuid4()),
+        "timestamp": get_cairo_now().isoformat(),
         "user_id": user_id,
         "user_name": user_name,
         "action": action,
@@ -284,16 +218,44 @@ def add_audit_log(user_id: str, user_name: str, action: str, details: str = "", 
         "ip_masked": mask_ip(ip_address),
         "country": location['country'],
         "city": location['city'],
-        "region": location['region'],
-        "privacy_consent": "✅ Agreed" if privacy_consent else "❌ Not Agreed"
+        "region": location['region']
     }
-    
-    df = load_audit_log()
-    df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
-    # Keep only last 1000 records to prevent file bloat
-    if len(df) > 1000:
-        df = df.tail(1000)
-    save_audit_log(df)
+
+    df = db.get_logs()
+    if df.empty:
+        df = pd.DataFrame(columns=["log_id", "timestamp", "user_id", "user_name", "action", "details",
+                                   "browser", "os", "device_type", "screen_size", "ip_masked",
+                                   "country", "city", "region"])
+    df = pd.concat([df, pd.DataFrame([entry])], ignore_index=True)
+    if len(df) > 2000:
+        df = df.tail(2000)
+    db._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "user_name", "action", "details",
+                                   "browser", "os", "device_type", "screen_size", "ip_masked",
+                                   "country", "city", "region"])
+
+
+def log_attendance_event(db, student_id, student_name, status, method="يدوي", recorded_by="", section_id=""):
+    entry = {
+        "record_id": str(uuid.uuid4()),
+        "timestamp": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
+        "date": get_cairo_now().strftime("%Y-%m-%d"),
+        "student_id": student_id,
+        "student_name": student_name,
+        "status": status,
+        "method": method,
+        "recorded_by": recorded_by,
+        "section_id": section_id
+    }
+
+    df = db.get_attendance()
+    if df.empty:
+        df = pd.DataFrame(columns=["record_id", "timestamp", "date", "student_id", "student_name",
+                                   "status", "method", "recorded_by", "section_id"])
+    df = pd.concat([df, pd.DataFrame([entry])], ignore_index=True)
+    if len(df) > 5000:
+        df = df.tail(5000)
+    db._df_to_sheet("Attendance", df, ["record_id", "timestamp", "date", "student_id", "student_name",
+                                         "status", "method", "recorded_by", "section_id"])
 
 def get_current_user_role():
     """Get current user's role from session."""
@@ -1012,7 +974,11 @@ class Database:
     def _ensure_required_sheets(self):
         """Ensure all required sheets exist with proper headers."""
         sheets_config = {
-            "Logs": ["log_id", "timestamp", "user_id", "action", "details"],
+            "Logs": ["log_id", "timestamp", "user_id", "user_name", "action", "details",
+                     "browser", "os", "device_type", "screen_size", "ip_masked",
+                     "country", "city", "region"],
+            "Attendance": ["record_id", "timestamp", "date", "student_id", "student_name",
+                          "status", "method", "recorded_by", "section_id"],
             "Events": ["event_id", "event_name", "event_date", "location", "event_type",
                        "description", "max_attendees", "created_by", "created_at"],
             "EventRSVPs": ["rsvp_id", "event_id", "student_id", "student_name",
@@ -1405,75 +1371,6 @@ class Database:
                                               "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
     # --- Logs ---
-    # --- Events ---
-    def get_events(self):
-        return self._sheet_to_df("Events")
-
-    def add_event(self, event_data):
-        df = self.get_events()
-        if df.empty:
-            df = pd.DataFrame(columns=["event_id", "event_name", "event_date", "location", "event_type",
-                                       "description", "max_attendees", "created_by", "created_at"])
-        df = pd.concat([df, pd.DataFrame([event_data])], ignore_index=True)
-        self._df_to_sheet("Events", df, ["event_id", "event_name", "event_date", "location", "event_type",
-                                          "description", "max_attendees", "created_by", "created_at"])
-
-    def update_event(self, event_id, updates):
-        df = self.get_events()
-        idx = df[df.event_id == event_id].index
-        if len(idx) > 0:
-            for k, v in updates.items():
-                df.at[idx[0], k] = self._safe_str(v)
-            self._df_to_sheet("Events", df, df.columns.tolist())
-
-    def delete_event(self, event_id):
-        df = self.get_events()
-        df = df[df.event_id != event_id]
-        self._df_to_sheet("Events", df, ["event_id", "event_name", "event_date", "location", "event_type",
-                                          "description", "max_attendees", "created_by", "created_at"])
-
-    # --- Event RSVPs ---
-    def get_event_rsvps(self):
-        return self._sheet_to_df("EventRSVPs")
-
-    def add_event_rsvp(self, rsvp_data):
-        df = self.get_event_rsvps()
-        if df.empty:
-            df = pd.DataFrame(columns=["rsvp_id", "event_id", "student_id", "student_name",
-                                       "rsvp_status", "rsvp_date", "actual_attendance"])
-        # Check for duplicates
-        existing = df[(df.event_id == rsvp_data["event_id"]) & (df.student_id == rsvp_data["student_id"])]
-        if not existing.empty:
-            return False
-        df = pd.concat([df, pd.DataFrame([rsvp_data])], ignore_index=True)
-        self._df_to_sheet("EventRSVPs", df, ["rsvp_id", "event_id", "student_id", "student_name",
-                                              "rsvp_status", "rsvp_date", "actual_attendance"])
-        return True
-
-    def update_event_attendance(self, event_id, student_id, attendance_status):
-        df = self.get_event_rsvps()
-        idx = df[(df.event_id == event_id) & (df.student_id == student_id)].index
-        if len(idx) > 0:
-            df.at[idx[0], "actual_attendance"] = self._safe_str(attendance_status)
-            self._df_to_sheet("EventRSVPs", df, ["rsvp_id", "event_id", "student_id", "student_name",
-                                                  "rsvp_status", "rsvp_date", "actual_attendance"])
-            return True
-        return False
-
-    def delete_event_rsvps(self, event_id):
-        df = self.get_event_rsvps()
-        df = df[df.event_id != event_id]
-        self._df_to_sheet("EventRSVPs", df, ["rsvp_id", "event_id", "student_id", "student_name",
-                                              "rsvp_status", "rsvp_date", "actual_attendance"])
-
-    def get_event_attendees_count(self, event_id):
-        rsvps_df = self.get_event_rsvps()
-        if rsvps_df.empty:
-            return 0
-        event_rsvps = rsvps_df[rsvps_df.event_id == event_id]
-        return len(event_rsvps)
-
-    # --- Logs ---
     def get_logs(self):
         return self._sheet_to_df("Logs")
 
@@ -1591,7 +1488,11 @@ def init_session():
 def logout(db=None):
     if db and st.session_state.user:
         try:
-            pass
+            log_security_event(db, 
+                           st.session_state.user.get("user_id", ""), 
+                           st.session_state.user.get("full_name", ""), 
+                           "تسجيل الخروج", 
+                           "خروج من النظام")
         except Exception:
             pass
     for key in list(st.session_state.keys()):
@@ -1825,7 +1726,7 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
                                 st.session_state.show_sidebar = True
                                 db.add_log(user.get("user_id", ""), "تسجيل الدخول")
-                                add_audit_log(user.get("user_id", ""), user.get("full_name", ""), "تسجيل الدخول")
+                                log_security_event(db, user.get("user_id", ""), user.get("full_name", ""), "تسجيل الدخول", "دخول ناجح")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 st.toast("✅ مرحباً بك في النظام!", icon="👋")
                                 time.sleep(1)
@@ -4501,88 +4402,6 @@ def check_duplicate_attendance(db: Database, student_id: str, date_str: str) -> 
         return False
     return student_id in today_att["student_id"].values
 
-def auto_register_absence(db: Database, absence_time: str = "09:00"):
-    """Background thread function to auto-register absence for students who didn't check in."""
-    while True:
-        try:
-            now = get_cairo_now()
-            current_time = now.strftime("%H:%M")
-            today_str = now.strftime("%Y-%m-%d")
-            
-            # Only run once per day at the specified time
-            # For simplicity, we'll check every minute
-            if current_time >= absence_time:
-                students = db.get_students()
-                attendance = db.get_attendance()
-                
-                if students.empty:
-                    time.sleep(60)
-                    continue
-                
-                # Get all students who should have attendance today
-                # For now, we'll process all active students
-                active_students = students[students["status"] == "active"] if "status" in students.columns else students
-                
-                for _, student in active_students.iterrows():
-                    sid = student.get("student_id", "")
-                    name = student.get("full_name", "")
-                    
-                    if not sid:
-                        continue
-                    
-                    # Check if already has attendance today
-                    if check_duplicate_attendance(db, sid, today_str):
-                        continue
-                    
-                    # Get student's section
-                    section_id = student.get("section_id", "")
-                    
-                    # Register absence
-                    record_id = str(uuid.uuid4())
-                    db.batch_add_attendance([{
-                        "record_id": record_id,
-                        "date": today_str,
-                        "student_id": sid,
-                        "status": "غائب",
-                        "notes": "تسجيل غياب تلقائي",
-                        "recorded_by": "system",
-                        "section_id": section_id
-                    }])
-                    
-                    # Log to Details
-                    log_details_operation(
-                        db=db,
-                        student_id=sid,
-                        student_name=name,
-                        status="Absent",
-                        operation_type="Auto-Absence",
-                        qr_data="",
-                        device_info="System Scheduler",
-                        notes=f"تسجيل غياب تلقائي بعد {absence_time}"
-                    )
-                    
-                    print(f"Auto-registered absence for {name}")
-                
-                # Sleep for the rest of the day
-                time.sleep(3600)  # Sleep 1 hour before next check
-            
-            time.sleep(60)  # Check every minute
-        except Exception as e:
-            print(f"Error in auto-absence thread: {e}")
-            time.sleep(60)
-
-def start_auto_absence_thread(db: Database):
-    """Start the auto-absence background thread."""
-    # Check if already running
-    if 'auto_absence_running' not in st.session_state:
-        st.session_state.auto_absence_running = False
-    
-    if not st.session_state.auto_absence_running:
-        thread = threading.Thread(target=auto_register_absence, args=(db,), daemon=True)
-        thread.start()
-        st.session_state.auto_absence_running = True
-        print("Auto-absence thread started")
-
 def show_logs(db: Database):
     st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
     logs = db.get_logs()
@@ -4610,7 +4429,7 @@ def show_audit_log(db: Database):
         st.error("🚫 غير مصرح لك بعرض سجل الدخول")
         return
     
-    audit_df = load_audit_log()
+    audit_df = db.get_logs()
     
     if audit_df.empty:
         st.info("لا توجد سجلات دخول بعد.")
@@ -4965,8 +4784,6 @@ def show_quick_checkin(db: Database):
                                 "section_id": student_row.get("section_id", "")
                             }])
                             db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع - {name}")
-                            # Save to attendance history CSV
-                            add_attendance_record(sid, name, "حاضر", method="يدوي")
                             st.success(f"✅ تم تسجيل حضور {name}")
                             st.toast(f"✅ تم تسجيل حضور {name}!", icon="✅")
                             time.sleep(0.5)
@@ -4991,8 +4808,6 @@ def show_quick_checkin(db: Database):
                                 "section_id": student_row.get("section_id", "")
                             }])
                             db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع - {name}")
-                            # Save to attendance history CSV
-                            add_attendance_record(sid, name, "غائب", method="يدوي")
                             st.warning(f"❌ تم تسجيل غياب {name}")
                             st.toast(f"❌ تم تسجيل غياب {name}", icon="⚠️")
                             time.sleep(0.5)
@@ -5405,7 +5220,6 @@ def show_quick_checkin(db: Database):
                             "section_id": section_id
                         }])
                         db.add_log(user.get("user_id", ""), f"تسجيل حضور تلقائي QR - {student_name}")
-                        add_attendance_record(student_id, student_name, "حاضر", method="QR")
                         log_details_operation(
                             db=db,
                             student_id=student_id,
@@ -5422,23 +5236,6 @@ def show_quick_checkin(db: Database):
                         st.session_state.qr_scan_result = None
                         st.rerun()
     
-    # ===== Attendance History Table (last 10 records) =====
-    st.markdown("---")
-    st.subheader("📜 آخر 10 تسجيلات حضور")
-    history_df = load_attendance_history()
-    if not history_df.empty:
-        # Sort by timestamp descending and take last 10
-        history_df = history_df.sort_values("timestamp", ascending=False).head(10)
-        # Rename columns for display
-        display_history = history_df.rename(columns={
-            "timestamp": "الوقت",
-            "student_name": "الاسم",
-            "status": "الحالة",
-            "method": "طريقة التسجيل"
-        })
-        st.dataframe(display_history[["الوقت", "الاسم", "الحالة", "طريقة التسجيل"]], use_container_width=True)
-    else:
-        st.info("لا توجد تسجيلات حضور سابقة.")
 
 # =============================================================================
 # Attendance Dashboard with Charts
@@ -5674,9 +5471,6 @@ def main():
     db = st.session_state.db_instance
     jwt_secret = get_jwt_secret()
     
-    # Start auto-absence thread
-    start_auto_absence_thread(db)
-
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
