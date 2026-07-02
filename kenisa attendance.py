@@ -152,20 +152,17 @@ def _parse_os(user_agent):
     return 'Other'
 
 def get_ip_address():
-    """Get client IP address (Streamlit limitation - returns server IP in most cases)."""
+    """Get client IP address from session state or query params."""
     try:
+        # Try to get from session state (set by JavaScript)
+        stored_ip = st.session_state.get('client_ip', 'Unknown')
+        if stored_ip and stored_ip != 'Unknown':
+            return stored_ip
         # Try to get from query params (if passed from frontend)
         ip = st.query_params.get('ip', ['Unknown'])[0]
         if ip and ip != 'Unknown':
             return ip
-        # Fallback: try to use external service
-        try:
-            response = requests.get('https://api.ipify.org?format=json', timeout=2)
-            if response.status_code == 200:
-                return response.json().get('ip', 'Unknown')
-        except:
-            pass
-        return 'Streamlit-Server'
+        return 'Unknown'
     except Exception:
         return 'Unknown'
 
@@ -1638,7 +1635,25 @@ def show_login_page(db: Database, jwt_secret: str):
     st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة</h1>", unsafe_allow_html=True)
     show_initialization(db)
     
-    # Captu browser and device info via JavaScript
+    # Read client info from query params and store in session state
+    try:
+        query_params = st.query_params
+        if 'browser' in query_params:
+            st.session_state['client_browser'] = query_params['browser']
+        if 'os' in query_params:
+            st.session_state['client_os'] = query_params['os']
+        if 'device' in query_params:
+            st.session_state['client_device'] = query_params['device']
+        if 'width' in query_params:
+            st.session_state['screen_width'] = query_params['width']
+        if 'height' in query_params:
+            st.session_state['screen_height'] = query_params['height']
+        if 'ip' in query_params:
+            st.session_state['client_ip'] = query_params['ip']
+    except Exception:
+        pass
+    
+    # Capture browser, device info AND REAL CLIENT IP via JavaScript
     st.markdown("""
     <script>
     (function() {
@@ -1675,14 +1690,34 @@ def show_login_page(db: Database, jwt_secret: str):
             sessionStorage.setItem('screen_width', width);
             sessionStorage.setItem('screen_height', height);
             
-            // Send to Streamlit via query params
-            const params = new URLSearchParams(window.location.search);
-            params.set('browser', browser);
-            params.set('os', os);
-            params.set('device', device);
-            params.set('width', width);
-            params.set('height', height);
-            window.history.replaceState({}, '', '?' + params.toString());
+            // Fetch real client IP and then update query params
+            fetch('https://api.ipify.org?format=json')
+                .then(res => res.json())
+                .then(data => {
+                    const clientIP = data.ip || 'Unknown';
+                    sessionStorage.setItem('client_ip', clientIP);
+                    
+                    // Update query params with all data including real IP
+                    const params = new URLSearchParams(window.location.search);
+                    params.set('browser', browser);
+                    params.set('os', os);
+                    params.set('device', device);
+                    params.set('width', width);
+                    params.set('height', height);
+                    params.set('ip', clientIP);
+                    window.history.replaceState({}, '', '?' + params.toString());
+                })
+                .catch(err => {
+                    console.error('Error fetching IP:', err);
+                    // Still update params without IP
+                    const params = new URLSearchParams(window.location.search);
+                    params.set('browser', browser);
+                    params.set('os', os);
+                    params.set('device', device);
+                    params.set('width', width);
+                    params.set('height', height);
+                    window.history.replaceState({}, '', '?' + params.toString());
+                });
         } catch(e) {
             console.error('Error capturing client info:', e);
         }
