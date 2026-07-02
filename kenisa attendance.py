@@ -984,20 +984,51 @@ class Database:
         for sheet_name, columns in sheets_config.items():
             try:
                 ws = self.spreadsheet.worksheet(sheet_name)
+                # Verify sheet has headers
+                try:
+                    existing_headers = ws.get_all_values()[0] if ws.get_all_values() else []
+                    if not existing_headers or len(existing_headers) == 0:
+                        ws.append_row(columns)
+                except (IndexError, gspread.exceptions.APIError):
+                    # If we can't read headers, try to append them
+                    try:
+                        ws.append_row(columns)
+                    except:
+                        pass
             except gspread.WorksheetNotFound:
-                ws = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=len(columns))
-                ws.append_row(columns)
+                try:
+                    ws = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=len(columns))
+                    ws.append_row(columns)
+                except Exception as e:
+                    print(f"Error creating sheet {sheet_name}: {e}")
 
     def _get_or_create_worksheet(self, name, columns):
-        Database._rate_limit()
-        try:
-            ws = self.spreadsheet.worksheet(name)
-        except gspread.WorksheetNotFound:
-            ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(columns), 1))
-            if columns:
-                ws.append_row(columns)
-        time.sleep(0.2)
-        return ws
+        """Get or create worksheet with retry logic."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                Database._rate_limit()
+                try:
+                    ws = self.spreadsheet.worksheet(name)
+                except gspread.WorksheetNotFound:
+                    try:
+                        ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(columns), 1) if columns else 1)
+                        if columns:
+                            ws.append_row(columns)
+                    except Exception as e:
+                        print(f"Error creating worksheet {name}: {e}")
+                        raise
+                time.sleep(0.2)
+                return ws
+            except gspread.exceptions.APIError as e:
+                if attempt < max_retries - 1:
+                    delay = 2 * (2 ** attempt)
+                    print(f"API Error accessing worksheet {name}, retrying in {delay}s... (attempt {attempt+1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    print(f"Failed to access worksheet {name} after {max_retries} attempts")
+                    raise
+        return None
 
     def _get_cached_df(self, sheet_name, fetch_func):
         init_data_cache()
@@ -1020,27 +1051,46 @@ class Database:
         st.session_state.data_dirty[sheet_name] = True
 
     def _read_sheet_raw(self, sheet_name):
-        Database._rate_limit()
-        ws = self._get_or_create_worksheet(sheet_name, [])
-        values = ws.get_all_values()
-        time.sleep(0.2)
-        if not values or len(values) < 1:
-            return pd.DataFrame()
-        raw_headers = [h.strip() for h in values[0]]
-        seen = {}
-        unique_headers = []
-        for h in raw_headers:
-            if h in seen:
-                seen[h] += 1
-                unique_headers.append(f"{h}_{seen[h]}")
-            else:
-                seen[h] = 0
-                unique_headers.append(h)
-        data_rows = values[1:]
-        df = pd.DataFrame(data_rows, columns=unique_headers)
-        df.dropna(how='all', axis=1, inplace=True)
-        df.dropna(how='all', inplace=True)
-        return df.astype(object)
+        """Read sheet data with retry logic and error handling."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                Database._rate_limit()
+                ws = self._get_or_create_worksheet(sheet_name, [])
+                values = ws.get_all_values()
+                time.sleep(0.2)
+                if not values or len(values) < 1:
+                    return pd.DataFrame()
+                raw_headers = [h.strip() for h in values[0]]
+                seen = {}
+                unique_headers = []
+                for h in raw_headers:
+                    if h in seen:
+                        seen[h] += 1
+                        unique_headers.append(f"{h}_{seen[h]}")
+                    else:
+                        seen[h] = 0
+                        unique_headers.append(h)
+                data_rows = values[1:]
+                df = pd.DataFrame(data_rows, columns=unique_headers)
+                df.dropna(how='all', axis=1, inplace=True)
+                df.dropna(how='all', inplace=True)
+                return df.astype(object)
+            except gspread.exceptions.APIError as e:
+                if attempt < max_retries - 1:
+                    delay = 2 * (2 ** attempt)  # Exponential backoff: 2s, 4s
+                    print(f"API Error reading {sheet_name}, retrying in {delay}s... (attempt {attempt+1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    print(f"Failed to read sheet {sheet_name} after {max_retries} attempts: {e}")
+                    return pd.DataFrame()
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                else:
+                    print(f"Error reading sheet {sheet_name}: {e}")
+                    return pd.DataFrame()
+        return pd.DataFrame()
 
     def _sheet_to_df(self, sheet_name):
         return self._get_cached_df(sheet_name, lambda: self._read_sheet_raw(sheet_name))
@@ -1772,8 +1822,9 @@ def show_login_page(db: Database, jwt_secret: str):
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
                                 st.session_state.show_sidebar = True
-                                db.add_log(user.get("user_id", ""), "تسجيل الدخول")
-                                log_security_event(db, user.get("user_id", ""), user.get("full_name", ""), "تسجيل الدخول", "دخول ناجح")
+                                # Disabled automatic logging to prevent API errors
+                                # db.add_log(user.get("user_id", ""), "تسجيل الدخول")
+                                # log_security_event(db, user.get("user_id", ""), user.get("full_name", ""), "تسجيل الدخول", "دخول ناجح")
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 st.toast("✅ مرحباً بك في النظام!", icon="👋")
                                 time.sleep(1)
@@ -5274,23 +5325,23 @@ def show_quick_checkin(db: Database):
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Automatically mark ONLY this student as present
+                        # Automatically mark ONLY this student as absent
                         record_id = str(uuid.uuid4())
                         db.batch_add_attendance([{
                             "record_id": record_id, "date": today_str, "student_id": student_id,
-                            "status": "حاضر", "notes": "تسجيل تلقائي QR", "recorded_by": user.get("user_id", ""),
+                            "status": "غائب", "notes": "تسجيل غياب تلقائي QR", "recorded_by": user.get("user_id", ""),
                             "section_id": section_id
                         }])
-                        db.add_log(user.get("user_id", ""), f"تسجيل حضور تلقائي QR - {student_name}")
+                        db.add_log(user.get("user_id", ""), f"تسجيل غياب تلقائي QR - {student_name}")
                         log_details_operation(
                             db=db,
                             student_id=student_id,
                             student_name=student_name,
-                            status="Present",
-                            operation_type="QR_Checkin_Auto",
+                            status="Absent",
+                            operation_type="QR_Checkin_Absence",
                             qr_data=raw_qr_data,
                             device_info="QR Scanner",
-                            notes="تسجيل تلقائي عند مسح الكود"
+                            notes="تسجيل غياب تلقائي عند مسح الكود"
                         )
                         st.success(f"✅ تم تسجيل حضور {student_name} تلقائياً")
                         st.toast(f"✅ تم تسجيل حضور {student_name}!", icon="✅")
