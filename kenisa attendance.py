@@ -1619,7 +1619,7 @@ def show_initialization(db: Database):
         st.markdown("#### يرجى الضغط على الزر التالي لإنشاء مدير النظام الافتراضي:")
         if st.button("🛠️ تهيئة النظام وإنشاء المسؤول الأول", use_container_width=True, key="init_admin_btn"):
             admin_data = {
-                "user_id": "admin-001", "username": "admin", "password": "admin123",
+                "user_id": "admin-001", "username": "admin", "password": hash_password("admin123"),
                 "role": "System Admin", "full_name": "مدير النظام",
                 "section_id": "", "phone": "0100000000", "email": "admin@church.com"
             }
@@ -1753,7 +1753,19 @@ def show_login_page(db: Database, jwt_secret: str):
                             st.error("اسم المستخدم غير موجود")
                         else:
                             user = user_row.iloc[0].to_dict()
-                            if password == user.get("password", ""):
+                            # Verify password (support both hashed and plain text for migration)
+                            stored_password = user.get("password", "")
+                            password_valid = False
+                            if len(stored_password) == 64:  # Hashed password (SHA256 = 64 chars)
+                                password_valid = verify_password(password, stored_password)
+                            else:  # Plain text (legacy)
+                                password_valid = (password == stored_password)
+                            
+                            if password_valid:
+                                # Migrate password to hash if it's plain text
+                                if len(stored_password) != 64:
+                                    db.update_user(user.get("user_id", ""), {"password": hash_password(password)})
+                                
                                 token = generate_token(user, jwt_secret)
                                 st.session_state.token = token
                                 st.session_state.user = user
@@ -4671,16 +4683,27 @@ def change_password(db: Database):
         if st.form_submit_button("تغيير كلمة المرور"):
             if not old or not new or not confirm:
                 st.error("الرجاء ملء جميع الحقول")
-            elif old != st.session_state.user.get("password", ""):
-                st.error("كلمة المرور الحالية غير صحيحة")
-            elif len(new) < 4:
-                st.error("كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل")
-            elif new != confirm:
-                st.error("كلمتا المرور غير متطابقتين")
             else:
-                db.update_user(st.session_state.user["user_id"], {"password": new})
-                st.session_state.user["password"] = new
-                st.success("✅ تم تغيير كلمة المرور بنجاح!")
+                # Verify old password (support both hashed and plain text)
+                stored_password = st.session_state.user.get("password", "")
+                old_valid = False
+                if len(stored_password) == 64:  # Hashed
+                    old_valid = verify_password(old, stored_password)
+                else:  # Plain text
+                    old_valid = (old == stored_password)
+                
+                if not old_valid:
+                    st.error("كلمة المرور الحالية غير صحيحة")
+                elif len(new) < 4:
+                    st.error("كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل")
+                elif new != confirm:
+                    st.error("كلمتا المرور غير متطابقتين")
+                else:
+                    # Hash new password before storing
+                    hashed_new = hash_password(new)
+                    db.update_user(st.session_state.user["user_id"], {"password": hashed_new})
+                    st.session_state.user["password"] = hashed_new
+                    st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
 # =============================================================================
 # QR Code Management
@@ -5108,9 +5131,13 @@ def show_quick_checkin(db: Database):
         
         st.components.v1.html(qr_scanner_html, height=550, scrolling=False)
         
-        # Initialize session state for QR result
+        # Initialize session state for QR result and rate limiting
         if 'qr_scan_result' not in st.session_state:
             st.session_state.qr_scan_result = None
+        if 'last_qr_scan_time' not in st.session_state:
+            st.session_state.last_qr_scan_time = 0
+        if 'qr_scan_cooldown' not in st.session_state:
+            st.session_state.qr_scan_cooldown = 2  # seconds between scans
         
         # JavaScript listener for QR scan results
         js_listener = """
@@ -5150,7 +5177,7 @@ def show_quick_checkin(db: Database):
         """
         st.components.v1.html(js_listener, height=0)
         
-        # Process QR scan result with validation and duplicate prevention
+        # Process QR scan result with validation
         if st.session_state.get('qr_scan_result'):
             result = st.session_state.qr_scan_result
             raw_qr_data = result.get('raw', '')
