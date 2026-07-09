@@ -5149,12 +5149,15 @@ def show_quick_checkin(db: Database):
                             }
                         });
 
-                        // Send result to Streamlit via URL params
+                        // Send result to Streamlit via URL params (without page reload)
                         const params = new URLSearchParams(window.location.search);
                         params.set('qr_name', encodeURIComponent(name));
                         params.set('qr_id', encodeURIComponent(sid));
                         params.set('qr_raw', encodeURIComponent(code.data));
-                        window.location.href = window.location.pathname + '?' + params.toString();
+                        window.history.replaceState({}, '', window.location.pathname + '?' + params.toString());
+                        
+                        // Trigger Streamlit to re-read query params
+                        window.dispatchEvent(new Event('popstate'));
                         
                         return;
                     }
@@ -5399,6 +5402,14 @@ def show_quick_checkin(db: Database):
     
     st.markdown("---")
     st.subheader("📋 جدول الحاضرين اليوم")
+    # Get today's attendance for display
+    today_attendance_all = db.get_attendance()
+    today_att = pd.DataFrame()
+    if not today_attendance_all.empty and "date" in today_attendance_all.columns:
+        today_str_display = get_cairo_now().strftime("%Y-%m-%d")
+        today_att = today_attendance_all[today_attendance_all.date == today_str_display].copy()
+        if not today_att.empty and "student_id" in today_att.columns and not students.empty:
+            today_att = today_att.merge(students[["student_id", "full_name"]], on="student_id", how="left")
     if not today_att.empty:
         display_df = today_att[["full_name", "status", "notes", "time"]].copy() if "time" in today_att.columns else today_att[["full_name", "status", "notes"]].copy()
         st.dataframe(display_df, use_container_width=True)
@@ -5648,7 +5659,7 @@ def main():
             elif choice == "📋 الحضور":
                 show_attendance(db)
             elif choice == "📈 لوحة تحكم الحضور":
-                show_attendance_dashboard(db)
+                show_attendance(db)
             elif choice == "💬 الافتقاد":
                 show_followup(db)
             elif choice == "🏆 درجات المسابقات":
