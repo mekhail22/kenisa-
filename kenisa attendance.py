@@ -1,293 +1,6 @@
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
-import pandas
-def show_quick_checkin(db: Database):
-    """Quick attendance check-in with search autocomplete and QR scanner with overlays."""
-    st.markdown("<h2 class='main-header'>⚡ تسجيل حضور سريع</h2>", unsafe_allow_html=True)
-    
-    user = st.session_state.user
-    role = user.get("role", "")
-    section_id = user.get("section_id", "")
-
-    if role == "Service Manager":
-        st.error("🚫 أمناء الخدمة لا يمكنهم تسجيل الحضور.")
-        return
-
-    # Initialize session state for QR scanner
-    if 'qr_scan_image' not in st.session_state:
-        st.session_state.qr_scan_image = None
-    if 'qr_scan_result' not in st.session_state:
-        st.session_state.qr_scan_result = None
-    if 'qr_confirmed' not in st.session_state:
-        st.session_state.qr_confirmed = False
-
-    students_df = db.get_students()
-    if students_df.empty:
-        st.info("لا توجد طالبات مسجلات.")
-        return
-
-    # Filter by section for teachers
-    if role == "Teacher" and section_id:
-        if "section_id" in students_df.columns:
-            students_df = students_df[students_df.section_id == section_id]
-
-    if students_df.empty:
-        st.info("لا توجد طالبات في فصلك.")
-        return
-
-    sections = db.get_sections()
-    if not sections.empty and "section_id" in students_df.columns and "section_id" in sections.columns:
-        students_df = students_df.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
-    else:
-        students_df["section_name"] = ""
-
-    # ===== Tabs: Manual Check-in & QR Scanner =====
-    tab1, tab2 = st.tabs(["⌨️ تسجيل يدوي", "📷 مسح QR Code"])
-
-    # ===== Tab 1: Manual Check-in =====
-    with tab1:
-        st.markdown('<div class="filter-container">', unsafe_allow_html=True)
-        search_term = st.text_input("🔍 بحث بالاسم", placeholder="اكتب اسم الطالبة...", key="quick_checkin_search")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        if search_term:
-            filtered = students_df[students_df["full_name"].astype(str).str.contains(search_term, na=False, case=False)]
-            if not filtered.empty:
-                selected_student = st.selectbox(
-                    "اختر الطالبة",
-                    filtered["student_id"].tolist(),
-                    format_func=lambda x: filtered[filtered.student_id == x]["full_name"].values[0],
-                    key="selected_student_checkin_manual"
-                )
-
-                if selected_student:
-                    student_row = filtered[filtered.student_id == selected_student].iloc[0]
-                    name = student_row.get("full_name", "")
-                    sid = selected_student
-
-                    avatar_color = get_avatar_color(name)
-                    first_letter = name[0] if name else "?"
-
-                    st.markdown(f"""
-                    <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0;">
-                        <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
-                        <div style="flex:1;">
-                            <div style="font-weight:700; font-size:1.1rem;">{name}</div>
-                            <div style="font-size:0.85rem; color:var(--text-secondary);">{student_row.get('section_name', '') if student_row.get('section_name') else 'بدون خدمة'}</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("✅ حضور", use_container_width=True, type="primary", key="quick_present_manual"):
-                            today_str = get_cairo_now().strftime("%Y-%m-%d")
-                            existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
-                            
-                            record_id = str(uuid.uuid4())
-                            if not existing.empty and sid in existing["student_id"].values:
-                                record_id = existing[existing.student_id == sid]["record_id"].values[0]
-                            
-                            db.batch_add_attendance([{
-                                "record_id": record_id, "date": today_str, "student_id": sid,
-                                "status": "حاضر", "notes": "تسجيل سريع", "recorded_by": user.get("user_id", ""),
-                                "section_id": student_row.get("section_id", "")
-                            }])
-                            db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع - {name}")
-                            st.success(f"✅ تم تسجيل حضور {name}")
-                            st.toast(f"✅ تم تسجيل حضور {name}!", icon="✅")
-                            time.sleep(0.5)
-                            st.rerun()
-                    with col2:
-                        if st.button("❌ غياب", use_container_width=True, key="quick_absent_manual"):
-                            today_str = get_cairo_now().strftime("%Y-%m-%d")
-                            existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
-                            
-                            record_id = str(uuid.uuid4())
-                            if not existing.empty and sid in existing["student_id"].values:
-                                record_id = existing[existing.student_id == sid]["record_id"].values[0]
-                            
-                            db.batch_add_attendance([{
-                                "record_id": record_id, "date": today_str, "student_id": sid,
-                                "status": "غائب", "notes": "تسجيل سريع", "recorded_by": user.get("user_id", ""),
-                                "section_id": student_row.get("section_id", "")
-                            }])
-                            db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع - {name}")
-                            st.warning(f"❌ تم تسجيل غياب {name}")
-                            st.toast(f"❌ تم تسجيل غياب {name}", icon="⚠️")
-                            time.sleep(0.5)
-                            st.rerun()
-
-    # ===== Tab 2: QR Scanner (NEW RELIABLE IMPLEMENTATION) =====
-    with tab2:
-        st.markdown("#### 📷 مسح QR Code")
-        st.info("📱 وجّه الكاميرا نحو QR Code الطالبة")
-        
-        # Camera input - this is the most reliable way in Streamlit
-        camera_image = st.camera_input("📸 التقط صورة QR Code", key="qr_camera_input")
-        
-        if camera_image is not None:
-            # Process the image
-            from PIL import Image
-            import numpy as np
-            
-            try:
-                image = Image.open(camera_image)
-                
-                # Check if OpenCV is available
-                if CV2_AVAILABLE:
-                    # Convert to OpenCV format
-                    opencv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
-                    detector = cv2.QRCodeDetector()
-                    qr_data, bbox, _ = detector.detectAndDecode(opencv_image)
-                else:
-                    # Try to use jsQR via HTML component would require separate implementation
-                    # For now, just show the image
-                    qr_data = None
-                
-                if qr_data and qr_data.strip():
-                    # Parse QR data
-                    parts = qr_data.split('\n')
-                    qr_name = ""
-                    qr_id = ""
-                    
-                    for part in parts:
-                        trimmed = part.strip()
-                        if trimmed.startswith("Member:"):
-                            qr_name = trimmed.replace("Member:", "").strip()
-                        elif trimmed.startswith("ID:"):
-                            qr_id = trimmed.replace("ID:", "").strip()
-                    
-                    # Validate QR code
-                    validation = validate_qr_code(db, qr_data, students_df)
-                    
-                    if not validation['valid']:
-                        st.markdown(f"""
-                        <div style="text-align:center; padding:1.5rem; background:rgba(220,53,69,0.1); border:2px solid #dc3545; border-radius:15px; margin:1rem 0;">
-                            <div style="font-size:3rem; margin-bottom:0.5rem;">❌</div>
-                            <div style="font-size:1.2rem; font-weight:700; color:#dc3545;">{validation['message']}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        log_details_operation(
-                            db=db, student_id=qr_id, student_name=qr_name,
-                            status="Invalid", operation_type="QR_Scan_Failed",
-                            qr_data=qr_data, device_info="Camera Input",
-                            notes=validation['message']
-                        )
-                    else:
-                        student_id = validation['student_id']
-                        student_name = validation['student_name']
-                        section_id_val = validation['section_id']
-                        today_str = get_cairo_now().strftime("%Y-%m-%d")
-                        
-                        # Get section name
-                        section_name = ""
-                        if not sections.empty and section_id_val in sections["section_id"].values:
-                            section_name = sections[sections.section_id == section_id_val]["section_name"].values[0]
-                        
-                        # Check for duplicate
-                        is_duplicate = check_duplicate_attendance(db, student_id, today_str)
-                        
-                        if is_duplicate:
-                            avatar_color = get_avatar_color(student_name)
-                            first_letter = student_name[0] if student_name else "?"
-                            st.markdown(f"""
-                            <div style="text-align:center; padding:1.5rem; background:rgba(255,193,7,0.1); border:2px solid #ffc107; border-radius:15px; margin:1rem 0;">
-                                <div style="font-size:3rem; margin-bottom:0.5rem;">⚠️</div>
-                                <div style="display:flex; align-items:center; gap:1rem; justify-content:center; margin-bottom:0.5rem;">
-                                    <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
-                                    <div style="text-align:right;">
-                                        <div style="font-size:1.2rem; font-weight:700;">{student_name}</div>
-                                        <div style="font-size:0.9rem; color:#666;">{section_name if section_name else 'بدون خدمة'}</div>
-                                    </div>
-                                </div>
-                                <div style="font-size:1.1rem; font-weight:600; color:#d4a017;">تم تسجيل حضور {student_name} مسبقاً اليوم!</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        else:
-                            # Show confirmation and auto-register
-                            avatar_color = get_avatar_color(student_name)
-                            first_letter = student_name[0] if student_name else "?"
-                            now_time = get_cairo_now().strftime("%I:%M %p")
-                            
-                            st.markdown(f"""
-                            <div style="text-align:center; padding:1.5rem; background:rgba(40,167,69,0.08); border:2px solid #28a745; border-radius:15px; margin:1rem 0;">
-                                <div style="font-size:2rem; margin-bottom:0.8rem;">✅</div>
-                                <div style="display:flex; align-items:center; gap:1rem; justify-content:center; margin-bottom:0.8rem; flex-wrap:wrap;">
-                                    <div class="member-avatar" style="background:{avatar_color}; width:64px; height:64px; font-size:1.8rem;">{first_letter}</div>
-                                    <div style="text-align:right;">
-                                        <div style="font-size:1.4rem; font-weight:700;">{student_name}</div>
-                                        <div style="font-size:1rem; color:#667eea; font-weight:600;">🏫 {section_name if section_name else 'بدون خدمة'}</div>
-                                    </div>
-                                </div>
-                                <div style="background:var(--card-bg); border-radius:10px; padding:0.8rem; margin:0.5rem 0;">
-                                    <div style="font-size:0.95rem; color:var(--text-secondary);">
-                                        📅 التاريخ: {get_cairo_now().strftime("%Y-%m-%d")} | 🕐 الوقت: {now_time}
-                                    </div>
-                                    <div style="font-size:0.95rem; color:var(--text-secondary); margin-top:0.2rem;">
-                                        ✅ الحالة: <span style="color:#28a745; font-weight:700;">حاضر</span>
-                                    </div>
-                                </div>
-                                <div style="font-size:1rem; color:#28a745; margin-top:0.5rem; font-weight:700;">تم تسجيل الحضور تلقائياً!</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Auto-register after confirmation display
-                            record_id = str(uuid.uuid4())
-                            db.batch_add_attendance([{
-                                "record_id": record_id, "date": today_str, "student_id": student_id,
-                                "status": "حاضر", "notes": "تسجيل حضور عن طريق QR Code (كاميرا)",
-                                "recorded_by": user.get("user_id", ""), "section_id": section_id_val
-                            }])
-                            db.add_log(user.get("user_id", ""), f"تسجيل حضور QR Code - {student_name}")
-                            log_details_operation(
-                                db=db, student_id=student_id, student_name=student_name,
-                                status="Present", operation_type="QR_Checkin_Camera",
-                                qr_data=qr_data, device_info="Camera Input",
-                                notes="تم التسجيل تلقائياً من الكاميرا"
-                            )
-                            
-                            st.success(f"✅ تم تسجيل حضور {student_name} بنجاح")
-                            st.toast(f"✅ تم تسجيل حضور {student_name}!", icon="🎉")
-                            
-                            # Clear camera input for next scan
-                            time.sleep(1)
-                            st.session_state.qr_camera_input = None
-                            st.rerun()
-                else:
-                    st.warning("QR Code غير مقروء. حاول مرة أخرى.")
-                    
-            except Exception as e:
-                st.error(f"خطأ في معالجة الصورة: {str(e)}")
-
-        elif CV2_AVAILABLE:
-            st.markdown('<div class="filter-container">', unsafe_allow_html=True)
-            st.markdown("##### 📸 التصوير باستخدام الكاميرا")
-            st.markdown("انقر على زر التصوير أعلاه للمسح")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    # ===== Today's Attendance Table =====
-    st.markdown("---")
-    st.subheader("📋 جدول الحاضرين اليوم")
-    today_attendance_all = db.get_attendance()
-    today_att = pd.DataFrame()
-    if not today_attendance_all.empty and "date" in today_attendance_all.columns:
-        today_str_display = get_cairo_now().strftime("%Y-%m-%d")
-        today_att = today_attendance_all[today_attendance_all.date == today_str_display].copy()
-        if not today_att.empty and "student_id" in today_att.columns and not students_df.empty:
-            today_att = today_att.merge(students_df[["student_id", "full_name"]], on="student_id", how="left")
-    if not today_att.empty:
-        display_cols = ["full_name", "status", "notes"]
-        if "time" in today_att.columns:
-            display_cols.insert(2, "time")
-        st.dataframe(today_att[display_cols], use_container_width=True)
-    else:
-        st.info("لا يوجد حضور مسجل اليوم")
-
-import streamlit as st
-import gspread
-from google.oauth2.service_account import Credentials
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta, timezone
@@ -300,46 +13,6 @@ import time
 import requests
 from functools import wraps
 import threading
-import qrcode
-from io import BytesIO, StringIO
-import base64
-
-try:
-    import numpy as np
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
-    np = None
-
-try:
-    from PIL import Image
-    PYPLACE_AVAILABLE = True
-except ImportError:
-    PYPLACE_AVAILABLE = False
-    Image = None
-
-# Note: pyzbar removed due to system library dependency (libzbar) not available on Streamlit Cloud
-# Using a browser-based QR scanner instead
-
-# Browser-based QR scanner fallback  
-def decode_qr_from_image(image):
-    """
-    Decode QR code from a PIL Image using browser-based approach.
-    Falls back to OpenCV if available, otherwise shows a message.
-    """
-    if CV2_AVAILABLE:
-        try:
-            import cv2
-            import numpy as np
-            gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
-            detector = cv2.QRCodeDetector()
-            data, bbox, _ = detector.detectAndDecode(gray)
-            if data:
-                return data
-        except Exception as e:
-            pass
-    return None
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -363,196 +36,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# =============================================================================
-# نظام الصلاحيات والأمان
-# =============================================================================
-import hashlib
-import os
-
-def hash_password(password: str) -> str:
-    """Hash password using SHA256."""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def verify_password(password: str, hashed: str) -> bool:
-    """Verify password against hash."""
-    return hash_password(password) == hashed
-
-
-def get_client_info():
-    """Get client browser, OS, device type, and screen size from session state or request."""
-    try:
-        # Try to get from session state (set via JavaScript on login page)
-        browser = st.session_state.get('client_browser', st.session_state.get('user_agent', 'Unknown'))
-        os = st.session_state.get('client_os', 'Unknown')
-        device_type = st.session_state.get('client_device', 'Desktop')
-        screen_width = st.session_state.get('screen_width', 'Unknown')
-        screen_height = st.session_state.get('screen_height', 'Unknown')
-        
-        # Parse browser from user agent if still unknown
-        if browser == 'Unknown' or not browser:
-            ua_string = st.session_state.get('user_agent', '')
-            if ua_string:
-                browser = _parse_browser(ua_string)
-                os = _parse_os(ua_string)
-        
-        return {
-            'browser': browser,
-            'os': os,
-            'device_type': device_type,
-            'screen_width': screen_width,
-            'screen_height': screen_height
-        }
-    except Exception:
-        return {'browser': 'Unknown', 'os': 'Unknown', 'device_type': 'Desktop', 'screen_width': 'Unknown', 'screen_height': 'Unknown'}
-
-def _parse_browser(user_agent):
-    """Parse browser name from user agent string."""
-    if not user_agent:
-        return 'Unknown'
-    ua_lower = user_agent.lower()
-    if 'chrome' in ua_lower and 'edg' not in ua_lower:
-        return 'Chrome'
-    elif 'safari' in ua_lower and 'chrome' not in ua_lower:
-        return 'Safari'
-    elif 'firefox' in ua_lower:
-        return 'Firefox'
-    elif 'edg' in ua_lower:
-        return 'Edge'
-    elif 'opera' in ua_lower or 'opr' in ua_lower:
-        return 'Opera'
-    return 'Other'
-
-def _parse_os(user_agent):
-    """Parse OS from user agent string."""
-    if not user_agent:
-        return 'Unknown'
-    ua_lower = user_agent.lower()
-    if 'windows' in ua_lower:
-        return 'Windows'
-    elif 'mac' in ua_lower or 'ios' in ua_lower:
-        return 'Mac/iOS'
-    elif 'android' in ua_lower:
-        return 'Android'
-    elif 'linux' in ua_lower:
-        return 'Linux'
-    return 'Other'
-
-def get_ip_address():
-    """Get client IP address from session state or query params."""
-    try:
-        # Try to get from session state (set by JavaScript)
-        stored_ip = st.session_state.get('client_ip', 'Unknown')
-        if stored_ip and stored_ip != 'Unknown':
-            return stored_ip
-        # Try to get from query params (if passed from frontend)
-        ip = st.query_params.get('ip', ['Unknown'])[0]
-        if ip and ip != 'Unknown':
-            return ip
-        return 'Unknown'
-    except Exception:
-        return 'Unknown'
-
-def mask_ip(ip: str) -> str:
-    """Mask IP address for privacy (keep first 2 octets for IPv4)."""
-    if not ip or ip in ['Unknown', 'Streamlit-Server']:
-        return '***.***.***.***'
-    parts = ip.split('.')
-    if len(parts) == 4:
-        return f"{parts[0]}.{parts[1]}.***.***"
-    return '***.***.***.***'
-
-def get_location_from_ip(ip: str) -> dict:
-    """Get approximate location from IP address using free API."""
-    if not ip or ip in ['Unknown', 'Streamlit-Server']:
-        return {'country': 'Unknown', 'city': 'Unknown', 'region': 'Unknown'}
-    
-    try:
-        # Using ipapi.co (free tier: 1000 requests/day)
-        response = requests.get(f'https://ipapi.co/{ip}/json/', timeout=3)
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                'country': data.get('country_name', 'Unknown'),
-                'city': data.get('city', 'Unknown'),
-                'region': data.get('region', 'Unknown')
-            }
-    except Exception:
-        pass
-    
-    # Fallback if API fails
-    return {'country': 'Unknown', 'city': 'Unknown', 'region': 'Unknown'}
-
-def log_security_event(db, user_id, user_name, action, details=""):
-    client_info = get_client_info()
-    ip_address = get_ip_address()
-    location = get_location_from_ip(ip_address)
-
-    entry = {
-        "log_id": str(uuid.uuid4()),
-        "timestamp": get_cairo_now().isoformat(),
-        "user_id": user_id,
-        "user_name": user_name,
-        "action": action,
-        "details": details,
-        "browser": client_info['browser'],
-        "os": client_info['os'],
-        "device_type": client_info['device_type'],
-        "screen_size": f"{client_info['screen_width']}x{client_info['screen_height']}",
-        "ip_masked": mask_ip(ip_address),
-        "country": location['country'],
-        "city": location['city'],
-        "region": location['region']
-    }
-
-    df = db.get_logs()
-    if df.empty:
-        df = pd.DataFrame(columns=["log_id", "timestamp", "user_id", "user_name", "action", "details",
-                                   "browser", "os", "device_type", "screen_size", "ip_masked",
-                                   "country", "city", "region"])
-    df = pd.concat([df, pd.DataFrame([entry])], ignore_index=True)
-    if len(df) > 2000:
-        df = df.tail(2000)
-    db._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "user_name", "action", "details",
-                                   "browser", "os", "device_type", "screen_size", "ip_masked",
-                                   "country", "city", "region"])
-
-
-def log_attendance_event(db, student_id, student_name, status, method="يدوي", recorded_by="", section_id=""):
-    entry = {
-        "record_id": str(uuid.uuid4()),
-        "timestamp": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
-        "date": get_cairo_now().strftime("%Y-%m-%d"),
-        "student_id": student_id,
-        "student_name": student_name,
-        "status": status,
-        "method": method,
-        "recorded_by": recorded_by,
-        "section_id": section_id
-    }
-
-    df = db.get_attendance()
-    if df.empty:
-        df = pd.DataFrame(columns=["record_id", "timestamp", "date", "student_id", "student_name",
-                                   "status", "method", "recorded_by", "section_id"])
-    df = pd.concat([df, pd.DataFrame([entry])], ignore_index=True)
-    if len(df) > 5000:
-        df = df.tail(5000)
-    db._df_to_sheet("Attendance", df, ["record_id", "timestamp", "date", "student_id", "student_name",
-                                         "status", "method", "recorded_by", "section_id"])
-
-def get_current_user_role():
-    """Get current user's role from session."""
-    if st.session_state.get("authenticated") and st.session_state.get("user"):
-        return st.session_state.user.get("role", "")
-    return ""
-
-def has_permission(required_role: str):
-    """Check if current user has required permission."""
-    current_role = get_current_user_role()
-    if current_role == "Admin":
-        return True
-    return current_role == required_role
 
 # =============================================================================
 # Telegram & Support
@@ -604,84 +87,28 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 # =============================================================================
-# CSS محسّن مع Dark/Light Mode ودعم Responsive
+# CSS محسّن مع تثبيت المظهر الفاتح
 # =============================================================================
 def inject_css():
-    # Determine current theme
-    theme = st.session_state.get("theme", "light")
-    is_dark = (theme == "dark")
-    
-    # Theme colors
-    if is_dark:
-        bg_primary = "#0d1b2a"
-        bg_secondary = "#1b2838"
-        bg_card = "#1e3a5f"
-        text_primary = "#f5f5f5"
-        text_secondary = "#c0c0c0"
-        sidebar_bg = "linear-gradient(180deg, #0d1b2a 0%, #1b2838 100%)"
-        sidebar_border = "1px solid rgba(212,175,55,0.15)"
-        card_bg = "rgba(30,58,95,0.85)"
-        card_border = "1px solid rgba(212,175,55,0.1)"
-        header_bg = "rgba(30,58,95,0.9)"
-        gradient_start = "#0d1b2a"
-        gradient_end = "#1b2838"
-        metric_bg = "rgba(30,58,95,0.9)"
-        metric_border = "1px solid rgba(212,175,55,0.2)"
-        shadow_color = "rgba(0,0,0,0.3)"
-        gold = "#d4af37"
-        gold_light = "rgba(212,175,55,0.15)"
-    else:
-        bg_primary = "#f0f2f6"
-        bg_secondary = "#f5f7fa"
-        bg_card = "#ffffff"
-        text_primary = "#1a1a2e"
-        text_secondary = "#555555"
-        sidebar_bg = "linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%)"
-        sidebar_border = "1px solid rgba(0,0,0,0.08)"
-        card_bg = "rgba(255,255,255,0.95)"
-        card_border = "1px solid rgba(0,0,0,0.05)"
-        header_bg = "rgba(255,255,255,0.9)"
-        gradient_start = "#f5f7fa"
-        gradient_end = "#e4e8ec"
-        metric_bg = "rgba(255,255,255,0.95)"
-        metric_border = "1px solid rgba(0,0,0,0.05)"
-        shadow_color = "rgba(0,0,0,0.08)"
-        gold = "#d4af37"
-        gold_light = "rgba(212,175,55,0.1)"
-
-    st.markdown(f"""
+    st.markdown("""
     <style>
-        :root {{
-            --bg-primary: {bg_primary};
-            --bg-secondary: {bg_secondary};
-            --bg-card: {bg_card};
-            --text-primary: {text_primary};
-            --text-secondary: {text_secondary};
-            --sidebar-bg: {sidebar_bg};
-            --sidebar-border: {sidebar_border};
-            --card-bg: {card_bg};
-            --card-border: {card_border};
-            --header-bg: {header_bg};
-            --gradient-start: {gradient_start};
-            --gradient-end: {gradient_end};
-            --metric-bg: {metric_bg};
-            --metric-border: {metric_border};
-            --shadow-color: {shadow_color};
-            --gold: {gold};
-            --gold-light: {gold_light};
-        }}
-
-        html, body, .stApp {{
-            color-scheme: {"dark" if is_dark else "light"} !important;
-        }}
+        html, body, .stApp {
+            color-scheme: light !important;
+        }
+        @media (prefers-color-scheme: dark) {
+            html, body, .stApp {
+                background-color: #f0f2f6 !important;
+                color: #1a1a2e !important;
+            }
+        }
 
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-        * {{ font-family: 'Cairo', sans-serif; }}
-        body {{ direction: rtl; text-align: right; background-color: var(--bg-primary); color: var(--text-primary); }}
-        .stApp {{ background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%); }}
-        header[data-testid="stHeader"] {{ display: none !important; }}
-        #MainMenu {{ visibility: hidden; }}
-        footer {{ visibility: hidden; }}
+        * { font-family: 'Cairo', sans-serif; }
+        body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; }
+        .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
+        header[data-testid="stHeader"] { display: none !important; }
+        #MainMenu { visibility: hidden; }
+        footer { visibility: hidden; }
 
         [data-testid="stSidebarNavToggle"],
         [data-testid="stSidebarCollapseButton"],
@@ -689,7 +116,7 @@ def inject_css():
         button[aria-label*="Close sidebar"],
         button[aria-label*="Close"],
         [data-testid="baseButton-header"],
-        [data-testid="stSidebarResizer"] {{
+        [data-testid="stSidebarResizer"] {
             display: none !important;
             pointer-events: none !important;
             visibility: hidden !important;
@@ -702,9 +129,9 @@ def inject_css():
             position: absolute !important;
             z-index: -9999 !important;
             overflow: hidden !important;
-        }}
+        }
 
-        section[data-testid="stSidebar"] {{
+        section[data-testid="stSidebar"] {
             position: fixed !important;
             top: 0 !important;
             right: 0 !important;
@@ -713,74 +140,34 @@ def inject_css():
             max-width: 100vw !important;
             z-index: 10000 !important;
             transition: transform 0.3s ease !important;
-            box-shadow: -5px 0 15px var(--shadow-color);
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
             overflow-y: auto !important;
             margin: 0 !important;
             padding-top: 1rem !important;
-            background: var(--sidebar-bg) !important;
-            border-left: var(--sidebar-border) !important;
+            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
+            border-left: 1px solid rgba(0,0,0,0.08) !important;
             transform: translateX(0);
-        }}
+        }
 
-        @media (max-width: 768px) {{
-            section[data-testid="stSidebar"] {{
+        @media (max-width: 768px) {
+            section[data-testid="stSidebar"] {
                 width: 100vw !important;
-            }}
-        }}
+            }
+        }
 
-        [data-testid="stSidebarOverlay"] {{
+        [data-testid="stSidebarOverlay"] {
             display: none !important;
-        }}
+        }
 
         [data-testid="stAppViewContainer"] > [data-testid="stMain"],
-        [data-testid="stMainBlockContainer"] {{
+        [data-testid="stMainBlockContainer"] {
             max-width: 100% !important;
             width: 100% !important;
             margin-left: 0 !important;
             margin-right: 0 !important;
-        }}
+        }
 
-        /* ===== Theme Toggle Button ===== */
-        .theme-toggle-btn .stButton > button {{
-            width: 100% !important;
-            text-align: center !important;
-            padding: 0.6rem !important;
-            font-size: 0.95rem !important;
-            font-weight: 700 !important;
-            border-radius: 12px !important;
-            background: var(--gold-light) !important;
-            color: var(--gold) !important;
-            border: 1px solid var(--gold) !important;
-            box-shadow: none !important;
-            transition: all 0.3s ease !important;
-        }}
-        .theme-toggle-btn .stButton > button:hover {{
-            background: var(--gold) !important;
-            color: #1e3a5f !important;
-            transform: scale(1.02) !important;
-        }}
-
-        /* ===== Quick Action Buttons ===== */
-        .quick-action-btn .stButton > button {{
-            width: 100% !important;
-            text-align: center !important;
-            padding: 0.7rem 0.5rem !important;
-            font-size: 0.9rem !important;
-            font-weight: 700 !important;
-            border-radius: 12px !important;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important;
-            border: none !important;
-            box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
-            transition: all 0.2s ease !important;
-        }}
-        .quick-action-btn .stButton > button:hover {{
-            transform: translateY(-2px) !important;
-            box-shadow: 0 4px 15px rgba(102,126,234,0.5) !important;
-        }}
-
-        /* ===== Nav Buttons ===== */
-        .nav-btn-container .stButton > button {{
+        .nav-btn-container .stButton > button {
             width: 100% !important;
             text-align: right !important;
             justify-content: flex-start !important;
@@ -789,31 +176,31 @@ def inject_css():
             font-weight: 600 !important;
             border-radius: 10px !important;
             background: transparent !important;
-            color: var(--text-primary) !important;
+            color: #1a1a2e !important;
             border: 1px solid transparent !important;
             box-shadow: none !important;
             transition: all 0.2s ease !important;
             direction: rtl !important;
-        }}
-        .nav-btn-container .stButton > button:hover {{
-            background: var(--gold-light) !important;
-            color: var(--gold) !important;
-            border-color: rgba(212,175,55,0.2) !important;
+        }
+        .nav-btn-container .stButton > button:hover {
+            background: rgba(102,126,234,0.08) !important;
+            color: #667eea !important;
+            border-color: rgba(102,126,234,0.15) !important;
             transform: translateX(-2px) !important;
-        }}
-        .nav-btn-container .stButton > button[kind="primary"] {{
+        }
+        .nav-btn-container .stButton > button[kind="primary"] {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
             box-shadow: 0 2px 8px rgba(102,126,234,0.3) !important;
-        }}
-        .nav-btn-container .stButton > button[kind="primary"]:hover {{
+        }
+        .nav-btn-container .stButton > button[kind="primary"]:hover {
             background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%) !important;
             color: white !important;
             transform: translateX(-2px) !important;
-        }}
+        }
 
-        .floating-show-btn .stButton > button {{
+        .floating-show-btn .stButton > button {
             position: fixed !important;
             top: 20px !important;
             right: 20px !important;
@@ -834,13 +221,13 @@ def inject_css():
             padding: 0 !important;
             min-height: 60px !important;
             transition: all 0.2s ease !important;
-        }}
-        .floating-show-btn .stButton > button:hover {{
+        }
+        .floating-show-btn .stButton > button:hover {
             transform: scale(1.08) !important;
             box-shadow: 0 6px 20px rgba(102,126,234,0.6) !important;
-        }}
+        }
 
-        .help-float-container .stButton > button {{
+        .help-float-container .stButton > button {
             position: fixed !important;
             top: 20px !important;
             right: 100px !important;
@@ -856,327 +243,69 @@ def inject_css():
             white-space: nowrap !important;
             min-height: 48px !important;
             transition: all 0.2s ease !important;
-        }}
-        .help-float-container .stButton > button:hover {{
+        }
+        .help-float-container .stButton > button:hover {
             transform: scale(1.04) !important;
             box-shadow: 0 6px 20px rgba(243,156,18,0.5) !important;
-        }}
+        }
 
-        .main-header {{
-            font-size: 2.2rem; font-weight: 700; color: var(--text-primary); text-align: center;
-            margin-bottom: 1.5rem; padding: 1rem; background: var(--header-bg);
-            border-radius: 15px; box-shadow: 0 4px 12px var(--shadow-color);
-            backdrop-filter: blur(5px); border: var(--card-border);
+        .main-header {
+            font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
+            margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
+            border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            backdrop-filter: blur(5px); border: 1px solid rgba(0,0,0,0.05);
             margin-top: 100px;
-        }}
-        .card {{ background: var(--card-bg); border-radius: 15px; padding: 1.5rem;
-            box-shadow: 0 4px 12px var(--shadow-color); margin-bottom: 1rem; transition: transform 0.2s; color: var(--text-primary); border: var(--card-border); }}
-        .card:hover {{ transform: translateY(-2px); box-shadow: 0 8px 24px var(--shadow-color); }}
-        .stButton > button {{
+        }
+        .card { background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem; transition: transform 0.2s; color: #1a1a2e; border: 1px solid rgba(0,0,0,0.05); }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        .stButton > button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white; border: none; border-radius: 8px; font-weight: 600;
             transition: all 0.2s; box-shadow: 0 2px 8px rgba(102,126,234,0.3);
-        }}
-        .stButton > button:hover {{ transform: scale(1.02); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }}
-        .stRadio > div, .stSelectbox > div, .stMultiSelect > div {{ direction: rtl; }}
-        .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput {{ text-align: right; }}
-        .content-area {{ padding: 0 1rem; }}
+        }
+        .stButton > button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }
+        .stRadio > div, .stSelectbox > div, .stMultiSelect > div { direction: rtl; }
+        .stMarkdown, .stTextInput, .stTextArea, .stNumberInput, .stDateInput { text-align: right; }
+        .content-area { padding: 0 1rem; }
 
-        .stDataFrame {{ background: var(--card-bg); border-radius: 10px; box-shadow: 0 2px 8px var(--shadow-color); color: var(--text-primary); }}
-        .streamlit-expanderHeader {{
+        .stDataFrame { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .streamlit-expanderHeader {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white !important; border-radius: 8px; font-weight: 600;
-        }}
-        .stForm {{ background: var(--card-bg); padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px var(--shadow-color); }}
-        .stTabs [data-baseweb="tab-list"] {{ gap: 8px; }}
-        .stTabs [data-baseweb="tab"] {{
+        }
+        .stForm { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+        .stTabs [data-baseweb="tab"] {
             background: rgba(102,126,234,0.1); border-radius: 8px 8px 0 0;
             padding: 10px 20px; font-weight: 600; color: #667eea;
             border: 1px solid rgba(102,126,234,0.2); border-bottom: none;
-        }}
-        .stTabs [aria-selected="true"] {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; }}
-        .stSuccess {{ background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }}
-        .stError {{ background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }}
+        }
+        .stTabs [aria-selected="true"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; }
+        .stSuccess { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }
+        .stError { background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }
 
-        iframe[title="st_components.html"] {{
+        iframe[title="st_components.html"] {
             border: none !important;
             background: transparent !important;
-        }}
+        }
 
-        /* ===== KPI Cards ===== */
-        .kpi-card {{
-            background: var(--metric-bg);
-            border-radius: 16px;
-            padding: 1.2rem 1rem;
-            text-align: center;
-            border: var(--metric-border);
-            box-shadow: 0 4px 15px var(--shadow-color);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }}
-        .kpi-card:hover {{
-            transform: translateY(-4px);
-            box-shadow: 0 8px 25px var(--shadow-color);
-        }}
-        .kpi-card::before {{
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            border-radius: 16px 16px 0 0;
-        }}
-        .kpi-card .kpi-icon {{
-            font-size: 2rem;
-            margin-bottom: 0.3rem;
-        }}
-        .kpi-card .kpi-label {{
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            font-weight: 600;
-            margin-bottom: 0.2rem;
-        }}
-        .kpi-card .kpi-value {{
-            font-size: 2rem;
-            font-weight: 800;
-            color: var(--text-primary);
-            line-height: 1.2;
-        }}
-        .kpi-card .kpi-sub {{
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            margin-top: 0.2rem;
-        }}
-        .kpi-card.gold::before {{
-            background: linear-gradient(90deg, #d4af37, #f0d060);
-        }}
-        .kpi-card.green::before {{
-            background: linear-gradient(90deg, #28a745, #48c868);
-        }}
-        .kpi-card.blue::before {{
-            background: linear-gradient(90deg, #1e3a5f, #2a5a8f);
-        }}
-        .kpi-card.purple::before {{
-            background: linear-gradient(90deg, #764ba2, #9b6fc0);
-        }}
-
-        /* ===== Sidebar Section Header ===== */
-        .sidebar-section-header {{
-            font-size: 0.8rem;
-            font-weight: 700;
-            color: var(--gold);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            padding: 0.5rem 0.5rem 0.3rem 0.5rem;
-            border-bottom: 1px solid var(--gold-light);
-            margin-top: 0.5rem;
-            margin-bottom: 0.3rem;
-        }}
-
-        /* ===== Sidebar User Card ===== */
-        .sidebar-user-card {{
-            background: var(--gold-light);
-            border-radius: 12px;
-            padding: 0.8rem 1rem;
-            margin-bottom: 0.5rem;
-            border: 1px solid rgba(212,175,55,0.2);
-            text-align: center;
-        }}
-        .sidebar-user-card .user-name {{
-            font-size: 1rem;
-            font-weight: 700;
-            color: var(--text-primary);
-        }}
-        .sidebar-user-card .user-role {{
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }}
-
-        /* ===== Responsive Design ===== */
-        @media (max-width: 768px) {{
-            .floating-show-btn .stButton > button {{
+        @media (max-width: 768px) {
+            .floating-show-btn .stButton > button {
                 width: 50px !important;
                 height: 50px !important;
                 font-size: 24px !important;
                 top: 14px !important;
                 right: 14px !important;
-            }}
-            .help-float-container .stButton > button {{
+            }
+            .help-float-container .stButton > button {
                 right: 80px !important;
                 top: 14px !important;
                 padding: 10px 16px !important;
                 font-size: 14px !important;
-            }}
-            .main-header {{ font-size: 1.6rem; margin-top: 110px; }}
-            .kpi-card .kpi-value {{ font-size: 1.5rem; }}
-            .kpi-card .kpi-icon {{ font-size: 1.5rem; }}
-            .kpi-card {{ padding: 0.8rem 0.5rem; }}
-        }}
-
-        @media (max-width: 480px) {{
-            .main-header {{ font-size: 1.3rem; margin-top: 100px; padding: 0.7rem; }}
-            .kpi-card .kpi-value {{ font-size: 1.2rem; }}
-            .kpi-card .kpi-icon {{ font-size: 1.2rem; }}
-            .kpi-card {{ padding: 0.6rem 0.3rem; }}
-            .kpi-card .kpi-label {{ font-size: 0.7rem; }}
-            section[data-testid="stSidebar"] {{ width: 100vw !important; }}
-        }}
-
-        /* ===== Metric Customization ===== */
-        div[data-testid="metric-container"] {{
-            background: var(--metric-bg);
-            border-radius: 16px;
-            padding: 1rem;
-            border: var(--metric-border);
-            box-shadow: 0 4px 15px var(--shadow-color);
-            transition: all 0.3s ease;
-        }}
-        div[data-testid="metric-container"]:hover {{
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px var(--shadow-color);
-        }}
-        div[data-testid="metric-container"] > div:first-child {{
-            font-size: 0.85rem !important;
-            font-weight: 600 !important;
-            color: var(--text-secondary) !important;
-        }}
-        div[data-testid="metric-container"] > div:nth-child(2) {{
-            font-size: 2rem !important;
-            font-weight: 800 !important;
-            color: var(--text-primary) !important;
-        }}
-        div[data-testid="metric-container"] > div:nth-child(3) {{
-            font-size: 0.8rem !important;
-            color: var(--text-secondary) !important;
-        }}
-
-        /* ===== Collapsible Sidebar Sections ===== */
-        .sidebar-collapsible {{
-            margin-bottom: 0.3rem;
-        }}
-        .sidebar-collapsible summary {{
-            cursor: pointer;
-            padding: 0.5rem;
-            font-weight: 700;
-            color: var(--gold);
-            font-size: 0.85rem;
-            border-radius: 8px;
-            transition: all 0.2s;
-            list-style: none;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }}
-        .sidebar-collapsible summary:hover {{
-            background: var(--gold-light);
-        }}
-        .sidebar-collapsible summary::-webkit-details-marker {{
-            display: none;
-        }}
-        .sidebar-collapsible[open] summary {{
-            margin-bottom: 0.3rem;
-        }}
-
-        /* ===== Member Cards & Avatar ===== */
-        .member-card {{
-            background: var(--card-bg);
-            border-radius: 16px;
-            padding: 1.2rem;
-            border: var(--card-border);
-            box-shadow: 0 4px 15px var(--shadow-color);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-            height: 100%;
-        }}
-        .member-card:hover {{
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px var(--shadow-color);
-        }}
-        .member-avatar {{
-            width: 56px; height: 56px; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 1.5rem; font-weight: 800; color: white;
-            margin: 0 auto 0.5rem auto; flex-shrink: 0;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.15);
-        }}
-        .member-avatar-sm {{
-            width: 40px; height: 40px; font-size: 1.1rem;
-        }}
-        .status-badge {{
-            display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px;
-            font-size: 0.75rem; font-weight: 700; text-align: center;
-            min-width: 70px;
-        }}
-        .status-badge.active {{ background: rgba(40,167,69,0.15); color: #28a745; border: 1px solid rgba(40,167,69,0.3); }}
-        .status-badge.inactive {{ background: rgba(220,53,69,0.15); color: #dc3545; border: 1px solid rgba(220,53,69,0.3); }}
-        .status-badge.newcomer {{ background: rgba(255,193,7,0.15); color: #d4a017; border: 1px solid rgba(255,193,7,0.3); }}
-        .status-badge.leader {{ background: rgba(102,126,234,0.15); color: #667eea; border: 1px solid rgba(102,126,234,0.3); }}
-
-        /* ===== Member Grid ===== */
-        .member-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 1rem;
-            margin-top: 1rem;
-        }}
-        @media (max-width: 768px) {{
-            .member-grid {{
-                grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-                gap: 0.8rem;
-            }}
-        }}
-        @media (max-width: 480px) {{
-            .member-grid {{
-                grid-template-columns: 1fr;
-            }}
-        }}
-
-        /* ===== Member Detail Row ===== */
-        .member-detail-row {{
-            display: flex; align-items: center; gap: 0.5rem;
-            padding: 0.3rem 0; font-size: 0.85rem;
-            color: var(--text-secondary);
-        }}
-        .member-detail-row .label {{
-            font-weight: 600; color: var(--text-primary); min-width: 70px;
-        }}
-
-        /* ===== Filter Section ===== */
-        .filter-container {{
-            background: var(--card-bg);
-            border-radius: 12px;
-            padding: 1rem;
-            border: var(--card-border);
-            margin-bottom: 1rem;
-        }}
-
-        /* ===== Bulk Action Bar ===== */
-        .bulk-action-bar {{
-            background: var(--gold-light);
-            border-radius: 12px;
-            padding: 0.8rem 1rem;
-            border: 1px solid rgba(212,175,55,0.2);
-            margin-bottom: 1rem;
-            display: flex; align-items: center; gap: 0.8rem;
-            flex-wrap: wrap;
-        }}
-
-        /* ===== Toast Custom Colors ===== */
-        .stAlert {{
-            border-radius: 10px !important;
-        }}
-        div[data-testid="stAlertContainer"] > div:has(> div > svg[color="#28a745"]) {{
-            background: rgba(40,167,69,0.12) !important;
-            border: 1px solid rgba(40,167,69,0.3) !important;
-        }}
-        div[data-testid="stAlertContainer"] > div:has(> div > svg[color="#dc3545"]) {{
-            background: rgba(220,53,69,0.12) !important;
-            border: 1px solid rgba(220,53,69,0.3) !important;
-        }}
+            }
+            .main-header { font-size: 1.6rem; margin-top: 110px; }
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1225,7 +354,6 @@ def retry_operation(max_retries=5, base_delay=2):
 class Database:
     _request_times = []
     _lock = threading.Lock()
-    _details_lock = threading.Lock()
 
     @staticmethod
     def _rate_limit():
@@ -1238,84 +366,21 @@ class Database:
                     time.sleep(sleep_time)
                 Database._request_times = []
             Database._request_times.append(time.time())
-    
-    def _ensure_details_sheet(self):
-        """Ensure 'Details' sheet exists with proper headers."""
-        try:
-            ws = self.spreadsheet.worksheet("Details")
-        except gspread.WorksheetNotFound:
-            ws = self.spreadsheet.add_worksheet(title="Details", rows=1000, cols=8)
-            ws.append_row([
-                "Timestamp", "ID", "Name", "Status", "Operation_Type",
-                "QR_Data", "Device_Info", "Notes"
-            ])
 
     def __init__(self, creds, spreadsheet_id):
         self.client = gspread.authorize(creds)
         self.spreadsheet = self.client.open_by_key(spreadsheet_id)
-        self._ensure_required_sheets()
-
-    def _ensure_required_sheets(self):
-        """Ensure all required sheets exist with proper headers."""
-        sheets_config = {
-            "Logs": ["log_id", "timestamp", "user_id", "user_name", "action", "details",
-                     "browser", "os", "device_type", "screen_size", "ip_masked",
-                     "country", "city", "region"],
-            "Attendance": ["record_id", "timestamp", "date", "student_id", "student_name",
-                          "status", "method", "recorded_by", "section_id"],
-            "Events": ["event_id", "event_name", "event_date", "location", "event_type",
-                       "description", "max_attendees", "created_by", "created_at"],
-            "EventRSVPs": ["rsvp_id", "event_id", "student_id", "student_name",
-                           "rsvp_status", "rsvp_date", "actual_attendance"]
-        }
-        for sheet_name, columns in sheets_config.items():
-            try:
-                ws = self.spreadsheet.worksheet(sheet_name)
-                # Verify sheet has headers
-                try:
-                    existing_headers = ws.get_all_values()[0] if ws.get_all_values() else []
-                    if not existing_headers or len(existing_headers) == 0:
-                        ws.append_row(columns)
-                except (IndexError, gspread.exceptions.APIError):
-                    # If we can't read headers, try to append them
-                    try:
-                        ws.append_row(columns)
-                    except:
-                        pass
-            except gspread.WorksheetNotFound:
-                try:
-                    ws = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=len(columns))
-                    ws.append_row(columns)
-                except Exception as e:
-                    print(f"Error creating sheet {sheet_name}: {e}")
 
     def _get_or_create_worksheet(self, name, columns):
-        """Get or create worksheet with retry logic."""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                Database._rate_limit()
-                try:
-                    ws = self.spreadsheet.worksheet(name)
-                except gspread.WorksheetNotFound:
-                    try:
-                        ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(columns), 1) if columns else 1)
-                        if columns:
-                            ws.append_row(columns)
-                    except Exception as e:
-                        print(f"Error creating worksheet {name}: {e}")
-                        raise
-                time.sleep(0.2)
-                return ws
-            except gspread.exceptions.APIError as e:
-                if attempt < max_retries - 1:
-                    delay = 2 * (2 ** attempt)
-                    print(f"API Error accessing worksheet {name}, retrying in {delay}s... (attempt {attempt+1}/{max_retries})")
-                    time.sleep(delay)
-                else:
-                    print(f"Failed to access worksheet {name} after {max_retries} attempts")
-                    raise
-        return None
+        Database._rate_limit()
+        try:
+            ws = self.spreadsheet.worksheet(name)
+        except gspread.WorksheetNotFound:
+            ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(columns), 1))
+            if columns:
+                ws.append_row(columns)
+        time.sleep(0.2)
+        return ws
 
     def _get_cached_df(self, sheet_name, fetch_func):
         init_data_cache()
@@ -1338,46 +403,27 @@ class Database:
         st.session_state.data_dirty[sheet_name] = True
 
     def _read_sheet_raw(self, sheet_name):
-        """Read sheet data with retry logic and error handling."""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                Database._rate_limit()
-                ws = self._get_or_create_worksheet(sheet_name, [])
-                values = ws.get_all_values()
-                time.sleep(0.2)
-                if not values or len(values) < 1:
-                    return pd.DataFrame()
-                raw_headers = [h.strip() for h in values[0]]
-                seen = {}
-                unique_headers = []
-                for h in raw_headers:
-                    if h in seen:
-                        seen[h] += 1
-                        unique_headers.append(f"{h}_{seen[h]}")
-                    else:
-                        seen[h] = 0
-                        unique_headers.append(h)
-                data_rows = values[1:]
-                df = pd.DataFrame(data_rows, columns=unique_headers)
-                df.dropna(how='all', axis=1, inplace=True)
-                df.dropna(how='all', inplace=True)
-                return df.astype(object)
-            except gspread.exceptions.APIError as e:
-                if attempt < max_retries - 1:
-                    delay = 2 * (2 ** attempt)  # Exponential backoff: 2s, 4s
-                    print(f"API Error reading {sheet_name}, retrying in {delay}s... (attempt {attempt+1}/{max_retries})")
-                    time.sleep(delay)
-                else:
-                    print(f"Failed to read sheet {sheet_name} after {max_retries} attempts: {e}")
-                    return pd.DataFrame()
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    time.sleep(1)
-                else:
-                    print(f"Error reading sheet {sheet_name}: {e}")
-                    return pd.DataFrame()
-        return pd.DataFrame()
+        Database._rate_limit()
+        ws = self._get_or_create_worksheet(sheet_name, [])
+        values = ws.get_all_values()
+        time.sleep(0.2)
+        if not values or len(values) < 1:
+            return pd.DataFrame()
+        raw_headers = [h.strip() for h in values[0]]
+        seen = {}
+        unique_headers = []
+        for h in raw_headers:
+            if h in seen:
+                seen[h] += 1
+                unique_headers.append(f"{h}_{seen[h]}")
+            else:
+                seen[h] = 0
+                unique_headers.append(h)
+        data_rows = values[1:]
+        df = pd.DataFrame(data_rows, columns=unique_headers)
+        df.dropna(how='all', axis=1, inplace=True)
+        df.dropna(how='all', inplace=True)
+        return df.astype(object)
 
     def _sheet_to_df(self, sheet_name):
         return self._get_cached_df(sheet_name, lambda: self._read_sheet_raw(sheet_name))
@@ -1727,25 +773,6 @@ class Database:
         df = df[df.log_id != log_id]
         self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
 
-    # --- AuditLog (Google Sheets) for persistent security logging ---
-    def get_audit_logs_sheet(self):
-        return self._sheet_to_df("AuditLog")
-
-    def add_audit_log_sheet(self, entry: dict):
-        """Save audit log entry to Google Sheets for persistence on cloud."""
-        df = self.get_audit_logs_sheet()
-        if df.empty:
-            df = pd.DataFrame(columns=["timestamp", "user_id", "user_name", "action", "details",
-                                       "browser", "os", "device_type", "screen_size", "ip_masked",
-                                       "country", "city", "region", "privacy_consent"])
-        df = pd.concat([df, pd.DataFrame([entry])], ignore_index=True)
-        # Keep only last 2000 records
-        if len(df) > 2000:
-            df = df.tail(2000)
-        self._df_to_sheet("AuditLog", df, ["timestamp", "user_id", "user_name", "action", "details",
-                                           "browser", "os", "device_type", "screen_size", "ip_masked",
-                                           "country", "city", "region", "privacy_consent"])
-
 # =============================================================================
 # JWT & Session Helpers
 # =============================================================================
@@ -1809,11 +836,7 @@ def init_session():
         "show_review": False,
         "data_errors": [],
         "data_validated": False,
-        "quiz_load_failures": 0,
-        "theme": "light",
-        "user_agent": "",
-        "screen_width": "Unknown",
-        "screen_height": "Unknown"
+        "quiz_load_failures": 0
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1822,11 +845,8 @@ def init_session():
 def logout(db=None):
     if db and st.session_state.user:
         try:
-            log_security_event(db, 
-                           st.session_state.user.get("user_id", ""), 
-                           st.session_state.user.get("full_name", ""), 
-                           "تسجيل الخروج", 
-                           "خروج من النظام")
+            # يمكن حفظ أي شيء قبل الخروج
+            pass
         except Exception:
             pass
     for key in list(st.session_state.keys()):
@@ -1864,7 +884,7 @@ def send_telegram_photo(caption: str, file_bytes, filename: str) -> bool:
 @st.dialog("🆘 مركز المساعدة والدعم الفني", width="large")
 def show_help_dialog():
     hdr_col1, hdr_col2 = st.columns([0.85, 0.15])
-    with hdr_col1:  
+    with hdr_col1:
         st.markdown("<h3 style='text-align:center; color:#667eea; margin:0; padding-top:0.5rem;'>📬 تواصل معنا</h3>", unsafe_allow_html=True)
     with hdr_col2:
         if st.button("✕ إغلاق", key="help_dialog_close_btn", help="إغلاق مركز المساعدة", use_container_width=True):
@@ -1878,7 +898,7 @@ def show_help_dialog():
     with st.form("help_form_enhanced", clear_on_submit=False):
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input( "الاسم *", placeholder="أدخل اسمك الكامل")
+            name = st.text_input("الاسم *", placeholder="أدخل اسمك الكامل")
             whatsapp = st.text_input("رقم الواتساب *", placeholder="01xxxxxxxxx")
         with col2:
             issue_type = st.selectbox("نوع المشكلة *", ["مشكلة تقنية", "مشكلة في البيانات", "طلب مساعدة", "اقتراح تحسين", "أخرى"])
@@ -1956,13 +976,12 @@ def show_initialization(db: Database):
         st.markdown("#### يرجى الضغط على الزر التالي لإنشاء مدير النظام الافتراضي:")
         if st.button("🛠️ تهيئة النظام وإنشاء المسؤول الأول", use_container_width=True, key="init_admin_btn"):
             admin_data = {
-                "user_id": "admin-001", "username": "admin", "password": hash_password("admin123"),
+                "user_id": "admin-001", "username": "admin", "password": "admin123",
                 "role": "System Admin", "full_name": "مدير النظام",
                 "section_id": "", "phone": "0100000000", "email": "admin@church.com"
             }
             db.add_user(admin_data)
             st.success("✅ تم إنشاء مدير النظام بنجاح!")
-            st.toast("✅ تم إنشاء مدير النظام بنجاح!", icon="🎉")
             st.info("**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`")
             time.sleep(2)
             st.rerun()
@@ -1971,115 +990,12 @@ def show_initialization(db: Database):
 def show_login_page(db: Database, jwt_secret: str):
     st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة</h1>", unsafe_allow_html=True)
     show_initialization(db)
-    
-    # Read client info from query params and store in session state
-    try:
-        query_params = st.query_params
-        if 'browser' in query_params:
-            st.session_state['client_browser'] = query_params['browser']
-        if 'os' in query_params:
-            st.session_state['client_os'] = query_params['os']
-        if 'device' in query_params:
-            st.session_state['client_device'] = query_params['device']
-        if 'width' in query_params:
-            st.session_state['screen_width'] = query_params['width']
-        if 'height' in query_params:
-            st.session_state['screen_height'] = query_params['height']
-        if 'ip' in query_params:
-            st.session_state['client_ip'] = query_params['ip']
-    except Exception:
-        pass
-    
-    # Capture browser, device info AND REAL CLIENT IP via JavaScript
-    st.markdown("""
-    <script>
-    (function() {
-        try {
-            // Get browser info
-            const ua = navigator.userAgent;
-            let browser = 'Unknown';
-            if (ua.indexOf('Chrome') > -1 && ua.indexOf('Edg') === -1) browser = 'Chrome';
-            else if (ua.indexOf('Safari') > -1 && ua.indexOf('Chrome') === -1) browser = 'Safari';
-            else if (ua.indexOf('Firefox') > -1) browser = 'Firefox';
-            else if (ua.indexOf('Edg') > -1) browser = 'Edge';
-            else if (ua.indexOf('Opera') > -1 || ua.indexOf('OPR') > -1) browser = 'Opera';
-            
-            // Get OS
-            let os = 'Unknown';
-            if (ua.indexOf('Windows') > -1) os = 'Windows';
-            else if (ua.indexOf('Mac') > -1 || ua.indexOf('iOS') > -1) os = 'Mac/iOS';
-            else if (ua.indexOf('Android') > -1) os = 'Android';
-            else if (ua.indexOf('Linux') > -1) os = 'Linux';
-            
-            // Get device type
-            let device = 'Desktop';
-            if (ua.indexOf('Mobile') > -1 || ua.indexOf('Android') > -1) device = 'Mobile';
-            else if (ua.indexOf('Tablet') > -1 || (ua.indexOf('iPad') > -1)) device = 'Tablet';
-            
-            // Get screen size
-            const width = window.screen.width;
-            const height = window.screen.height;
-            
-            // Store in sessionStorage for retrieval
-            sessionStorage.setItem('client_browser', browser);
-            sessionStorage.setItem('client_os', os);
-            sessionStorage.setItem('client_device', device);
-            sessionStorage.setItem('screen_width', width);
-            sessionStorage.setItem('screen_height', height);
-            
-            // Fetch real client IP and then update query params
-            fetch('https://api.ipify.org?format=json')
-                .then(res => res.json())
-                .then(data => {
-                    const clientIP = data.ip || 'Unknown';
-                    sessionStorage.setItem('client_ip', clientIP);
-                    
-                    // Update query params with all data including real IP
-                    const params = new URLSearchParams(window.location.search);
-                    params.set('browser', browser);
-                    params.set('os', os);
-                    params.set('device', device);
-                    params.set('width', width);
-                    params.set('height', height);
-                    params.set('ip', clientIP);
-                    window.history.replaceState({}, '', '?' + params.toString());
-                })
-                .catch(err => {
-                    console.error('Error fetching IP:', err);
-                    // Still update params without IP
-                    const params = new URLSearchParams(window.location.search);
-                    params.set('browser', browser);
-                    params.set('os', os);
-                    params.set('device', device);
-                    params.set('width', width);
-                    params.set('height', height);
-                    window.history.replaceState({}, '', '?' + params.toString());
-                });
-        } catch(e) {
-            console.error('Error capturing client info:', e);
-        }
-    })();
-    </script>
-    """, unsafe_allow_html=True)
-    
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
-        st.warning("""
-        ⚠️ **تنبيه هام - سياسة الأمان والخصوصية**
-        
-        عند تسجيل الدخول، يقوم النظام تلقائياً بتسجيل:
-        - عنوان IP (مشفر)
-        - نوع المتصفح ونظام التشغيل
-        - نوع الجهاز
-        
-        هذه البيانات تستخدم **لأغراض أمنية فقط** لحماية النظام ومراقبة النشاط المشبوه.
-        """)
-        
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم").strip()
             password = st.text_input("كلمة المرور", type="password").strip()
-            st.markdown("---")
-            if st.form_submit_button("🔐 تسجيل الدخول", use_container_width=True, type="primary"):
+            if st.form_submit_button("تسجيل الدخول", use_container_width=True):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
                 else:
@@ -2090,30 +1006,15 @@ def show_login_page(db: Database, jwt_secret: str):
                             st.error("اسم المستخدم غير موجود")
                         else:
                             user = user_row.iloc[0].to_dict()
-                            # Verify password (support both hashed and plain text for migration)
-                            stored_password = user.get("password", "")
-                            password_valid = False
-                            if len(stored_password) == 64:  # Hashed password (SHA256 = 64 chars)
-                                password_valid = verify_password(password, stored_password)
-                            else:  # Plain text (legacy)
-                                password_valid = (password == stored_password)
-                            
-                            if password_valid:
-                                # Migrate password to hash if it's plain text
-                                if len(stored_password) != 64:
-                                    db.update_user(user.get("user_id", ""), {"password": hash_password(password)})
-                                
+                            if password == user.get("password", ""):
                                 token = generate_token(user, jwt_secret)
                                 st.session_state.token = token
                                 st.session_state.user = user
                                 st.session_state.authenticated = True
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
                                 st.session_state.show_sidebar = True
-                                # Disabled automatic logging to prevent API errors
-                                # db.add_log(user.get("user_id", ""), "تسجيل الدخول")
-                                # log_security_event(db, user.get("user_id", ""), user.get("full_name", ""), "تسجيل الدخول", "دخول ناجح")
+                                db.add_log(user["user_id"], "تسجيل الدخول")
                                 st.success("تم تسجيل الدخول بنجاح!")
-                                st.toast("✅ مرحباً بك في النظام!", icon="👋")
                                 time.sleep(1)
                                 st.rerun()
                             else:
@@ -2415,7 +1316,6 @@ def show_student_quiz(db: Database):
     elif st.session_state.quiz_phase == "finished":
         if not st.session_state.get("show_review", False):
             st.success("تم تسليم الاختبار بنجاح!")
-            st.toast("✅ تم تسليم الاختبار بنجاح!", icon="🎉")
             score = st.session_state.last_score
             if score.is_integer():
                 score_display = int(score)
@@ -2481,98 +1381,33 @@ def show_student_quiz(db: Database):
         return
 
 # =============================================================================
-# Sidebar Navigation محسّن
+# Sidebar Navigation
 # =============================================================================
 def show_sidebar_navigation(db: Database):
     with st.sidebar:
-        # ===== Church Header =====
-        st.markdown("""
-        <div style="text-align:center; padding:0.5rem 0;">
-            <span style="font-size:2rem;">⛪</span>
-            <h3 style="margin:0.2rem 0; font-weight:700; color:var(--gold);">كنيسة الشهيدة دميانة</h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
+        st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
-        
-        # ===== User Card =====
-        st.markdown(f"""
-        <div class="sidebar-user-card">
-            <div class="user-name">👤 {user.get('full_name', '')}</div>
-            <div class="user-role">🔰 {user.get('role', '')}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # ===== Theme Toggle =====
-        st.markdown('<div class="theme-toggle-btn">', unsafe_allow_html=True)
-        current_theme = st.session_state.get("theme", "light")
-        theme_label = "🌙 الوضع الليلي" if current_theme == "light" else "☀️ الوضع النهاري"
-        if st.button(theme_label, key="theme_toggle_btn", use_container_width=True):
-            st.session_state.theme = "dark" if current_theme == "light" else "light"
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-        
+        st.markdown(f"**👤 {user.get('full_name', '')}**")
+        st.caption(f"الصلاحية: {user.get('role', '')}")
         st.divider()
-        
-        # ===== Quick Actions =====
-        st.markdown('<div class="sidebar-section-header">⚡ إجراءات سريعة</div>', unsafe_allow_html=True)
-        
-        st.markdown('<div class="quick-action-btn">', unsafe_allow_html=True)
-        if st.button("➕ إضافة عضو سريع", key="quick_add_member", use_container_width=True):
-            st.session_state.menu_choice = "👥 إدارة المستخدمين"
-            st.session_state.show_sidebar = False
-            st.rerun()
-        if st.button("✅ تسجيل حضور اليوم", key="quick_attendance", use_container_width=True):
-            st.session_state.menu_choice = "📋 الحضور"
-            st.session_state.show_sidebar = False
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.divider()
-        
-        # ===== Navigation Sections =====
+
         role = user.get("role", "")
         menus = {
             "System Admin": [
-                ("🏠", "لوحة التحكم"),
-                ("👥", "إدارة المستخدمين"),
-                ("🌟", "إدارة الأعضاء"),
-                ("🏫", "إدارة المراحل"),
-                ("⚡", "حضور سريع"),
-                ("📋", "الحضور"),
-                ("📈", "لوحة تحكم الحضور"),
-                ("💬", "الافتقاد"),
-                ("📝", "المسابقات والاختبارات"),
-                ("📅", "الفعاليات"),
-                ("📊", "التقارير والإحصائيات"),
-                ("📜", "سجل العمليات"),
-                ("🔒", "تغيير كلمة المرور")
+                "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 الحضور", "💬 الافتقاد",
+                "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
+                "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
             ],
             "Father Account": [
-                ("🏠", "لوحة التحكم"),
-                ("📅", "الفعاليات"),
-                ("📊", "التقارير والإحصائيات"),
-                ("🔒", "تغيير كلمة المرور")
+                "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
             ],
             "Service Manager": [
-                ("🏠", "لوحة التحكم"),
-                ("👩‍🎓", "طالباتي"),
-                ("💬", "الافتقاد"),
-                ("📝", "المسابقات والاختبارات"),
-                ("📅", "الفعاليات"),
-                ("📊", "التقارير والإحصائيات"),
-                ("🔒", "تغيير كلمة المرور")
+                "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
+                "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
             ],
             "Teacher": [
-                ("🏠", "لوحة التحكم"),
-                ("👩‍🎓", "طالباتي"),
-                ("⚡", "حضور سريع"),
-                ("📋", "الحضور"),
-                ("📈", "لوحة تحكم الحضور"),
-                ("💬", "الافتقاد"),
-                ("🏆", "درجات المسابقات"),
-                ("📅", "الفعاليات"),
-                ("🔒", "تغيير كلمة المرور")
+                "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
+                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
             ]
         }
         menu_items = menus.get(role, [])
@@ -2580,42 +1415,33 @@ def show_sidebar_navigation(db: Database):
             st.warning("صلاحية غير معروفة")
             return None
 
-        current_choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
-        # Build full menu text for comparison
-        menu_texts = [f"{icon} {label}" for icon, label in menu_items]
-        if current_choice not in menu_texts:
-            current_choice = menu_texts[0]
+        current_choice = st.session_state.get("menu_choice", menu_items[0])
+        if current_choice not in menu_items:
+            current_choice = menu_items[0]
             st.session_state.menu_choice = current_choice
 
-        # ===== Collapsible Navigation Sections =====
-        # Main Menu
-        st.markdown('<div class="sidebar-section-header">📌 القائمة الرئيسية</div>', unsafe_allow_html=True)
-        
+        if st.button("✕ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
+            st.session_state.show_sidebar = False
+            st.rerun()
+
         st.markdown('<div class="nav-btn-container">', unsafe_allow_html=True)
-        for icon, label in menu_items:
-            item_text = f"{icon} {label}"
-            btn_type = "primary" if item_text == current_choice else "secondary"
-            if st.button(item_text, key=f"nav_btn_{label}", use_container_width=True, type=btn_type):
-                if item_text != current_choice:
-                    st.session_state.menu_choice = item_text
+        for item in menu_items:
+            btn_type = "primary" if item == current_choice else "secondary"
+            if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
+                if item != current_choice:
+                    st.session_state.menu_choice = item
                 st.session_state.show_sidebar = False
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.divider()
-        
-        # ===== Hide Sidebar & Logout =====
-        if st.button("✕ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
-            st.session_state.show_sidebar = False
-            st.rerun()
-        
         if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn"):
             logout(db)
 
     return current_choice
 
 # =============================================================================
-# Dashboard محسّن مع KPI Cards متحركة
+# Dashboard
 # =============================================================================
 def show_dashboard(db: Database):
     user = st.session_state.user
@@ -2656,83 +1482,12 @@ def show_dashboard(db: Database):
     present_today = len(attendance[(attendance.date == today_str) & (attendance.status == "حاضر")]) if not attendance.empty and "status" in attendance.columns else 0
     absent_today = len(attendance[(attendance.date == today_str) & (attendance.status == "غائب")]) if not attendance.empty and "status" in attendance.columns else 0
     need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty and "regularity_status" in followup.columns else 0
-    
-    # Calculate attendance percentage
-    total_today = present_today + absent_today
-    attendance_pct = round((present_today / total_today) * 100, 1) if total_today > 0 else 0
-    
-    # New members this month (students added this month)
-    new_members = 0
-    if not students.empty and "student_id" in students.columns:
-        # Estimate new members as those with IDs created recently (simplified)
-        new_members = len(students[students["status"] == "active"]) if "status" in students.columns else 0
 
-    # ===== KPI Cards with Custom HTML =====
-    st.markdown("""
-    <style>
-        .kpi-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-            direction: rtl;
-        }
-        .kpi-col {
-            flex: 1;
-            min-width: 180px;
-        }
-        @media (max-width: 768px) {
-            .kpi-col {
-                min-width: 140px;
-                flex: 0 0 calc(50% - 0.5rem);
-            }
-        }
-        @media (max-width: 480px) {
-            .kpi-col {
-                min-width: 100%;
-                flex: 0 0 100%;
-            }
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Animated counter effect using CSS animation
-    st.markdown(f"""
-    <div class="kpi-row">
-        <div class="kpi-col">
-            <div class="kpi-card blue">
-                <div class="kpi-icon">👩‍🎓</div>
-                <div class="kpi-label">إجمالي الأعضاء</div>
-                <div class="kpi-value" style="animation: countUp 1s ease-out;">{total_students}</div>
-                <div class="kpi-sub">طالبة مسجلة</div>
-            </div>
-        </div>
-        <div class="kpi-col">
-            <div class="kpi-card green">
-                <div class="kpi-icon">✅</div>
-                <div class="kpi-label">الحضور اليوم</div>
-                <div class="kpi-value">{present_today}</div>
-                <div class="kpi-sub">من أصل {total_today} طالبة</div>
-            </div>
-        </div>
-        <div class="kpi-col">
-            <div class="kpi-card gold">
-                <div class="kpi-icon">📈</div>
-                <div class="kpi-label">نسبة الحضور</div>
-                <div class="kpi-value">{attendance_pct}%</div>
-                <div class="kpi-sub">نسبة حضور اليوم</div>
-            </div>
-        </div>
-        <div class="kpi-col">
-            <div class="kpi-card purple">
-                <div class="kpi-icon">🌟</div>
-                <div class="kpi-label">الأعضاء الجدد</div>
-                <div class="kpi-value">{new_members}</div>
-                <div class="kpi-sub">طالبة نشطة</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("عدد الطالبات", total_students)
+    col2.metric("الحضور اليوم", present_today)
+    col3.metric("الغياب اليوم", absent_today)
+    col4.metric("منقطعات", need_follow)
 
     st.markdown("#### 📈 الحضور الأسبوعي")
     if not attendance.empty and "date" in attendance.columns and "status" in attendance.columns:
@@ -2791,94 +1546,13 @@ def show_dashboard(db: Database):
 # =============================================================================
 # إدارة المستخدمين (بما في ذلك إدارة المراحل)
 # =============================================================================
-def show_stages_management(db: Database):
-    """صفحة منفصلة لإدارة المراحل"""
-    st.markdown("<h2 class='main-header'>🏫 إدارة المراحل الدراسية</h2>", unsafe_allow_html=True)
-    stages = db.get_stages()
-    users = db.get_users()
-    
-    if not stages.empty:
-        if not users.empty and "user_id" in users.columns and "full_name" in users.columns:
-            stages_display = stages.merge(
-                users[["user_id", "full_name"]].rename(columns={"user_id":"manager_user_id", "full_name":"المسؤول"}), 
-                on="manager_user_id", how="left"
-            )
-        else:
-            stages_display = stages.copy()
-            stages_display["المسؤول"] = ""
-        st.dataframe(stages_display[["stage_id", "stage_name", "المسؤول"]], use_container_width=True)
-    else:
-        st.info("لا توجد مراحل مسجلة بعد.")
-    
-    with st.expander("➕ إضافة مرحلة جديدة", expanded=False):
-        with st.form("add_stage_form_standalone"):
-            stage_name = st.text_input("اسم المرحلة*", placeholder="مثال: KG1, KG2, الصف الأول...")
-            eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
-            manager_id = ""
-            if not eligible_users.empty:
-                manager_choice = st.selectbox("مسؤول المرحلة (اختياري)", ["None"] + eligible_users["user_id"].tolist(),
-                                              format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0])
-                manager_id = manager_choice if manager_choice != "None" else ""
-            else:
-                st.info("لا يوجد مستخدمون مؤهلون.")
-            if st.form_submit_button("إضافة"):
-                if not stage_name:
-                    st.error("يرجى إدخال اسم المرحلة")
-                else:
-                    db.add_stage({
-                        "stage_id": str(uuid.uuid4()),
-                        "stage_name": stage_name.strip(),
-                        "manager_user_id": manager_id
-                    })
-                    st.success("✅ تمت إضافة المرحلة بنجاح")
-                    st.toast("✅ تمت إضافة المرحلة بنجاح!", icon="🎉")
-                    time.sleep(1)
-                    st.rerun()
-    
-    if not stages.empty:
-        with st.expander("✏️ تعديل / حذف مرحلة"):
-            stage_sel = st.selectbox("اختر مرحلة", stages["stage_id"],
-                                     format_func=lambda x: stages[stages.stage_id==x]["stage_name"].values[0])
-            stage_row = stages[stages.stage_id == stage_sel].iloc[0].to_dict()
-            new_stage_name = st.text_input("اسم المرحلة", value=stage_row["stage_name"])
-            eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
-            current_mgr = stage_row.get("manager_user_id", "")
-            if not eligible_users.empty:
-                mgr_options = ["None"] + eligible_users["user_id"].tolist()
-                current_idx = mgr_options.index(current_mgr) if current_mgr in mgr_options else 0
-                new_manager = st.selectbox("مسؤول المرحلة", mgr_options, index=current_idx,
-                                           format_func=lambda x: "بدون" if x == "None" else eligible_users[eligible_users.user_id==x]["full_name"].values[0])
-                new_mgr_id = new_manager if new_manager != "None" else ""
-            else:
-                new_mgr_id = ""
-            col1, col2 = st.columns(2)
-            if col1.button("تحديث المرحلة"):
-                db.update_stage(stage_sel, {"stage_name": new_stage_name, "manager_user_id": new_mgr_id})
-                st.success("تم التحديث")
-                st.toast("✅ تم تحديث المرحلة!", icon="✅")
-                time.sleep(1)
-                st.rerun()
-            if col2.button("حذف المرحلة"):
-                db.delete_stage(stage_sel)
-                st.success("تم حذف المرحلة")
-                st.toast("🗑️ تم حذف المرحلة", icon="⚠️")
-                time.sleep(1)
-                st.rerun()
-
-def show_user_management(db: Database, active_tab: int = 0):
+def show_user_management(db: Database):
     st.markdown("<h2 class='main-header'>👥 إدارة المستخدمين</h2>", unsafe_allow_html=True)
     users = db.get_users()
     sections = db.get_sections()
     stages = db.get_stages()
     students = db.get_students()
-    
-    # If a specific tab is requested, show only that tab's content
-    if active_tab == 5:
-        show_stages_management(db)
-        return
-    
-    tab_names = ["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول", "إدارة المراحل"]
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(tab_names)
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول", "إدارة المراحل"])
 
     with tab1:
         st.subheader("قائمة المستخدمين (خدام)")
@@ -2913,7 +1587,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                             "section_id": section_id, "phone": phone, "email": email
                         })
                         st.success("تم إضافة المستخدم بنجاح")
-                        st.toast("✅ تم إضافة المستخدم بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
 
@@ -2938,7 +1611,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                 if col1.button("تحديث البيانات", key="update_user_btn"):
                     db.update_user(selected_user_id, {"full_name": new_full_name, "phone": new_phone, "email": new_email, "role": new_role, "section_id": new_section_id})
                     st.success("تم التحديث")
-                    st.toast("✅ تم تحديث بيانات المستخدم!", icon="✅")
                     time.sleep(1)
                     st.rerun()
                 if col2.button("حذف المستخدم", key="delete_user_btn"):
@@ -2947,7 +1619,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                     else:
                         db.delete_user(selected_user_id)
                         st.success("تم الحذف")
-                        st.toast("🗑️ تم حذف المستخدم", icon="⚠️")
                         time.sleep(1)
                         st.rerun()
 
@@ -2988,7 +1659,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                             "section_id": section_id, "phone": phone, "email": email
                         })
                         st.success("تمت إضافة المدرسة بنجاح")
-                        st.toast("✅ تمت إضافة المدرسة بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
 
@@ -3027,7 +1697,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                             "address": address, "school": school, "notes": notes, "status": "active"
                         })
                         st.success("تمت الإضافة")
-                        st.toast("✅ تمت إضافة الطالبة بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
         with st.expander("✏️ تعديل بيانات طالبة"):
@@ -3063,7 +1732,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                         "school": new_school, "notes": new_notes, "status": new_status
                     })
                     st.success("تم التحديث")
-                    st.toast("✅ تم تحديث بيانات الطالبة!", icon="✅")
                     time.sleep(1)
                     st.rerun()
         with st.expander("🗑️ حذف طالبة"):
@@ -3072,7 +1740,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                 if st.button("تأكيد حذف الطالبة"):
                     db.delete_student(delete_id)
                     st.success("تم الحذف")
-                    st.toast("🗑️ تم حذف الطالبة", icon="⚠️")
                     time.sleep(1)
                     st.rerun()
 
@@ -3106,7 +1773,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                     else:
                         db.add_section({"section_id": str(uuid.uuid4()), "section_name": name.strip()})
                         st.success("تمت الإضافة")
-                        st.toast("✅ تمت إضافة الفصل بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
         with st.expander("🗑️ حذف فصل"):
@@ -3115,7 +1781,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                 if st.button("تأكيد حذف الفصل"):
                     db.delete_section(del_sec)
                     st.success("تم الحذف")
-                    st.toast("🗑️ تم حذف الفصل", icon="⚠️")
                     time.sleep(1)
                     st.rerun()
 
@@ -3151,7 +1816,6 @@ def show_user_management(db: Database, active_tab: int = 0):
                             "manager_user_id": manager_id
                         })
                         st.success("✅ تمت إضافة المرحلة بنجاح")
-                        st.toast("✅ تمت إضافة المرحلة بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
         if not stages.empty:
@@ -3174,423 +1838,13 @@ def show_user_management(db: Database, active_tab: int = 0):
                 if col1.button("تحديث المرحلة"):
                     db.update_stage(stage_sel, {"stage_name": new_stage_name, "manager_user_id": new_mgr_id})
                     st.success("تم التحديث")
-                    st.toast("✅ تم تحديث المرحلة!", icon="✅")
                     time.sleep(1)
                     st.rerun()
                 if col2.button("حذف المرحلة"):
                     db.delete_stage(stage_sel)
                     st.success("تم حذف المرحلة")
-                    st.toast("🗑️ تم حذف المرحلة", icon="⚠️")
                     time.sleep(1)
                     st.rerun()
-
-# =============================================================================
-# نظام إدارة الأعضاء المتقدم
-# =============================================================================
-def generate_qr_base64(data: str) -> str:
-    """Generate a QR code image and return as base64 string."""
-    try:
-        qr = qrcode.QRCode(box_size=4, border=1)
-        qr.add_data(data)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
-    except Exception:
-        return ""
-
-def get_avatar_color(name: str) -> str:
-    """Generate a consistent color from a name."""
-    colors = ["#667eea", "#28a745", "#d4af37", "#dc3545", "#17a2b8", "#e83e8c", "#fd7e14", "#6f42c1"]
-    idx = sum(ord(c) for c in name) % len(colors)
-    return colors[idx]
-
-def get_status_badge_class(status: str) -> str:
-    """Map status to CSS badge class."""
-    mapping = {
-        "active": "active", "Active": "active",
-        "inactive": "inactive", "Inactive": "inactive",
-        "newcomer": "newcomer", "Newcomer": "newcomer",
-        "leader": "leader", "Leader": "leader"
-    }
-    return mapping.get(status, "active")
-
-def get_status_label(status: str) -> str:
-    """Get Arabic label for status."""
-    mapping = {
-        "active": "نشط", "Active": "نشط",
-        "inactive": "غير نشط", "Inactive": "غير نشط",
-        "newcomer": "جديد", "Newcomer": "جديد",
-        "leader": "قائد", "Leader": "قائد"
-    }
-    return mapping.get(status, status)
-
-def check_consecutive_absences(db, student_id, weeks=3):
-    """Check if student was absent for N+ times in last 3 weeks."""
-    attendance = db.get_attendance()
-    if attendance.empty or "student_id" not in attendance.columns:
-        return False
-    
-    student_att = attendance[attendance.student_id == student_id]
-    if student_att.empty:
-        return False
-    
-    if "date" in student_att.columns:
-        student_att["date"] = pd.to_datetime(student_att["date"], errors="coerce")
-    
-    today = get_cairo_now()
-    three_weeks_ago = today - timedelta(weeks=weeks)
-    recent = student_att[student_att.date >= three_weeks_ago]
-    
-    if recent.empty:
-        return False
-    
-    absent_count = len(recent[recent.status == "غائب"])
-    return absent_count >= weeks
-
-def get_students_needing_followup(db):
-    """Get list of students with 3+ absences in last 3 weeks."""
-    students = db.get_students()
-    attendance = db.get_attendance()
-    if students.empty or attendance.empty:
-        return []
-    
-    if "date" in attendance.columns:
-        attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
-    
-    today = get_cairo_now()
-    three_weeks_ago = today - timedelta(weeks=3)
-    # Make datetimes compatible for comparison (both naive)
-    three_weeks_ago_naive = three_weeks_ago.replace(tzinfo=None)
-    recent_att = attendance[attendance.date >= three_weeks_ago_naive]
-    
-    needs_followup = []
-    for _, student in students.iterrows():
-        sid = student.get("student_id", "")
-        name = student.get("full_name", "")
-        if not sid:
-            continue
-        student_recent = recent_att[recent_att.student_id == sid]
-        if student_recent.empty:
-            continue
-        absent_count = len(student_recent[student_recent.status == "غائب"])
-        if absent_count >= 3:
-            needs_followup.append({
-                "student_id": sid,
-                "full_name": name,
-                "reason": f"غيب {absent_count} مرات آخر 3 أسابيع"
-            })
-    return needs_followup
-
-def calculate_age(birthdate_str: str) -> int:
-    """Calculate age from birthdate string."""
-    if not birthdate_str or birthdate_str == "":
-        return 0
-    try:
-        bd = pd.to_datetime(birthdate_str, errors="coerce")
-        if pd.isna(bd):
-            return 0
-        now = get_cairo_now()
-        return now.year - bd.year - ((now.month, now.day) < (bd.month, bd.day))
-    except Exception:
-        return 0
-
-def export_to_csv(df: pd.DataFrame, filename: str = "members_export.csv") -> bytes:
-    """Export DataFrame to CSV bytes."""
-    output = StringIO()
-    df.to_csv(output, index=False, encoding="utf-8-sig")
-    return output.getvalue().encode("utf-8-sig")
-
-def export_to_excel(df: pd.DataFrame, filename: str = "members_export.xlsx") -> bytes:
-    """Export DataFrame to Excel bytes using openpyxl."""
-    try:
-        from openpyxl import Workbook
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "الأعضاء"
-        # Write headers
-        for col_idx, col_name in enumerate(df.columns, 1):
-            ws.cell(row=1, column=col_idx, value=col_name)
-        # Write data
-        for row_idx, row in df.iterrows():
-            for col_idx, col_name in enumerate(df.columns, 1):
-                ws.cell(row=row_idx + 2, column=col_idx, value=str(row.get(col_name, "")))
-        buf = BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
-    except Exception:
-        # Fallback to CSV if openpyxl fails
-        return export_to_csv(df, filename.replace(".xlsx", ".csv"))
-
-def show_member_management(db: Database):
-    """Advanced member management with cards, search, filter, bulk actions."""
-    st.markdown("<h2 class='main-header'>👥 إدارة الأعضاء المتقدمة</h2>", unsafe_allow_html=True)
-    
-    # Get data
-    students = db.get_students()
-    sections = db.get_sections()
-    attendance = db.get_attendance()
-    
-    if students.empty:
-        st.info("لا توجد طالبات مسجلات بعد.")
-        return
-    
-    # Merge section names
-    if not sections.empty and "section_id" in sections.columns:
-        students = students.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
-    else:
-        students["section_name"] = ""
-    
-    # Ensure status column exists with defaults
-    if "status" not in students.columns:
-        students["status"] = "active"
-    students["status"] = students["status"].fillna("active").astype(str)
-    
-    # Calculate age if birthdate exists
-    if "birthdate" in students.columns:
-        students["age"] = students["birthdate"].apply(calculate_age)
-    else:
-        students["age"] = 0
-    
-    # ===== Search & Filter Section =====
-    st.markdown('<div class="filter-container">', unsafe_allow_html=True)
-    
-    col_search, col_status, col_section, col_age, col_reset = st.columns([2, 1.2, 1.5, 1.2, 0.8])
-    
-    with col_search:
-        search_term = st.text_input("🔍 بحث بالاسم", placeholder="اكتب اسم الطالبة...", key="member_search")
-    
-    with col_status:
-        status_options = ["الكل", "Active", "Inactive", "Newcomer", "Leader"]
-        status_labels = ["الكل", "نشط", "غير نشط", "جديد", "قائد"]
-        status_map = dict(zip(status_options, status_labels))
-        selected_status = st.selectbox("🏷️ الحالة", status_options, 
-                                       format_func=lambda x: status_map.get(x, x), key="member_status_filter")
-    
-    with col_section:
-        section_options = ["الكل"]
-        if not sections.empty:
-            section_options += sections["section_id"].tolist()
-        selected_section = st.selectbox("📚 الخدمة", section_options,
-                                        format_func=lambda x: "الكل" if x == "الكل" else (
-                                            sections[sections.section_id == x]["section_name"].values[0] if not sections.empty else x
-                                        ), key="member_section_filter")
-    
-    with col_age:
-        age_range = st.slider("🎂 العمر", 0, 30, (0, 30), key="member_age_filter")
-    
-    with col_reset:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔄 إعادة ضبط", key="reset_filters", use_container_width=True):
-            for key in ["member_search", "member_status_filter", "member_section_filter", "member_age_filter"]:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ===== Apply Filters =====
-    filtered = students.copy()
-    
-    if search_term:
-        filtered = filtered[filtered["full_name"].astype(str).str.contains(search_term, na=False, case=False)]
-    
-    if selected_status and selected_status != "الكل":
-        filtered = filtered[filtered["status"].astype(str).str.lower() == selected_status.lower()]
-    
-    if selected_section and selected_section != "الكل":
-        filtered = filtered[filtered["section_id"] == selected_section]
-    
-    if "age" in filtered.columns:
-        filtered = filtered[(filtered["age"] >= age_range[0]) & (filtered["age"] <= age_range[1])]
-    
-    # ===== Bulk Actions =====
-    st.markdown('<div class="bulk-action-bar">', unsafe_allow_html=True)
-    st.markdown(f"<span style='font-weight:700;'>📊 {len(filtered)} طالبة</span>", unsafe_allow_html=True)
-    
-    # Checkbox for select all
-    select_all = st.checkbox("تحديد الكل", key="select_all_members")
-    
-    col_export_csv, col_export_xlsx, col_export_all = st.columns([1, 1, 1.5])
-    
-    with col_export_csv:
-        if st.button("📥 تصدير CSV", key="export_csv_btn", use_container_width=True):
-            csv_bytes = export_to_csv(filtered)
-            st.download_button(
-                label="📥 تحميل CSV",
-                data=csv_bytes,
-                file_name="members_export.csv",
-                mime="text/csv",
-                key="download_csv_btn"
-            )
-            st.toast("✅ تم تصدير الملف!", icon="📥")
-    
-    with col_export_xlsx:
-        if st.button("📥 تصدير Excel", key="export_xlsx_btn", use_container_width=True):
-            xlsx_bytes = export_to_excel(filtered)
-            st.download_button(
-                label="📥 تحميل Excel",
-                data=xlsx_bytes,
-                file_name="members_export.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_xlsx_btn"
-            )
-            st.toast("✅ تم تصدير الملف!", icon="📥")
-    
-    with col_export_all:
-        if st.button("📥 تصدير الكل (بدون فلتر)", key="export_all_btn", use_container_width=True):
-            all_csv = export_to_csv(students)
-            st.download_button(
-                label="📥 تحميل الكل CSV",
-                data=all_csv,
-                file_name="all_members_export.csv",
-                mime="text/csv",
-                key="download_all_btn"
-            )
-            st.toast("✅ تم تصدير جميع الأعضاء!", icon="📥")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ===== Member Cards Grid =====
-    if filtered.empty:
-        st.warning("⚠️ لا توجد نتائج تطابق البحث.")
-        return
-    
-    # Store selected members in session state
-    if "selected_members" not in st.session_state:
-        st.session_state.selected_members = set()
-    
-    # Status update dropdown (appears at top if any member selected)
-    selected_ids = [sid for sid in st.session_state.selected_members if sid in filtered["student_id"].values]
-    if selected_ids:
-        with st.container():
-            st.markdown(f"<div class='bulk-action-bar' style='background:rgba(102,126,234,0.1);'>✅ تم اختيار {len(selected_ids)} طالبة</div>", unsafe_allow_html=True)
-            new_status = st.selectbox("تغيير حالة المختارين إلى:", 
-                                      ["Active", "Inactive", "Newcomer", "Leader"],
-                                      format_func=lambda x: {"Active": "نشط", "Inactive": "غير نشط", "Newcomer": "جديد", "Leader": "قائد"}.get(x, x),
-                                      key="bulk_status_change")
-            if st.button("تطبيق التغيير", key="apply_bulk_status", use_container_width=True):
-                for sid in selected_ids:
-                    db.update_student(sid, {"status": new_status})
-                st.session_state.selected_members = set()
-                st.success(f"✅ تم تحديث حالة {len(selected_ids)} طالبة!")
-                st.toast(f"✅ تم تحديث الحالة!", icon="🎉")
-                time.sleep(1)
-                st.rerun()
-    
-    # Display as grid of cards
-    st.markdown('<div class="member-grid">', unsafe_allow_html=True)
-    
-    for _, row in filtered.iterrows():
-        sid = row.get("student_id", "")
-        name = row.get("full_name", "")
-        section_name = row.get("section_name", "")
-        status = row.get("status", "active")
-        phone = row.get("phone", "")
-        parent_phone = row.get("parent_phone", "")
-        school = row.get("school", "")
-        age = row.get("age", 0)
-        birthdate = row.get("birthdate", "")
-        
-        # Generate avatar
-        avatar_color = get_avatar_color(name)
-        first_letter = name[0] if name else "?"
-        
-        # Generate QR code
-        qr_data = f"Member: {name}\nID: {sid}\nSection: {section_name}"
-        qr_b64 = generate_qr_base64(qr_data)
-        
-        # Status badge
-        badge_class = get_status_badge_class(status)
-        status_label = get_status_label(status)
-        
-        # Checkbox for selection
-        is_selected = sid in st.session_state.selected_members
-        
-        st.markdown(f"""
-        <div class="member-card">
-            <div style="display:flex; align-items:center; gap:0.8rem; margin-bottom:0.8rem;">
-                <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
-                <div style="flex:1; min-width:0;">
-                    <div style="font-weight:700; font-size:1rem; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{name}</div>
-                    <div style="font-size:0.8rem; color:var(--text-secondary);">{section_name if section_name else 'بدون خدمة'}</div>
-                </div>
-                <div>
-                    <span class="status-badge {badge_class}">{status_label}</span>
-                </div>
-            </div>
-            <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.5rem;">
-                <div style="font-size:0.8rem; color:var(--text-secondary);">🎂 {age} سنة</div>
-                <div style="font-size:0.8rem; color:var(--text-secondary);">📞 {phone if phone else '—'}</div>
-            </div>
-            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
-                <div style="font-size:0.75rem; color:var(--text-secondary);">🆔 {sid[:8]}...</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Checkbox for selection (using Streamlit widget)
-        col_check, col_status_change = st.columns([1, 3])
-        with col_check:
-            checked = st.checkbox("اختيار", value=is_selected, key=f"sel_{sid}")
-            if checked and sid not in st.session_state.selected_members:
-                st.session_state.selected_members.add(sid)
-                st.rerun()
-            elif not checked and sid in st.session_state.selected_members:
-                st.session_state.selected_members.discard(sid)
-                st.rerun()
-        
-        with col_status_change:
-            # Quick status change dropdown
-            current_status = status
-            new_s = st.selectbox("تغيير الحالة", 
-                                 ["", "Active", "Inactive", "Newcomer", "Leader"],
-                                 index=0,
-                                 format_func=lambda x: {"": "—", "Active": "نشط", "Inactive": "غير نشط", "Newcomer": "جديد", "Leader": "قائد"}.get(x, x),
-                                 key=f"status_{sid}")
-            if new_s and new_s != current_status:
-                db.update_student(sid, {"status": new_s})
-                st.toast(f"✅ تم تحديث حالة {name}", icon="✅")
-                time.sleep(0.5)
-                st.rerun()
-        
-        # ===== Member Details Expander =====
-        with st.expander(f"📋 تفاصيل {name}", expanded=False):
-            # Attendance history
-            st.markdown("#### 📅 سجل الحضور")
-            if not attendance.empty and "student_id" in attendance.columns:
-                student_att = attendance[attendance["student_id"] == sid].copy()
-                if not student_att.empty:
-                    if "date" in student_att.columns:
-                        student_att["date"] = pd.to_datetime(student_att["date"], errors="coerce")
-                        student_att = student_att.sort_values("date", ascending=False)
-                    present_count = len(student_att[student_att["status"] == "حاضر"]) if "status" in student_att.columns else 0
-                    absent_count = len(student_att[student_att["status"] == "غائب"]) if "status" in student_att.columns else 0
-                    col_p, col_a = st.columns(2)
-                    col_p.metric("✅ أيام الحضور", present_count)
-                    col_a.metric("❌ أيام الغياب", absent_count)
-                    st.dataframe(student_att[["date", "status", "notes"]].head(10), use_container_width=True)
-                else:
-                    st.info("لا توجد سجلات حضور.")
-            else:
-                st.info("لا توجد بيانات حضور.")
-            
-            st.markdown("#### 📞 بيانات التواصل")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"**رقم الهاتف:** {phone if phone else 'غير متاح'}")
-                st.markdown(f"**رقم ولي الأمر:** {parent_phone if parent_phone else 'غير متاح'}")
-            with col2:
-                st.markdown(f"**المدرسة:** {school if school else 'غير متاح'}")
-                st.markdown(f"**تاريخ الميلاد:** {birthdate if birthdate else 'غير متاح'}")
-            
-            # QR Code
-            if qr_b64:
-                st.markdown("#### 📱 QR Code")
-                st.markdown(f'<img src="data:image/png;base64,{qr_b64}" width="120" style="border-radius:8px;">', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # =============================================================================
 # Attendance, Follow-up, My Students, etc.
@@ -3664,7 +1918,6 @@ def show_attendance(db: Database):
             db.batch_add_attendance(records)
             db.add_log(user.get("user_id", ""), f"تسجيل حضور فصل {selected_section} ليوم {date_str}")
             st.success("✅ تم تسجيل الحضور بنجاح")
-            st.toast("✅ تم تسجيل الحضور بنجاح!", icon="🎉")
             time.sleep(1)
             st.rerun()
 
@@ -3682,7 +1935,6 @@ def show_attendance(db: Database):
         if st.button("حذف سجل الحضور"):
             db.delete_attendance_record(del_id)
             st.success("تم الحذف")
-            st.toast("🗑️ تم حذف سجل الحضور", icon="⚠️")
             time.sleep(1)
             st.rerun()
 
@@ -3748,7 +2000,6 @@ def show_followup(db: Database):
                         "followup_type": ftype, "notes": notes, "regularity_status": regularity
                     })
                     st.success("✅ تم تسجيل الافتقاد بنجاح")
-                    st.toast("✅ تم تسجيل الافتقاد بنجاح!", icon="🎉")
                     time.sleep(1)
                     st.rerun()
                 except ValueError as e:
@@ -3801,7 +2052,6 @@ def show_my_students(db: Database):
                             "followup_type": ftype, "notes": notes, "regularity_status": regularity
                         })
                         st.success("✅ تمت المتابعة بنجاح")
-                        st.toast("✅ تمت المتابعة بنجاح!", icon="🎉")
                         time.sleep(1)
                         st.rerun()
                     except ValueError as e:
@@ -3909,7 +2159,7 @@ def show_class_competition_scores(db: Database):
             c1.metric("متوسط الدرجات", f"{avg_score:.1f}")
             c2.metric("أعلى درجة", f"{max_score:.1f}")
             c3.metric("أقل درجة", f"{min_score:.1f}")
- 
+
             if "اسم الطالبة" in filtered_df.columns:
                 st.markdown("---")
                 st.subheader("🏆 ترتيب الطالبات")
@@ -3948,7 +2198,6 @@ def show_quizzes(db: Database):
                         "quiz_code": code, "password": pwd, "is_active": "True"
                     })
                     st.success(f"✅ تم إنشاء الاختبار! الكود: {code}")
-                    st.toast("✅ تم إنشاء الاختبار بنجاح!", icon="🎉")
                     time.sleep(2)
                     st.rerun()
 
@@ -3992,7 +2241,6 @@ def show_quizzes(db: Database):
                                     "correct_answer": correct
                                 })
                                 st.success("✅ تمت إضافة السؤال")
-                                st.toast("✅ تمت إضافة السؤال بنجاح!", icon="🎉")
                                 time.sleep(1)
                                 st.rerun()
                     if not questions.empty:
@@ -4000,7 +2248,6 @@ def show_quizzes(db: Database):
                         if st.button("حذف السؤال"):
                             db.delete_question(del_q)
                             st.success("تم الحذف")
-                            st.toast("🗑️ تم حذف السؤال", icon="⚠️")
                             time.sleep(1)
                             st.rerun()
 
@@ -4025,20 +2272,17 @@ def show_quizzes(db: Database):
                     if col_actions[0].button("إغلاق", key=f"deact_{qid}"):
                         db.update_quiz(qid, {"is_active": "False"})
                         st.success(f"تم إغلاق الاختبار: {title}")
-                        st.toast(f"🔴 تم إغلاق الاختبار: {title}", icon="🔒")
                         time.sleep(1)
                         st.rerun()
                 else:
                     if col_actions[0].button("تفعيل", key=f"act_{qid}"):
                         db.update_quiz(qid, {"is_active": "True"})
                         st.success(f"تم تفعيل الاختبار: {title}")
-                        st.toast(f"🟢 تم تفعيل الاختبار: {title}", icon="✅")
                         time.sleep(1)
                         st.rerun()
                 if col_actions[1].button("حذف (النتائج تبقى)", key=f"del_keep_{qid}"):
                     db.delete_quiz_keep_results(qid)
                     st.success(f"تم حذف الاختبار '{title}' مع الاحتفاظ بالنتائج.")
-                    st.toast(f"🗑️ تم حذف الاختبار مع الاحتفاظ بالنتائج", icon="⚠️")
                     time.sleep(1)
                     st.rerun()
                 st.markdown("---")
@@ -4130,662 +2374,43 @@ def show_reports(db: Database):
     section_id = user.get("section_id", "")
     attendance = db.get_attendance()
     students = db.get_students()
-    sections = db.get_sections()
 
     if role == "Teacher" and section_id:
-        if not students.empty and "section_id" in students.columns:
-            students = students[students.section_id == section_id]
         if not attendance.empty and "section_id" in attendance.columns:
             attendance = attendance[attendance.section_id == section_id]
-        if not sections.empty and "section_id" in sections.columns:
-            sections = sections[sections.section_id == section_id]
+        if not students.empty and "section_id" in students.columns:
+            students = students[students.section_id == section_id]
 
     if attendance.empty:
         st.info("لا توجد بيانات حضور.")
         return
     if "date" in attendance.columns:
         attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
-
-    # ===== Report Builder =====
-    st.markdown('<div class="filter-container">', unsafe_allow_html=True)
-    st.markdown("### 📋 منشئ التقارير")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        report_type = st.selectbox(
-            "نوع التقرير",
-            ["تقرير الحضور الأسبوعي", "تقرير الحضور الشهري", "تقرير الأعضاء الجدد", "تقرير الأعضاء الغائبين"],
-            key="report_type"
-        )
-    with col2:
-        date_from = st.date_input("من تاريخ", get_cairo_now().date() - timedelta(days=30), key="report_from")
-    with col3:
-        date_to = st.date_input("إلى تاريخ", get_cairo_now().date(), key="report_to")
-    
-    # Additional filters
-    if not sections.empty:
-        section_filter = st.multiselect(
-            "تصفية حسب الخدمة",
-            options=sections["section_id"].tolist(),
-            format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0] if x in sections["section_id"].values else x,
-            default=sections["section_id"].tolist() if "report_sections" not in st.session_state else st.session_state.report_sections,
-            key="report_sections"
-        )
-    else:
-        section_filter = []
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Convert dates
-    date_from_str = date_from.strftime("%Y-%m-%d")
-    date_to_str = date_to.strftime("%Y-%m-%d")
-    
-    # Filter data by date range
+    st.subheader("📅 تقرير الغياب الشهري")
+    col1, col2 = st.columns(2)
+    month = col1.selectbox("الشهر", range(1,13), index=get_cairo_now().month-1)
+    year = col2.number_input("السنة", value=get_cairo_now().year, min_value=2020)
     if "date" in attendance.columns:
-        mask = (attendance.date >= date_from_str) & (attendance.date <= date_to_str)
-        period_attendance = attendance[mask].copy()
-    else:
-        period_attendance = pd.DataFrame()
-    
-    # Filter by sections if selected
-    if section_filter and not period_attendance.empty and "section_id" in period_attendance.columns:
-        period_attendance = period_attendance[period_attendance.section_id.isin(section_filter)]
-    
-    # ===== Summary KPI Cards =====
-    st.markdown("### 📊 ملخص الفترة")
-    if not period_attendance.empty:
-        # Calculate KPIs
-        total_records = len(period_attendance)
-        present_count = len(period_attendance[period_attendance.status == "حاضر"]) if "status" in period_attendance.columns else 0
-        absent_count = len(period_attendance[period_attendance.status == "غائب"]) if "status" in period_attendance.columns else 0
-        late_count = len(period_attendance[period_attendance.status == "متأخر"]) if "status" in period_attendance.columns else 0
-        
-        attendance_rate = round((present_count / total_records) * 100, 1) if total_records > 0 else 0
-        
-        # Calculate unique students
-        unique_students = period_attendance["student_id"].nunique() if "student_id" in period_attendance.columns else 0
-        
-        # Find students needing followup
-        students_needing_followup = get_students_needing_followup(db)
-        followup_count = len(students_needing_followup)
-        
-        # Calculate days in period
-        days_count = (date_to - date_from).days + 1
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("📅 إجمالي الحضور في الفترة", f"{present_count}", f"من {total_records} سجل")
-        col2.metric("📈 متوسط الحضور اليومي", f"{round(present_count/days_count, 1) if days_count > 0 else 0}", f"للمدة {days_count} يوم")
-        col3.metric("🏫 أكثر خدمة حضوراً", "غير متاح", help="يتطلب بيانات أكثر تفصيلاً")
-        col4.metric("⚠️ بحاجة لمتابعة", f"{followup_count}", "طالبة")
-        
-        st.markdown("---")
-    else:
-        st.warning("لا توجد بيانات للفترة المحددة.")
-        return
-    
-    # ===== Interactive Charts =====
-    st.markdown("### 📈 الرسوم البيانية")
-    
-    col_chart1, col_chart2 = st.columns(2)
-    
-    with col_chart1:
-        st.subheader("📊 الحضور عبر الزمن")
-        if not period_attendance.empty and "date" in period_attendance.columns and "status" in period_attendance.columns:
-            # Group by date and status
-            daily_summary = period_attendance.groupby(["date", "status"]).size().reset_index(name="العدد")
-            
-            if not daily_summary.empty:
-                fig = px.line(
-                    daily_summary, 
-                    x="date", 
-                    y="العدد",
-                    color="status",
-                    labels={"date": "التاريخ", "العدد": "عدد الطالبات", "status": "الحالة"},
-                    color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"},
-                    title="الحضور اليومي"
-                )
-                fig.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    hovermode='x unified'
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("لا توجد بيانات للعرض")
-        else:
-            st.info("لا توجد بيانات كافية")
-    
-    with col_chart2:
-        st.subheader("📊 مقارنة الحضور بين الخدمات")
-        if not period_attendance.empty and "section_id" in period_attendance.columns:
-            # Merge with section names
-            if not sections.empty:
-                section_att = period_attendance.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
-            else:
-                section_att = period_attendance.copy()
-                section_att["section_name"] = section_att["section_id"]
-            
-            if "section_name" in section_att.columns and "status" in section_att.columns:
-                section_summary = section_att.groupby(["section_name", "status"]).size().reset_index(name="العدد")
-                
-                if not section_summary.empty:
-                    # Create grouped bar chart
-                    fig = px.bar(
-                        section_summary,
-                        x="section_name",
-                        y="العدد",
-                        color="status",
-                        labels={"section_name": "الخدمة", "العدد": "عدد الطالبات", "status": "الحالة"},
-                        color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"},
-                        title="الحضور حسب الخدمة",
-                        barmode="group"
-                    )
-                    fig.update_layout(
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        xaxis_tickangle=-45
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("لا توجد بيانات للعرض")
-            else:
-                st.info("لا توجد بيانات كافية")
-        else:
-            st.info("لا توجد بيانات كافية")
-    
-    # Pie chart - full width
-    st.subheader("🥧 نسبة الحضور مقابل الغياب")
-    if not period_attendance.empty and "status" in period_attendance.columns:
-        status_summary = period_attendance["status"].value_counts().reset_index()
-        status_summary.columns = ["الحالة", "العدد"]
-        
-        if not status_summary.empty:
-            fig = px.pie(
-                status_summary,
-                names="الحالة",
-                values="العدد",
-                title="توزيع الحالات",
-                hole=0.4,
-                color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"}
-            )
-            fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+        monthly = attendance[(attendance.date.dt.month == month) & (attendance.date.dt.year == year)]
+        if not monthly.empty:
+            summary = monthly.groupby(["student_id", "status"]).size().reset_index(name="count")
+            pivot = summary.pivot(index="student_id", columns="status", values="count").fillna(0).reset_index()
+            if not students.empty:
+                pivot = pivot.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+            st.dataframe(pivot, use_container_width=True)
+            fig = px.pie(monthly, names="status", title=f"نسب الحضور لشهر {month}/{year}")
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("لا توجد بيانات")
-    else:
-        st.info("لا توجد بيانات كافية")
-    
+            st.info("لا توجد بيانات لهذا الشهر.")
+
     st.markdown("---")
-    
-    # ===== Detailed Table =====
-    st.markdown("### 📋 جدول التفاصيل")
-    
-    if report_type == "تقرير الأعضاء الغائبين":
-        st.subheader("❌ الأعضاء الغائبين")
-        if not period_attendance.empty:
-            absent_df = period_attendance[period_attendance.status == "غائب"].copy() if "status" in period_attendance.columns else pd.DataFrame()
-            if not absent_df.empty and not students.empty:
-                absent_df = absent_df.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-                absent_df = absent_df[["full_name", "date", "status", "notes"]].sort_values("date", ascending=False)
-                st.dataframe(absent_df, use_container_width=True)
-            else:
-                st.info("لا يوجد غياب في الفترة المحددة")
-        else:
-            st.info("لا توجد بيانات")
-    
-    elif report_type == "تقرير الحضور الأسبوعي":
-        st.subheader("📅 ملخص أسبوعي")
-        if not period_attendance.empty and "date" in period_attendance.columns:
-            # Add week number
-            period_attendance["week"] = period_attendance["date"].dt.isocalendar().week
-            
-            weekly_summary = period_attendance.groupby(["week", "status"]).size().reset_index(name="العدد")
-            if not weekly_summary.empty:
-                st.dataframe(weekly_summary, use_container_width=True)
-            else:
-                st.info("لا توجد بيانات")
-        else:
-            st.info("لا توجد بيانات")
-    
-    else:
-        # Default: show all records
-        if not period_attendance.empty:
-            display_df = period_attendance.copy()
-            if not students.empty:
-                display_df = display_df.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-                display_df = display_df[["full_name", "date", "status", "notes"]]
-            else:
-                display_df = display_df[["date", "student_id", "status", "notes"]]
-            st.dataframe(display_df.sort_values("date", ascending=False), use_container_width=True)
-        else:
-            st.info("لا توجد بيانات")
-    
-    st.markdown("---")
-    
-    # ===== Export Options =====
-    st.markdown("### 📥 تصدير التقرير")
-    
-    col_export1, col_export2, col_export3 = st.columns(3)
-    
-    with col_export1:
-        if st.button("📥 تصدير CSV", use_container_width=True, key="export_report_csv"):
-            if not period_attendance.empty:
-                # Prepare export data
-                export_df = period_attendance.copy()
-                if not students.empty:
-                    export_df = export_df.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-                    export_df = export_df[["full_name", "date", "status", "notes"]]
-                else:
-                    export_df = export_df[["date", "student_id", "status", "notes"]]
-                
-                csv_data = export_to_csv(export_df, f"تقرير_{report_type}_{date_from_str}_{date_to_str}.csv")
-                st.download_button(
-                    label="📥 تحميل CSV",
-                    data=csv_data,
-                    file_name=f"تقرير_{report_type}_{date_from_str}_{date_to_str}.csv",
-                    mime="text/csv",
-                    key="download_report_csv"
-                )
-                st.toast("✅ تم تجهيز الملف للتحميل", icon="📥")
-            else:
-                st.warning("لا توجد بيانات للتصدير")
-    
-    with col_export2:
-        if st.button("📥 تصدير Excel", use_container_width=True, key="export_report_excel"):
-            if not period_attendance.empty:
-                # Prepare export data
-                export_df = period_attendance.copy()
-                if not students.empty:
-                    export_df = export_df.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-                    export_df = export_df[["full_name", "date", "status", "notes"]]
-                else:
-                    export_df = export_df[["date", "student_id", "status", "notes"]]
-                
-                excel_data = export_to_excel(export_df, f"تقرير_{report_type}_{date_from_str}_{date_to_str}.xlsx")
-                st.download_button(
-                    label="📥 تحميل Excel",
-                    data=excel_data,
-                    file_name=f"تقرير_{report_type}_{date_from_str}_{date_to_str}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download_report_excel"
-                )
-                st.toast("✅ تم تجهيز الملف للتحميل", icon="📥")
-            else:
-                st.warning("لا توجد بيانات للتصدير")
-    
-    with col_export3:
-        if st.button("📄 تصدير PDF", use_container_width=True, key="export_report_pdf"):
-            st.info("📄 ميزة تصدير PDF قيد التطوير. يرجى استخدام CSV أو Excel للتصدير حالياً.")
-
-# =============================================================================
-# Events Page UI
-# =============================================================================
-def show_events_page(db: Database):
-    st.markdown("<h2 class='main-header'>📅 الفعاليات والمناسبات</h2>", unsafe_allow_html=True)
-    
-    user = st.session_state.user
-    events_df = db.get_events()
-    rsvps_df = db.get_event_rsvps()
-    students = db.get_students()
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 الفعاليات القادمة", "➕ إضافة فعالية", "🎫 تسجيل الحظور المتوقع", "✅ تسجيل حضور الفعالية"])
-    
-    with tab1:
-        st.subheader("📋 الفعاليات القادمة")
-        if events_df.empty:
-            st.info("لا توجد فعاليات مسجلة بعد.")
-        else:
-            events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
-            events_df = events_df.sort_values("event_date")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                event_type_filter = st.selectbox("تصفية حسب النوع", ["الكل"] + list(events_df["event_type"].unique()), key="event_type_filter")
-            with col2:
-                show_past = st.checkbox("عرض الفعاليات المنتهية", value=False, key="show_past_events")
-            
-            filtered_events = events_df.copy()
-            if event_type_filter != "الكل":
-                filtered_events = filtered_events[filtered_events.event_type == event_type_filter]
-            
-            today = get_cairo_now().replace(tzinfo=None)
-            if not show_past:
-                filtered_events = filtered_events[filtered_events.event_date >= today]
-            
-            if filtered_events.empty:
-                st.info("لا توجد فعاليات مطابقة.")
-            else:
-                for _, event in filtered_events.iterrows():
-                    event_id = event.get("event_id", "")
-                    event_name = event.get("event_name", "")
-                    event_date = event.get("event_date", "")
-                    location = event.get("location", "")
-                    event_type = event.get("event_type", "")
-                    description = event.get("description", "")
-                    max_attendees = event.get("max_attendees", "")
-                    
-                    if pd.notna(event_date):
-                        date_str = event_date.strftime("%Y-%m-%d %I:%M %p")
-                    else:
-                        date_str = "غير محدد"
-                    
-                    rsvp_count = get_event_attendees_count(db, event_id)
-                    type_emoji = {"اجتماع": "💬", "خدمة": "⛪", "رحلة": "🚌", "احتفال": "🎉"}.get(event_type, "📅")
-                    
-                    st.markdown(f"""
-                    <div class="card">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
-                            <h3 style="margin:0; color:var(--text-primary);">{type_emoji} {event_name}</h3>
-                            <span style="background:var(--gold-light); color:var(--gold); padding:0.3rem 0.8rem; border-radius:20px; font-size:0.8rem; font-weight:600;">{event_type}</span>
-                        </div>
-                        <div style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:0.5rem;">📅 {date_str} | 📍 {location if location else 'غير محدد'}</div>
-                        {f'<div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.5rem;">👥 السعة: {max_attendees} شخص</div>' if max_attendees else ''}
-                        <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.8rem;">✅ المسجلون: {rsvp_count} {f'/ {max_attendees}' if max_attendees else ''}</div>
-                        {f'<div style="padding:0.8rem; background:var(--card-bg); border-radius:8px; margin-top:0.5rem;">{description}</div>' if description else ''}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if not rsvps_df.empty:
-                        event_rsvps = rsvps_df[rsvps_df.event_id == event_id]
-                        if not event_rsvps.empty:
-                            with st.expander(f"📋 قائمة المسجلين ({len(event_rsvps)})"):
-                                for _, rsvp in event_rsvps.iterrows():
-                                    st.write(f"👤 {rsvp.get('student_name', '')} - {rsvp.get('rsvp_status', '')}")
-    
-    with tab2:
-        st.subheader("➕ إضافة فعالية جديدة")
-        with st.form("add_event_form"):
-            event_name = st.text_input("اسم الفعالية*", placeholder="مثال: اجتماع شهري")
-            event_type = st.selectbox("نوع الفعالية*", ["اجتماع", "خدمة", "رحلة", "احتفال"])
-            event_date = st.date_input("تاريخ الفعالية*", value=get_cairo_now().date() + timedelta(days=7))
-            event_time = st.time_input("وقت الفعالية", value=None)
-            location = st.text_input("المكان", placeholder="مثال: قاعة الاجتماعات")
-            max_attendees = st.number_input("السعة القصوى (اختياري)", min_value=0, value=0, help="اتركه 0 لعدم تحديد سعة")
-            description = st.text_area("الوصف", placeholder="تفاصيل إضافية عن الفعالية...")
-            
-            submitted = st.form_submit_button("➕ إضافة الفعالية", use_container_width=True)
-            if submitted:
-                if not event_name or not event_date:
-                    st.error("يرجى ملء اسم الفعالية والتاريخ على الأقل")
-                else:
-                    if event_time:
-                        datetime_str = f"{event_date} {event_time}"
-                    else:
-                        datetime_str = f"{event_date} 00:00"
-                    
-                    event_data = {
-                        "event_name": event_name,
-                        "event_date": datetime_str,
-                        "location": location,
-                        "event_type": event_type,
-                        "description": description,
-                        "max_attendees": str(max_attendees) if max_attendees > 0 else "",
-                        "created_by": user.get("user_id", "")
-                    }
-                    
-                    event_id = add_event(db, event_data)
-                    st.success(f"✅ تم إضافة الفعالية بنجاح!")
-                    st.toast("✅ تم إضافة الفعالية!", icon="🎉")
-                    time.sleep(1)
-                    st.rerun()
-    
-    with tab3:
-        st.subheader("🎫 تسجيل الحضور المتوقع")
-        if events_df.empty:
-            st.info("لا توجد فعاليات للتسجيل فيها.")
-        else:
-            events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
-            events_df = events_df.sort_values("event_date")
-            event_options = events_df[events_df.event_date >= get_cairo_now().replace(tzinfo=None)]
-            
-            if event_options.empty:
-                st.info("لا توجد فعاليات مستقبلية.")
-            else:
-                selected_event_id = st.selectbox(
-                    "اختر الفعالية",
-                    event_options["event_id"].tolist(),
-                    format_func=lambda x: event_options[event_options.event_id == x]["event_name"].values[0],
-                    key="rsvp_event_select"
-                )
-                
-                if selected_event_id:
-                    event_row = event_options[event_options.event_id == selected_event_id].iloc[0]
-                    event_name = event_row.get("event_name", "")
-                    max_att = event_row.get("max_attendees", "")
-                    
-                    st.markdown(f"**الفعالية:** {event_name}")
-                    try:
-                        max_att_val = int(float(max_att)) if max_att and str(max_att).strip() else 0
-                    except (ValueError, TypeError):
-                        max_att_val = 0
-                    if max_att_val > 0:
-                        current_rsvps = get_event_attendees_count(db, selected_event_id)
-                        st.markdown(f"**المسجلون:** {current_rsvps}/{max_att_val}")
-                    
-                    user_id = user.get("user_id", "")
-                    existing_rsvp = rsvps_df[(rsvps_df.event_id == selected_event_id) & (rsvps_df.student_id == user_id)] if not rsvps_df.empty else pd.DataFrame()
-                    
-                    if not existing_rsvp.empty:
-                        st.info("✅ أنت مسجل في هذه الفعالية بالفعل")
-                    else:
-                        if not students.empty:
-                            student_options = students[students["status"] == "active"] if "status" in students.columns else students
-                            if not student_options.empty:
-                                selected_student = st.selectbox(
-                                    "اختر العضو للتسجيل",
-                                    student_options["student_id"].tolist(),
-                                    format_func=lambda x: student_options[student_options.student_id == x]["full_name"].values[0],
-                                    key="rsvp_student_select"
-                                )
-                                
-                                if selected_student:
-                                    student_name = student_options[student_options.student_id == selected_student]["full_name"].values[0]
-                                    if st.button("✅ تسجيل الحضور المتوقع", use_container_width=True, key="rsvp_submit"):
-                                        success = add_event_rsvp(db, selected_event_id, selected_student, student_name)
-                                        if success:
-                                            st.success(f"✅ تم تسجيل {student_name} في الفعالية")
-                                            st.toast("✅ تم التسجيل!", icon="🎫")
-                                            time.sleep(1)
-                                            st.rerun()
-                                        else:
-                                            st.warning("هذا العضو مسجل بالفعل")
-    
-    with tab4:
-        st.subheader("✅ تسجيل حضور الفعالية")
-        if events_df.empty:
-            st.info("لا توجد فعاليات.")
-        else:
-            events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
-            past_events = events_df[events_df.event_date < get_cairo_now().replace(tzinfo=None)]
-            
-            if past_events.empty:
-                st.info("لا توجد فعاليات منتهية.")
-            else:
-                selected_event_id = st.selectbox(
-                    "اختر الفعالية",
-                    past_events["event_id"].tolist(),
-                    format_func=lambda x: past_events[past_events.event_id == x]["event_name"].values[0],
-                    key="attendance_event_select"
-                )
-                
-                if selected_event_id:
-                    event_row = past_events[past_events.event_id == selected_event_id].iloc[0]
-                    event_name = event_row.get("event_name", "")
-                    st.markdown(f"**الفعالية:** {event_name}")
-                    
-                    event_rsvps = rsvps_df[rsvps_df.event_id == selected_event_id] if not rsvps_df.empty else pd.DataFrame()
-                    
-                    if event_rsvps.empty:
-                        st.info("لا يوجد مسجلين في هذه الفعالية.")
-                    else:
-                        st.markdown(f"**عدد المسجلين:** {len(event_rsvps)}")
-                        
-                        st.markdown("### تسجيل الحضور الفعلي")
-                        attendance_data = {}
-                        for _, rsvp in event_rsvps.iterrows():
-                            student_id = rsvp.get("student_id", "")
-                            student_name = rsvp.get("student_name", "")
-                            current_status = rsvp.get("actual_attendance", "")
-                            
-                            col1, col2 = st.columns([3, 2])
-                            col1.write(f"👤 {student_name}")
-                            
-                            status = col2.selectbox(
-                                "الحالة",
-                                ["", "حضر", "لم يحضر"],
-                                index=0 if not current_status else (1 if current_status == "حضر" else 2),
-                                key=f"att_{student_id}"
-                            )
-                            attendance_data[student_id] = status
-                        
-                        if st.button("💾 حفظ الحضور", use_container_width=True, key="save_event_attendance"):
-                            success_count = 0
-                            for student_id, status in attendance_data.items():
-                                if status:
-                                    if update_event_attendance(db, selected_event_id, student_id, status):
-                                        success_count += 1
-                            
-                            if success_count > 0:
-                                st.success(f"✅ تم تحديث حضور {success_count} عضو")
-                                st.toast("✅ تم حفظ الحضور!", icon="✅")
-                                time.sleep(1)
-                                st.rerun()
-                        
-                        st.markdown("---")
-                        st.subheader("📊 ملخص الحضور")
-                        if not event_rsvps.empty and "actual_attendance" in event_rsvps.columns:
-                            attended = len(event_rsvps[event_rsvps.actual_attendance == "حضر"])
-                            absent = len(event_rsvps[event_rsvps.actual_attendance == "لم يحضر"])
-                            not_recorded = len(event_rsvps[event_rsvps.actual_attendance == ""])
-                            
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("✅ حضر", attended)
-                            col2.metric("❌ لم يحضر", absent)
-                            col3.metric("⏳ لم يسجل", not_recorded)
-
-def get_events_badge_count(db):
-    upcoming = get_upcoming_events(db, days=3)
-    return len(upcoming)
-
-# =============================================================================
-# Details Logging System
-# =============================================================================
-def log_details_operation(db: Database, student_id: str, student_name: str, status: str, 
-                         operation_type: str, qr_data: str = "", device_info: str = "Default Camera", 
-                         notes: str = ""):
-    """Log operation details to the Details sheet in Google Sheets."""
-    try:
-        db._ensure_details_sheet()
-        timestamp = get_cairo_now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        details_record = {
-            "Timestamp": timestamp,
-            "ID": student_id if student_id else "N/A",
-            "Name": student_name if student_name else "Unknown",
-            "Status": status,
-            "Operation_Type": operation_type,
-            "QR_Data": qr_data if qr_data else "N/A",
-            "Device_Info": device_info,
-            "Notes": notes
-        }
-        
-        # Thread-safe writing to Details sheet
-        with Database._details_lock:
-            df = db._sheet_to_df("Details")
-            if df.empty:
-                df = pd.DataFrame(columns=["Timestamp", "ID", "Name", "Status", "Operation_Type",
-                                           "QR_Data", "Device_Info", "Notes"])
-            df = pd.concat([df, pd.DataFrame([details_record])], ignore_index=True)
-            # Keep only last 2000 records
-            if len(df) > 2000:
-                df = df.tail(2000)
-            db._df_to_sheet("Details", df, ["Timestamp", "ID", "Name", "Status", "Operation_Type",
-                                            "QR_Data", "Device_Info", "Notes"])
-    except Exception as e:
-        print(f"Error logging details: {e}")
-
-def validate_qr_code(db: Database, qr_data: str, students_df: pd.DataFrame) -> dict:
-    """
-    Validate QR code against registered students.
-    Returns dict with 'valid', 'student_id', 'student_name', 'section_id', 'message'
-    """
-    if not qr_data or qr_data.strip() == "":
-        return {
-            "valid": False,
-            "student_id": "",
-            "student_name": "",
-            "section_id": "",
-            "message": "QR Code فارغ"
-        }
-    
-    # Parse QR data
-    parts = qr_data.split('\n')
-    qr_name = ""
-    qr_id = ""
-    
-    for part in parts:
-        trimmed = part.strip()
-        if trimmed.startswith("Member:"):
-            qr_name = trimmed.replace("Member:", "").strip()
-        elif trimmed.startswith("ID:"):
-            qr_id = trimmed.replace("ID:", "").strip()
-    
-    if not qr_id or not qr_name:
-        return {
-            "valid": False,
-            "student_id": "",
-            "student_name": "",
-            "section_id": "",
-            "message": "❌ QR Code غير صالح - بيانات ناقصة"
-        }
-    
-    # Search in students dataframe
-    if students_df.empty or "student_id" not in students_df.columns:
-        return {
-            "valid": False,
-            "student_id": qr_id,
-            "student_name": qr_name,
-            "section_id": "",
-            "message": "❌ QR Code غير معروف - لا توجد طالبات مسجلات"
-        }
-    
-    # Try to match by ID or Name
-    student_match = students_df[
-        (students_df["student_id"] == qr_id) | 
-        (students_df["full_name"] == qr_name)
-    ]
-    
-    if student_match.empty:
-        return {
-            "valid": False,
-            "student_id": qr_id,
-            "student_name": qr_name,
-            "section_id": "",
-            "message": "❌ QR Code غير مسجل في النظام"
-        }
-    
-    student_row = student_match.iloc[0]
-    return {
-        "valid": True,
-        "student_id": student_row.get("student_id", qr_id),
-        "student_name": student_row.get("full_name", qr_name),
-        "section_id": student_row.get("section_id", ""),
-        "message": "✅ QR Code صالح"
-    }
-
-def check_duplicate_attendance(db: Database, student_id: str, date_str: str) -> bool:
-    """Check if student already has attendance record for today."""
-    attendance = db.get_attendance()
-    if attendance.empty or "student_id" not in attendance.columns or "date" not in attendance.columns:
-        return False
-    # Normalize to string for safe comparison
-    attendance["date"] = attendance["date"].astype(str).str.strip()
-    date_str = str(date_str).strip()
-    today_att = attendance[attendance["date"] == date_str]
-    if today_att.empty:
-        return False
-    student_ids = today_att["student_id"].astype(str).str.strip().tolist()
-    return str(student_id).strip() in student_ids
+    st.subheader("🏆 أكثر 10 طالبات غياباً")
+    if not attendance.empty and "status" in attendance.columns and "student_id" in attendance.columns:
+        absent_counts = attendance[attendance.status == "غائب"].groupby("student_id").size().reset_index(name="أيام الغياب")
+        absent_counts = absent_counts.sort_values("أيام الغياب", ascending=False).head(10)
+        if not students.empty:
+            absent_counts = absent_counts.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+        st.dataframe(absent_counts[["full_name", "أيام الغياب"]], use_container_width=True)
 
 def show_logs(db: Database):
     st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
@@ -4802,216 +2427,6 @@ def show_logs(db: Database):
                 time.sleep(1)
                 st.rerun()
 
-def show_audit_log(db: Database):
-    """Display login/access audit log with device and location info."""
-    st.markdown("<h2 class='main-header'>🔐 سجل الدخول والعمليات</h2>", unsafe_allow_html=True)
-    
-    user = st.session_state.user
-    role = user.get("role", "")
-    
-    # Only System Admin can view audit log
-    if role != "System Admin":
-        st.error("🚫 غير مصرح لك بعرض سجل الدخول")
-        return
-    
-    audit_df = db.get_logs()
-    
-    if audit_df.empty:
-        st.info("لا توجد سجلات دخول بعد.")
-        return
-    
-    # Convert timestamp
-    if "timestamp" in audit_df.columns:
-        audit_df["timestamp"] = pd.to_datetime(audit_df["timestamp"], errors="coerce")
-        audit_df = audit_df.sort_values("timestamp", ascending=False)
-    
-    # Summary stats
-    st.markdown("### 📊 ملخص السجلات")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    total_records = len(audit_df)
-    unique_users = audit_df["user_name"].nunique() if "user_name" in audit_df.columns else 0
-    
-    with col1:
-        st.metric("📋 إجمالي السجلات", total_records)
-    with col2:
-        st.metric("👥 مستخدمين فريدين", unique_users)
-    with col3:
-        if "device_type" in audit_df.columns:
-            desktop_count = len(audit_df[audit_df["device_type"] == "Desktop"])
-            st.metric("🖥️ عمليات من سطح المكتب", desktop_count)
-    with col4:
-        if "privacy_consent" in audit_df.columns:
-            consent_count = len(audit_df[audit_df["privacy_consent"] == "✅ Agreed"])
-            st.metric("✅ موافقات الخصوصية", consent_count)
-    
-    st.markdown("---")
-    
-    # Filters
-    st.markdown("### 🔍 تصفية السجلات")
-    col_filter1, col_filter2, col_filter3 = st.columns(3)
-    
-    with col_filter1:
-        if "user_name" in audit_df.columns:
-            user_options = ["الكل"] + sorted(audit_df["user_name"].dropna().unique().tolist())
-            filter_user = st.selectbox("المستخدم", user_options, key="audit_filter_user")
-        else:
-            filter_user = "الكل"
-    
-    with col_filter2:
-        if "action" in audit_df.columns:
-            action_options = ["الكل"] + sorted(audit_df["action"].dropna().unique().tolist())
-            filter_action = st.selectbox("الإجراء", action_options, key="audit_filter_action")
-        else:
-            filter_action = "الكل"
-    
-    with col_filter3:
-        if "device_type" in audit_df.columns:
-            device_options = ["الكل"] + sorted(audit_df["device_type"].dropna().unique().tolist())
-            filter_device = st.selectbox("نوع الجهاز", device_options, key="audit_filter_device")
-        else:
-            filter_device = "الكل"
-    
-    # Apply filters
-    filtered_audit = audit_df.copy()
-    
-    if filter_user != "الكل" and "user_name" in filtered_audit.columns:
-        filtered_audit = filtered_audit[filtered_audit["user_name"] == filter_user]
-    
-    if filter_action != "الكل" and "action" in filtered_audit.columns:
-        filtered_audit = filtered_audit[filtered_audit["action"] == filter_action]
-    
-    if filter_device != "الكل" and "device_type" in filtered_audit.columns:
-        filtered_audit = filtered_audit[filtered_audit["device_type"] == filter_device]
-    
-    st.markdown(f"<div style='margin:1rem 0;'><strong>📊 السجلات المعروضة:</strong> {len(filtered_audit)} من {total_records}</div>", unsafe_allow_html=True)
-    
-    # Display table
-    if not filtered_audit.empty:
-        # Select and rename columns for display
-        display_columns = {}
-        
-        if "timestamp" in filtered_audit.columns:
-            display_columns["timestamp"] = "التاريخ والوقت"
-        if "user_name" in filtered_audit.columns:
-            display_columns["user_name"] = "اسم المستخدم"
-        if "action" in filtered_audit.columns:
-            display_columns["action"] = "الإجراء"
-        if "details" in filtered_audit.columns:
-            display_columns["details"] = "التفاصيل"
-        if "browser" in filtered_audit.columns:
-            display_columns["browser"] = "المتصفح"
-        if "os" in filtered_audit.columns:
-            display_columns["os"] = "نظام التشغيل"
-        if "device_type" in filtered_audit.columns:
-            display_columns["device_type"] = "نوع الجهاز"
-        if "screen_size" in filtered_audit.columns:
-            display_columns["screen_size"] = "حجم الشاشة"
-        if "ip_masked" in filtered_audit.columns:
-            display_columns["ip_masked"] = "IP (مجهز)"
-        if "country" in filtered_audit.columns:
-            display_columns["country"] = "الدولة"
-        if "city" in filtered_audit.columns:
-            display_columns["city"] = "المدينة"
-        if "privacy_consent" in filtered_audit.columns:
-            display_columns["privacy_consent"] = "الخصوصية"
-        
-        # Filter available columns
-        available_cols = [k for k in display_columns.keys() if k in filtered_audit.columns]
-        display_df = filtered_audit[available_cols].copy()
-        display_df.columns = [display_columns[c] for c in available_cols]
-        
-        # Format timestamp
-        if "التاريخ والوقت" in display_df.columns:
-            display_df["التاريخ والوقت"] = display_df["التاريخ والوقت"].apply(
-                lambda x: x.strftime("%Y-%m-%d %I:%M:%S %p") if pd.notna(x) else ""
-            )
-        
-        st.dataframe(display_df, use_container_width=True, height=600)
-        
-        # Export options
-        st.markdown("---")
-        st.markdown("### 📥 تصدير السجلات")
-        
-        col_exp1, col_exp2 = st.columns(2)
-        
-        with col_exp1:
-            if st.button("📥 تصدير CSV", use_container_width=True, key="export_audit_csv"):
-                csv_data = export_to_csv(display_df, "audit_log_export.csv")
-                st.download_button(
-                    label="📥 تحميل CSV",
-                    data=csv_data,
-                    file_name=f"audit_log_{get_cairo_now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    key="download_audit_csv"
-                )
-                st.toast("✅ تم تجهيز الملف للتحميل", icon="📥")
-        
-        with col_exp2:
-            if st.button("📥 تصدير Excel", use_container_width=True, key="export_audit_excel"):
-                excel_data = export_to_excel(display_df, "audit_log_export.xlsx")
-                st.download_button(
-                    label="📥 تحميل Excel",
-                    data=excel_data,
-                    file_name=f"audit_log_{get_cairo_now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download_audit_excel"
-                )
-                st.toast("✅ تم تجهيز الملف للتحميل", icon="📥")
-    else:
-        st.info("لا توجد سجلات مطابقة للتصفية المحددة.")
-
-# =============================================================================
-# Events Management System (Google Sheets)
-# =============================================================================
-def add_event(db, event_data):
-    new_event = {
-        "event_id": str(uuid.uuid4()),
-        "event_name": event_data["event_name"],
-        "event_date": event_data["event_date"],
-        "location": event_data["location"],
-        "event_type": event_data["event_type"],
-        "description": event_data["description"],
-        "max_attendees": event_data.get("max_attendees", ""),
-        "created_by": event_data.get("created_by", st.session_state.user.get("user_id", "")),
-        "created_at": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-    db.add_event(new_event)
-    return new_event["event_id"]
-
-def delete_event(db, event_id):
-    db.delete_event(event_id)
-    # Also delete all RSVPs for this event
-    db.delete_event_rsvps(event_id)
-
-def add_event_rsvp(db, event_id, student_id, student_name):
-    new_rsvp = {
-        "rsvp_id": str(uuid.uuid4()),
-        "event_id": event_id,
-        "student_id": student_id,
-        "student_name": student_name,
-        "rsvp_status": "متوقع الحضور",
-        "rsvp_date": get_cairo_now().strftime("%Y-%m-%d %H:%M:%S"),
-        "actual_attendance": ""
-    }
-    return db.add_event_rsvp(new_rsvp)
-
-def update_event_attendance(db, event_id, student_id, attendance_status):
-    return db.update_event_attendance(event_id, student_id, attendance_status)
-
-def get_upcoming_events(db, days=3):
-    events_df = db.get_events()
-    if events_df.empty:
-        return pd.DataFrame()
-    events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
-    today = get_cairo_now().replace(tzinfo=None)
-    future_date = today + timedelta(days=days)
-    upcoming = events_df[(events_df.event_date >= today) & (events_df.event_date <= future_date)]
-    return upcoming.sort_values("event_date")
-
-def get_event_attendees_count(db, event_id):
-    return db.get_event_attendees_count(event_id)
-
 def change_password(db: Database):
     st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
     with st.form("change_password_form"):
@@ -5021,818 +2436,16 @@ def change_password(db: Database):
         if st.form_submit_button("تغيير كلمة المرور"):
             if not old or not new or not confirm:
                 st.error("الرجاء ملء جميع الحقول")
+            elif old != st.session_state.user.get("password", ""):
+                st.error("كلمة المرور الحالية غير صحيحة")
+            elif len(new) < 4:
+                st.error("كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل")
+            elif new != confirm:
+                st.error("كلمتا المرور غير متطابقتين")
             else:
-                # Verify old password (support both hashed and plain text)
-                stored_password = st.session_state.user.get("password", "")
-                old_valid = False
-                if len(stored_password) == 64:  # Hashed
-                    old_valid = verify_password(old, stored_password)
-                else:  # Plain text
-                    old_valid = (old == stored_password)
-                
-                if not old_valid:
-                    st.error("كلمة المرور الحالية غير صحيحة")
-                elif len(new) < 4:
-                    st.error("كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل")
-                elif new != confirm:
-                    st.error("كلمتا المرور غير متطابقتين")
-                else:
-                    # Hash new password before storing
-                    hashed_new = hash_password(new)
-                    db.update_user(st.session_state.user["user_id"], {"password": hashed_new})
-                    st.session_state.user["password"] = hashed_new
-                    st.success("✅ تم تغيير كلمة المرور بنجاح!")
-
-# =============================================================================
-# QR Code Management
-# =============================================================================
-def show_print_all_qr_codes(db: Database):
-    """Display all members' QR codes for printing."""
-    st.markdown("<h2 class='main-header'>🖨️ طباعة QR Codes</h2>", unsafe_allow_html=True)
-    
-    students = db.get_students()
-    sections = db.get_sections()
-    
-    if students.empty:
-        st.info("لا توجد طالبات مسجلات.")
-        return
-    
-    if not sections.empty and "section_id" in sections.columns:
-        students = students.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
-    else:
-        students["section_name"] = ""
-    
-    st.markdown("### 📱 جميع الأعضاء")
-    cols = st.columns(4)
-    col_idx = 0
-    
-    for _, row in students.iterrows():
-        sid = row.get("student_id", "")
-        name = row.get("full_name", "")
-        section_name = row.get("section_name", "")
-        
-        qr_data = f"Member: {name}\nID: {sid}\nSection: {section_name}"
-        qr_b64 = generate_qr_base64(qr_data)
-        
-        with cols[col_idx % 4]:
-            if qr_b64:
-                st.markdown(f"""
-                <div style="text-align:center; padding:1rem; background:white; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.1); margin-bottom:1rem;">
-                    <div style="font-weight:700; font-size:0.9rem; margin-bottom:0.5rem;">{name}</div>
-                    <img src="data:image/png;base64,{qr_b64}" width="100" style="border-radius:8px;">
-                    <div style="font-size:0.75rem; color:#666; margin-top:0.3rem;">{section_name if section_name else ''}</div>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        col_idx += 1
-
-# =============================================================================
-# Quick Check-in
-# =============================================================================
-def show_quick_checkin(db: Database):
-    """Quick attendance check-in with search autocomplete and QR scanner with overlays."""
-    st.markdown("<h2 class='main-header'>⚡ تسجيل حضور سريع</h2>", unsafe_allow_html=True)
-    
-    user = st.session_state.user
-    role = user.get("role", "")
-    section_id = user.get("section_id", "")
-    
-    if role == "Service Manager":
-        st.error("🚫 أمناء الخدمة لا يمكنهم تسجيل الحضور.")
-        return
-    
-    students = db.get_students()
-    if students.empty:
-        st.info("لا توجد طالبات مسجلات.")
-        return
-    
-    # Filter by section for teachers
-    if role == "Teacher" and section_id and "section_id" in students.columns:
-        students = students[students.section_id == section_id]
-    
-    if students.empty:
-        st.info("لا توجد طالبات في فصلك.")
-        return
-    
-    sections = db.get_sections()
-    if not sections.empty and "section_id" in students.columns and "section_id" in sections.columns:
-        students = students.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
-    else:
-        students["section_name"] = ""
-    
-    # ===== Tabs: Manual Check-in & QR Scanner =====
-    tab1, tab2 = st.tabs(["⌨️ تسجيل يدوي", "📷 مسح QR Code"])
-    
-    with tab1:
-        # Search with autocomplete
-        st.markdown('<div class="filter-container">', unsafe_allow_html=True)
-        search_term = st.text_input("🔍 بحث بالاسم", placeholder="اكتب اسم الطالبة...", key="quick_checkin_search")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        if search_term:
-            filtered = students[students["full_name"].astype(str).str.contains(search_term, na=False, case=False)]
-            if not filtered.empty:
-                selected_student = st.selectbox(
-                    "اختر الطالبة",
-                    filtered["student_id"].tolist(),
-                    format_func=lambda x: filtered[filtered.student_id == x]["full_name"].values[0],
-                    key="selected_student_checkin"
-                )
-                
-                if selected_student:
-                    student_row = filtered[filtered.student_id == selected_student].iloc[0]
-                    name = student_row.get("full_name", "")
-                    section_name = student_row.get("section_name", "")
-                    sid = selected_student
-                    
-                    # Display member info
-                    avatar_color = get_avatar_color(name)
-                    first_letter = name[0] if name else "?"
-                    
-                    st.markdown(f"""
-                    <div style="display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--card-bg); border-radius:12px; margin:1rem 0;">
-                        <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
-                        <div style="flex:1;">
-                            <div style="font-weight:700; font-size:1.1rem;">{name}</div>
-                            <div style="font-size:0.85rem; color:var(--text-secondary);">{section_name if section_name else 'بدون خدمة'}</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Quick check-in buttons
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("✅ حضور", use_container_width=True, type="primary", key="quick_present"):
-                            today_str = get_cairo_now().strftime("%Y-%m-%d")
-                            existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
-                            
-                            record_id = str(uuid.uuid4())
-                            if not existing.empty and sid in existing["student_id"].values:
-                                record_id = existing[existing.student_id == sid]["record_id"].values[0]
-                            
-                            db.batch_add_attendance([{
-                                "record_id": record_id,
-                                "date": today_str,
-                                "student_id": sid,
-                                "status": "حاضر",
-                                "notes": "تسجيل سريع",
-                                "recorded_by": user.get("user_id", ""),
-                                "section_id": student_row.get("section_id", "")
-                            }])
-                            db.add_log(user.get("user_id", ""), f"تسجيل حضور سريع - {name}")
-                            st.success(f"✅ تم تسجيل حضور {name}")
-                            st.toast(f"✅ تم تسجيل حضور {name}!", icon="✅")
-                            time.sleep(0.5)
-                            st.rerun()
-                    
-                    with col2:
-                        if st.button("❌ غياب", use_container_width=True, key="quick_absent"):
-                            today_str = get_cairo_now().strftime("%Y-%m-%d")
-                            existing = db.get_attendance_by_date_section(today_str, student_row.get("section_id", ""))
-                            
-                            record_id = str(uuid.uuid4())
-                            if not existing.empty and sid in existing["student_id"].values:
-                                record_id = existing[existing.student_id == sid]["record_id"].values[0]
-                            
-                            db.batch_add_attendance([{
-                                "record_id": record_id,
-                                "date": today_str,
-                                "student_id": sid,
-                                "status": "غائب",
-                                "notes": "تسجيل سريع",
-                                "recorded_by": user.get("user_id", ""),
-                                "section_id": student_row.get("section_id", "")
-                            }])
-                            db.add_log(user.get("user_id", ""), f"تسجيل غياب سريع - {name}")
-                            st.warning(f"❌ تم تسجيل غياب {name}")
-                            st.toast(f"❌ تم تسجيل غياب {name}", icon="⚠️")
-                            time.sleep(0.5)
-                            st.rerun()
-            else:
-                st.warning("⚠️ لا توجد نتائج")
-        
-        # Today's attendance list
-        st.markdown("---")
-        st.subheader("📋 الحاضرين اليوم")
-        today_str = get_cairo_now().strftime("%Y-%m-%d")
-        today_attendance = db.get_attendance()
-        
-        if not today_attendance.empty and "date" in today_attendance.columns:
-            today_attendance = today_attendance[today_attendance.date == today_str]
-            
-            if not today_attendance.empty:
-                # Merge with student names
-                if "student_id" in today_attendance.columns and not students.empty:
-                    today_attendance = today_attendance.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-                
-                if "status" in today_attendance.columns:
-                    present = today_attendance[today_attendance.status == "حاضر"]
-                    absent = today_attendance[today_attendance.status == "غائب"]
-                    
-                    col_p, col_a = st.columns(2)
-                    col_p.metric("✅ الحاضرون", len(present))
-                    col_a.metric("❌ الغائبون", len(absent))
-                    
-                    st.markdown("#### الحاضرين:")
-                    if not present.empty:
-                        for _, att in present.iterrows():
-                            att_time = get_cairo_now().strftime("%I:%M %p")
-                            st.write(f"✅ {att.get('full_name', '')} - {att_time}")
-                    else:
-                        st.info("لا يوجد حضور حتى الآن")
-                    
-                    st.markdown("#### الغائبون:")
-                    if not absent.empty:
-                        for _, att in absent.iterrows():
-                            st.write(f"❌ {att.get('full_name', '')}")
-                    else:
-                        st.info("لا يوجد غياب")
-            else:
-                st.info("لا توجد سجلات حضور لهذا اليوم")
-        else:
-            st.info("لا توجد بيانات حضور")
-    
-    with tab2:
-        st.markdown("#### 📷 مسح QR Code")
-        st.info("📱 وجه الكاميرا نحو QR Code للطالبة")
-        
-        # Browser-based QR scanner with visual overlay
-        qr_scanner_html = """
-        <div id="qr-scanner-container" style="width: 100%; max-width: 640px; margin: 0 auto; padding: 1rem; background: var(--card-bg); border-radius: 12px;">
-            <div id="qr-scanner" style="width: 100%; height: 400px; background: #000; border-radius: 8px; position: relative; overflow: hidden;">
-                <video id="video" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;" playsinline autoplay muted></video>
-                <canvas id="canvas" style="display: none;"></canvas>
-                
-                <!-- Animated scanning overlay -->
-                <div id="qr-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 3px solid #d4af37; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); transition: all 0.3s ease;">
-                    <!-- Animated corner brackets -->
-                    <div style="position: absolute; top: -3px; left: -3px; width: 40px; height: 40px; border-top: 4px solid #28a745; border-left: 4px solid #28a745; border-radius: 12px 0 0 0;"></div>
-                    <div style="position: absolute; top: -3px; right: -3px; width: 40px; height: 40px; border-top: 4px solid #28a745; border-right: 4px solid #28a745; border-radius: 0 12px 0 0;"></div>
-                    <div style="position: absolute; bottom: -3px; left: -3px; width: 40px; height: 40px; border-bottom: 4px solid #28a745; border-left: 4px solid #28a745; border-radius: 0 0 0 12px;"></div>
-                    <div style="position: absolute; bottom: -3px; right: -3px; width: 40px; height: 40px; border-bottom: 4px solid #28a745; border-right: 4px solid #28a745; border-radius: 0 0 12px 0;"></div>
-                    
-                    <!-- Scanning line animation -->
-                    <div id="scan-line" style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, #28a745, transparent); box-shadow: 0 0 10px #28a745; animation: scanMove 2s linear infinite;"></div>
-                </div>
-                
-                <!-- Success overlay (hidden by default) -->
-                <div id="success-overlay" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 3px solid #28a745; border-radius: 12px; background: rgba(40, 167, 69, 0.2); box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);">
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 4rem;">✅</div>
-                </div>
-                
-                <!-- Error overlay (hidden by default) -->
-                <div id="error-overlay" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 3px solid #dc3545; border-radius: 12px; background: rgba(220, 53, 69, 0.2); box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);">
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 4rem;">❌</div>
-                </div>
-            </div>
-            
-            <div id="qr-status" style="margin-top: 1rem; padding: 0.8rem; background: var(--gold-light); border-radius: 8px; text-align: center; font-weight: 600; color: var(--text-primary);">
-                ⏳ جاري تشغيل الكاميرا...
-            </div>
-            
-            <button id="start-scan-btn" style="margin-top: 1rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1rem;">
-                📷 بدء المسح
-            </button>
-        </div>
-
-        <style>
-            @keyframes scanMove {
-                0% { top: 0; opacity: 0; }
-                10% { opacity: 1; }
-                90% { opacity: 1; }
-                100% { top: 100%; opacity: 0; }
-            }
-        </style>
-
-        <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-        <script>
-            let video = document.getElementById('video');
-            let canvas = document.getElementById('canvas');
-            let ctx = canvas.getContext('2d');
-            let scanning = false;
-            let stream = null;
-            let qrDetected = false;
-
-            function showOverlay(type) {
-                document.getElementById('qr-overlay').style.display = 'none';
-                document.getElementById('success-overlay').style.display = 'none';
-                document.getElementById('error-overlay').style.display = 'none';
-                
-                if (type === 'success') {
-                    document.getElementById('success-overlay').style.display = 'block';
-                } else if (type === 'error') {
-                    document.getElementById('error-overlay').style.display = 'block';
-                }
-            }
-
-            function startCamera() {
-                const statusDiv = document.getElementById('qr-status');
-                const startBtn = document.getElementById('start-scan-btn');
-                
-                if (scanning) {
-                    stopCamera();
-                    return;
-                }
-
-                // Reset overlays
-                qrDetected = false;
-                document.getElementById('qr-overlay').style.display = 'block';
-                document.getElementById('success-overlay').style.display = 'none';
-                document.getElementById('error-overlay').style.display = 'none';
-
-                // Ensure video element is ready
-                if (!video) {
-                    statusDiv.innerHTML = '❌ خطأ: عنصر الفيديو غير موجود';
-                    return;
-                }
-
-                navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    } 
-                })
-                .then(function(mediaStream) {
-                    stream = mediaStream;
-                    video.srcObject = mediaStream;
-                    video.setAttribute('playsinline', true);
-                    video.setAttribute('autoplay', true);
-                    video.setAttribute('muted', true);
-                    video.play().then(function() {
-                        scanning = true;
-                        statusDiv.innerHTML = '✅ الكاميرا تعمل - وجّهها نحو QR Code';
-                        statusDiv.style.background = 'rgba(40,167,69,0.15)';
-                        startBtn.innerHTML = '⏹️ إيقاف المسح';
-                        startBtn.style.background = 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
-                        requestAnimationFrame(tick);
-                    }).catch(function(err) {
-                        console.error("Video play error:", err);
-                        statusDiv.innerHTML = '❌ خطأ في تشغيل الفيديو: ' + err.message;
-                        statusDiv.style.background = 'rgba(220,53,69,0.15)';
-                    });
-                })
-                .catch(function(err) {
-                    console.error("Camera error:", err);
-                    statusDiv.innerHTML = '❌ خطأ في الوصول للكاميرا: ' + err.message;
-                    statusDiv.style.background = 'rgba(220,53,69,0.15)';
-                });
-            }
-
-            function stopCamera() {
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                    stream = null;
-                }
-                scanning = false;
-                qrDetected = false;
-                const statusDiv = document.getElementById('qr-status');
-                const startBtn = document.getElementById('start-scan-btn');
-                statusDiv.innerHTML = '⏹️ الكاميرا متوقفة';
-                statusDiv.style.background = 'var(--gold-light)';
-                startBtn.innerHTML = '📷 بدء المسح';
-                startBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-                
-                // Reset overlays
-                document.getElementById('qr-overlay').style.display = 'block';
-                document.getElementById('success-overlay').style.display = 'none';
-                document.getElementById('error-overlay').style.display = 'none';
-            }
-
-            function tick() {
-                if (!scanning) return;
-                
-                if (video.readyState === video.HAVE_ENOUGH_DATA && !qrDetected) {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    
-                    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    let code = jsQR(imageData.data, imageData.width, imageData.height, {
-                        inversionAttempts: 'dontInvert'
-                    });
-                    
-                    if (code) {
-                        // QR Code detected!
-                        qrDetected = true;
-                        scanning = false;
-                        
-                        // Show success overlay
-                        showOverlay('success');
-                        statusDiv.innerHTML = '✅ تم اكتشاف QR Code بنجاح!';
-                        statusDiv.style.background = 'rgba(40,167,69,0.15)';
-                        
-                        // Parse QR data
-                        const parts = code.data.split('\\n');
-                        let name = "";
-                        let sid = "";
-                        
-                        parts.forEach(part => {
-                            const trimmed = part.trim();
-                            if (trimmed.startsWith("Member:")) {
-                                name = trimmed.replace("Member:", "").trim();
-                            } else if (trimmed.startsWith("ID:")) {
-                                sid = trimmed.replace("ID:", "").trim();
-                            }
-                        });
-
-                        // Send result to Streamlit via URL params (without page reload)
-                        const params = new URLSearchParams(window.location.search);
-                        params.set('qr_name', encodeURIComponent(name));
-                        params.set('qr_id', encodeURIComponent(sid));
-                        params.set('qr_raw', encodeURIComponent(code.data));
-                        window.history.replaceState({}, '', window.location.pathname + '?' + params.toString());
-                        
-                        // Trigger Streamlit to re-read query params
-                        window.dispatchEvent(new Event('popstate'));
-                        
-                        return;
-                    }
-                }
-                requestAnimationFrame(tick);
-            }
-
-            // Start button handler
-            document.getElementById('start-scan-btn').addEventListener('click', startCamera);
-
-            // Auto-start on load
-            window.addEventListener('load', function() {
-                setTimeout(startCamera, 500);
-            });
-
-            // Cleanup on unload
-            window.addEventListener('beforeunload', function() {
-                stopCamera();
-            });
-        </script>
-        """
-        
-        # Read QR scan result from query params (set by JS via URL redirect)
-        try:
-            qr_raw_param = st.query_params.get('qr_raw', [''])[0]
-            if qr_raw_param and not st.session_state.get('qr_scan_result'):
-                st.session_state.qr_scan_result = {
-                    'name': st.query_params.get('qr_name', [''])[0],
-                    'student_id': st.query_params.get('qr_id', [''])[0],
-                    'raw': qr_raw_param
-                }
-                st.query_params.clear()
-        except Exception:
-            pass
-        
-        st.components.v1.html(qr_scanner_html, height=550, scrolling=False)
-        
-        # Initialize session state for QR result and rate limiting
-        if 'qr_scan_result' not in st.session_state:
-            st.session_state.qr_scan_result = None
-        if 'last_qr_scan_time' not in st.session_state:
-            st.session_state.last_qr_scan_time = 0
-        if 'qr_scan_cooldown' not in st.session_state:
-            st.session_state.qr_scan_cooldown = 2  # seconds between scans
-        
-        # Process QR scan result with validation
-        if st.session_state.get('qr_scan_result'):
-            result = st.session_state.qr_scan_result
-            raw_qr_data = result.get('raw', '')
-            qr_name = result.get('name', '')
-            qr_id = result.get('student_id', '')
-            
-            # ===== Step 1: Validate QR code against registered students =====
-            validation = validate_qr_code(db, raw_qr_data, students)
-            
-            if not validation['valid']:
-                # Show detailed error with the parsed QR data
-                st.markdown(f"""
-                <div style="text-align:center; padding:1.5rem; background:rgba(220,53,69,0.1); border:2px solid #dc3545; border-radius:15px; margin:1rem 0;">
-                    <div style="font-size:3rem; margin-bottom:0.5rem;">❌</div>
-                    <div style="font-size:1.2rem; font-weight:700; color:#dc3545;">{validation['message']}</div>
-                    <div style="font-size:0.9rem; color:#666; margin-top:0.5rem;">
-                        بيانات QR Code الممسوحة:<br>
-                        المعرف: {qr_id if qr_id else 'غير موجود'}<br>
-                        الاسم: {qr_name if qr_name else 'غير موجود'}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                log_details_operation(
-                    db=db,
-                    student_id=qr_id,
-                    student_name=qr_name,
-                    status="Invalid",
-                    operation_type="QR_Scan_Failed",
-                    qr_data=raw_qr_data,
-                    device_info="QR Scanner",
-                    notes=validation['message']
-                )
-                if st.button("🔁 إعادة المسح", use_container_width=True, key="retry_invalid_qr"):
-                    st.session_state.qr_scan_result = None
-                    st.rerun()
-                return
-            
-            # ===== Step 2: Get validated student info =====
-            student_id = validation['student_id']
-            student_name = validation['student_name']
-            section_id = validation['section_id']
-            today_str = get_cairo_now().strftime("%Y-%m-%d")
-            
-            # Get section name
-            section_name = ""
-            if not sections.empty and section_id in sections["section_id"].values:
-                section_name = sections[sections.section_id == section_id]["section_name"].values[0]
-            
-            # ===== Step 3: Check for duplicate attendance =====
-            is_duplicate = check_duplicate_attendance(db, student_id, today_str)
-            
-            if is_duplicate:
-                avatar_color = get_avatar_color(student_name)
-                first_letter = student_name[0] if student_name else "?"
-                st.markdown(f"""
-                <div style="text-align:center; padding:1.5rem; background:rgba(255,193,7,0.1); border:2px solid #ffc107; border-radius:15px; margin:1rem 0;">
-                    <div style="font-size:3rem; margin-bottom:0.5rem;">⚠️</div>
-                    <div style="display:flex; align-items:center; gap:1rem; justify-content:center; margin-bottom:0.5rem;">
-                        <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
-                        <div style="text-align:right;">
-                            <div style="font-size:1.2rem; font-weight:700;">{student_name}</div>
-                            <div style="font-size:0.9rem; color:#666;">{section_name if section_name else 'بدون خدمة'}</div>
-                        </div>
-                    </div>
-                    <div style="font-size:1.1rem; font-weight:600; color:#d4a017;">تم تسجيل حضور {student_name} مسبقاً اليوم!</div>
-                    <div style="font-size:0.9rem; color:#666; margin-top:0.3rem;">لا يمكن تسجيل الحضور أكثر من مرة في نفس اليوم.</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                log_details_operation(
-                    db=db,
-                    student_id=student_id,
-                    student_name=student_name,
-                    status="Duplicate",
-                    operation_type="QR_Scan_Duplicate",
-                    qr_data=raw_qr_data,
-                    device_info="QR Scanner",
-                    notes="محاولة تسجيل مكرر في نفس اليوم"
-                )
-                if st.button("🔁 مسح طالبة أخرى", use_container_width=True, key="duplicate_ok"):
-                    st.session_state.qr_scan_result = None
-                    st.rerun()
-                return
-            
-            # ===== Step 4: Show student info with Confirm/Cancel buttons =====
-            if not st.session_state.get('qr_confirmed'):
-                avatar_color = get_avatar_color(student_name)
-                first_letter = student_name[0] if student_name else "?"
-                now_time = get_cairo_now().strftime("%I:%M %p")
-                
-                st.markdown(f"""
-                <div style="text-align:center; padding:1.5rem; background:rgba(40,167,69,0.08); border:2px solid #28a745; border-radius:15px; margin:1rem 0;">
-                    <div style="font-size:2rem; margin-bottom:0.8rem;">✅</div>
-                    <div style="display:flex; align-items:center; gap:1rem; justify-content:center; margin-bottom:0.8rem; flex-wrap:wrap;">
-                        <div class="member-avatar" style="background:{avatar_color}; width:64px; height:64px; font-size:1.8rem;">{first_letter}</div>
-                        <div style="text-align:right;">
-                            <div style="font-size:1.4rem; font-weight:700;">{student_name}</div>
-                            <div style="font-size:1rem; color:#667eea; font-weight:600;">🏫 {section_name if section_name else 'بدون خدمة'}</div>
-                            <div style="font-size:0.9rem; color:#666; margin-top:0.3rem;">🆔 {student_id[:12]}...</div>
-                        </div>
-                    </div>
-                    <div style="background:var(--card-bg); border-radius:10px; padding:0.8rem; margin:0.5rem 0;">
-                        <div style="font-size:0.95rem; color:var(--text-secondary);">
-                            📅 التاريخ: {get_cairo_now().strftime("%Y-%m-%d")} | 🕐 الوقت: {now_time}
-                        </div>
-                        <div style="font-size:0.95rem; color:var(--text-secondary); margin-top:0.2rem;">
-                            ✅ الحالة: <span style="color:#28a745; font-weight:700;">حاضر</span>
-                        </div>
-                    </div>
-                    <div style="font-size:0.9rem; color:#666; margin-top:0.5rem;">
-                        هل أنت متأكد من تسجيل حضور هذه الطالبة؟
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("✅ تأكيد الحضور", use_container_width=True, type="primary", key="confirm_attendance"):
-                        st.session_state.qr_confirmed = True
-                        st.rerun()
-                with col2:
-                    if st.button("❌ إلغاء", use_container_width=True, key="cancel_attendance"):
-                        st.session_state.qr_scan_result = None
-                        st.session_state.qr_confirmed = None
-                        st.rerun()
-                
-                # Also add a retry button
-                if st.button("🔁 مسح طالبة أخرى", use_container_width=True, key="rescan_btn_conf"):
-                    st.session_state.qr_scan_result = None
-                    st.session_state.qr_confirmed = None
-                    st.rerun()
-                
-                return
-            
-            # ===== Step 5: Save attendance after confirmation =====
-            record_id = str(uuid.uuid4())
-            db.batch_add_attendance([{
-                "record_id": record_id, "date": today_str, "student_id": student_id,
-                "status": "حاضر", "notes": "تسجيل حضور عن طريق QR Code", "recorded_by": user.get("user_id", ""),
-                "section_id": section_id
-            }])
-            db.add_log(user.get("user_id", ""), f"تسجيل حضور QR Code - {student_name}")
-            log_details_operation(
-                db=db,
-                student_id=student_id,
-                student_name=student_name,
-                status="Present",
-                operation_type="QR_Checkin",
-                qr_data=raw_qr_data,
-                device_info="QR Scanner",
-                notes="تسجيل حضور عن طريق QR Code"
-            )
-            
-            # Show success message with student info
-            avatar_color = get_avatar_color(student_name)
-            first_letter = student_name[0] if student_name else "?"
-            now_time = get_cairo_now().strftime("%I:%M %p")
-            
-            st.markdown(f"""
-            <div style="text-align:center; padding:1.5rem; background:rgba(40,167,69,0.12); border:2px solid #28a745; border-radius:15px; margin:1rem 0; animation:fadeIn 0.5s;">
-                <div style="font-size:3rem; margin-bottom:0.5rem;">🎉</div>
-                <div style="display:flex; align-items:center; gap:1rem; justify-content:center; margin-bottom:0.8rem; flex-wrap:wrap;">
-                    <div class="member-avatar" style="background:{avatar_color}; width:64px; height:64px; font-size:1.8rem;">{first_letter}</div>
-                    <div style="text-align:right;">
-                        <div style="font-size:1.4rem; font-weight:700; color:#28a745;">✅ تم تسجيل حضور {student_name}</div>
-                        <div style="font-size:1rem; color:#667eea; font-weight:600;">🏫 {section_name if section_name else 'بدون خدمة'}</div>
-                    </div>
-                </div>
-                <div style="background:var(--card-bg); border-radius:10px; padding:0.8rem; margin:0.5rem 0;">
-                    <div style="font-size:0.95rem; color:var(--text-secondary);">
-                        📅 التاريخ: {get_cairo_now().strftime("%Y-%m-%d")} | 🕐 الوقت: {now_time}
-                    </div>
-                    <div style="font-size:0.95rem; color:var(--text-secondary); margin-top:0.2rem;">
-                        ✅ الحالة: <span style="color:#28a745; font-weight:700;">حاضر</span>
-                    </div>
-                </div>
-            </div>
-            <style>
-            @keyframes fadeIn {{
-                from {{ opacity:0; transform:translateY(10px); }}
-                to {{ opacity:1; transform:translateY(0); }}
-            }}
-            </style>
-            """, unsafe_allow_html=True)
-            
-            st.success(f"✅ تم تسجيل حضور {student_name} بنجاح")
-            st.toast(f"✅ تم تسجيل حضور {student_name}!", icon="🎉")
-            
-            # Reset for next scan
-            if st.button("🔁 مسح طالبة أخرى", use_container_width=True, key="scan_another"):
-                st.session_state.qr_scan_result = None
-                st.session_state.qr_confirmed = None
-                st.rerun()
-    
-    
-    st.markdown("---")
-    st.subheader("📋 جدول الحاضرين اليوم")
-    # Get today's attendance for display
-    today_attendance_all = db.get_attendance()
-    today_att = pd.DataFrame()
-    if not today_attendance_all.empty and "date" in today_attendance_all.columns:
-        today_str_display = get_cairo_now().strftime("%Y-%m-%d")
-        today_att = today_attendance_all[today_attendance_all.date == today_str_display].copy()
-        if not today_att.empty and "student_id" in today_att.columns and not students.empty:
-            today_att = today_att.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-    if not today_att.empty:
-        display_df = today_att[["full_name", "status", "notes", "time"]].copy() if "time" in today_att.columns else today_att[["full_name", "status", "notes"]].copy()
-        st.dataframe(display_df, use_container_width=True)
-    else:
-        st.info("لا يوجد حضور مسجل اليوم")
-
-# =============================================================================
-# Bulk Attendance
-# =============================================================================
-def show_bulk_attendance(db: Database):
-    """Bulk attendance registration for all members."""
-    st.markdown("<h2 class='main-header'>📋 تسجيل حضور المجموعة</h2>", unsafe_allow_html=True)
-    
-    user = st.session_state.user
-    role = user.get("role", "")
-    section_id = user.get("section_id", "")
-    
-    if role == "Service Manager":
-        st.error("🚫 أمناء الخدمة لا يمكنهم تسجيل الحضور.")
-        return
-    
-    students = db.get_students()
-    sections = db.get_sections()
-    
-    if students.empty:
-        st.info("لا توجد طالبات مسجلات.")
-        return
-    
-    if sections.empty:
-        st.warning("لا توجد فصول مسجلة.")
-        return
-    
-    # Section selection
-    if role == "Teacher" and section_id:
-        selected_section = section_id
-        section_name = sections[sections.section_id == section_id]["section_name"].values[0] if not sections.empty else section_id
-        st.write(f"**الفصل:** {section_name}")
-    else:
-        selected_section = st.selectbox("اختر الفصل", sections["section_id"],
-                                       format_func=lambda x: sections[sections.section_id==x]["section_name"].values[0])
-
-    section_students = students[students.section_id == selected_section] if not students.empty and "section_id" in students.columns else pd.DataFrame()
-    if section_students.empty:
-        st.info("لا توجد طالبات في هذا الفصل.")
-        return
-    
-    date = st.date_input("التاريخ", get_cairo_now().date())
-    date_str = date.strftime("%Y-%m-%d")
-    
-    existing = db.get_attendance_by_date_section(date_str, selected_section)
-    already_filled = not existing.empty
-    
-    if already_filled:
-        st.warning("⚠️ يوجد تسجيل حضور سابق لهذا اليوم")
-    
-    st.markdown('<div class="bulk-action-bar">', unsafe_allow_html=True)
-    st.markdown(f"<span style='font-weight:700;'>👥 {len(section_students)} طالبة</span>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Grid layout with checkboxes
-    st.markdown('<div class="member-grid">', unsafe_allow_html=True)
-    
-    attendance_status = {}
-    
-    for _, student in section_students.iterrows():
-        sid = student.get("student_id", "")
-        name = student.get("full_name", "")
-        
-        # Check existing status
-        prev_status = "حاضر"
-        if already_filled and sid in existing["student_id"].values:
-            prev_status = existing[existing.student_id == sid]["status"].values[0]
-        
-        attendance_status[sid] = prev_status
-        
-        avatar_color = get_avatar_color(name)
-        first_letter = name[0] if name else "?"
-        
-        # Member card
-        st.markdown(f"""
-        <div class="member-card">
-            <div style="display:flex; align-items:center; gap:0.8rem; margin-bottom:0.8rem;">
-                <div class="member-avatar" style="background:{avatar_color};">{first_letter}</div>
-                <div style="flex:1; min-width:0;">
-                    <div style="font-weight:700; font-size:1rem; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{name}</div>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Quick select buttons
-        col_p, col_a, col_l = st.columns(3)
-        with col_p:
-            is_present = st.checkbox("✅ حاضر", value=(prev_status == "حاضر"), key=f"bulk_present_{sid}")
-            if is_present:
-                attendance_status[sid] = "حاضر"
-        with col_a:
-            is_absent = st.checkbox("❌ غائب", value=(prev_status == "غائب"), key=f"bulk_absent_{sid}")
-            if is_absent:
-                attendance_status[sid] = "غائب"
-        with col_l:
-            is_late = st.checkbox("🕐 متأخر", value=(prev_status == "متأخر"), key=f"bulk_late_{sid}")
-            if is_late:
-                attendance_status[sid] = "متأخر"
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Save button
-    if st.button("💾 حفظ الحضور للكل", use_container_width=True, type="primary", key="save_bulk_attendance"):
-        with st.spinner("جاري حفظ الحضور..."):
-            records = []
-            for sid, status in attendance_status.items():
-                student_name = section_students[section_students.student_id == sid]["full_name"].values[0] if sid in section_students["student_id"].values else sid
-                
-                record_id = str(uuid.uuid4())
-                if already_filled and sid in existing["student_id"].values:
-                    record_id = existing[existing.student_id == sid]["record_id"].values[0]
-                
-                records.append({
-                    "record_id": record_id,
-                    "date": date_str,
-                    "student_id": sid,
-                    "status": status,
-                    "notes": "تسجيل جماعي",
-                    "recorded_by": user.get("user_id", ""),
-                    "section_id": selected_section
-                })
-            
-            db.batch_add_attendance(records)
-            db.add_log(user.get("user_id", ""), f"تسجيل حضور جماعي فصل {selected_section} ليوم {date_str}")
-            st.success("✅ تم حفظ الحضور بنجاح!")
-            st.toast("✅ تم حفظ الحضور بنجاح!", icon="🎉")
-            time.sleep(1)
-            st.rerun()
+                db.update_user(st.session_state.user["user_id"], {"password": new})
+                st.session_state.user["password"] = new
+                st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
 # =============================================================================
 # Main App
@@ -5851,7 +2464,7 @@ def main():
             st.stop()
     db = st.session_state.db_instance
     jwt_secret = get_jwt_secret()
-    
+
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
@@ -5876,52 +2489,49 @@ def main():
                 st.session_state.data_errors = errors
                 st.session_state.data_validated = True
 
-            # Determine current page choice
-            if st.session_state.show_sidebar:
-                # Sidebar is visible - use its returned choice
-                choice = show_sidebar_navigation(db)
-            else:
-                # Sidebar is hidden - use stored choice with validation
-                choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
-                role = st.session_state.user.get("role", "")
-                
-                # Define valid menu items for current role
-                all_menus = {
-            "System Admin": [
-                "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🌟 إدارة الأعضاء", "🏫 إدارة المراحل",
-                "⚡ حضور سريع", "📋 الحضور", "📈 لوحة تحكم الحضور",
-                "💬 الافتقاد", "📝 المسابقات والاختبارات", "📅 الفعاليات",
-                "📊 التقارير والإحصائيات", "📜 سجل العمليات", "🔐 سجل الدخول", "🔒 تغيير كلمة المرور"
-            ],
-                    "Father Account": ["🏠 لوحة التحكم", "📅 الفعاليات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
-                    "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
-                                        "📝 المسابقات والاختبارات", "📅 الفعاليات",
-                                        "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
-                    "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "⚡ حضور سريع", "📋 الحضور",
-                                "📈 لوحة تحكم الحضور", "💬 الافتقاد",
-                                "🏆 درجات المسابقات", "📅 الفعاليات", "🔒 تغيير كلمة المرور"]
-                }
-                valid_items = set()
-                for r in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
-                    valid_items.update(all_menus.get(r, []))
-                
-                if choice not in valid_items:
-                    st.session_state.menu_choice = "🏠 لوحة التحكم"
-                    choice = "🏠 لوحة التحكم"
-            
-            # Safety: ensure choice is never None
-            if not choice:
-                choice = "🏠 لوحة التحكم"
-                st.session_state.menu_choice = choice
-            
-            # Always render the floating button when sidebar is hidden
             if not st.session_state.show_sidebar:
-                st.markdown('<div class="floating-show-btn">', unsafe_allow_html=True)
-                show_btn_key = f"show_sidebar_btn_{hash(str(st.session_state.get('show_sidebar', True)))}"
-                if st.button("☰", key=show_btn_key):
+                st.markdown("""
+                <style>
+                section[data-testid="stSidebar"] {
+                    transform: translateX(100%) !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                st.markdown('<div class="floating-show-btn"></div>', unsafe_allow_html=True)
+                if st.button("☰", key="show_sidebar_btn"):
                     st.session_state.show_sidebar = True
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <style>
+                section[data-testid="stSidebar"] {
+                    transform: translateX(0) !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                choice = show_sidebar_navigation(db)
+
+            if not st.session_state.show_sidebar:
+                choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+                role = st.session_state.user.get("role", "")
+                menus = {
+                    "System Admin": [
+                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 الحضور", "💬 الافتقاد",
+                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
+                        "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
+                    ],
+                    "Father Account": ["🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
+                    "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد",
+                                        "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
+                    "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
+                                "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"]
+                }
+                menu_items = menus.get(role, [])
+                if choice not in menu_items:
+                    choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
+                    st.session_state.menu_choice = choice
 
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if choice == "🏠 لوحة التحكم":
@@ -5931,21 +2541,14 @@ def main():
                     show_user_management(db)
                 else:
                     st.error("🚫 غير مصرح")
-            elif choice == "🌟 إدارة الأعضاء":
-                if st.session_state.user.get("role") == "System Admin":
-                    show_member_management(db)
-                else:
-                    st.error("🚫 غير مصرح")
             elif choice == "🏫 إدارة المراحل":
                 if st.session_state.user.get("role") == "System Admin":
-                    show_stages_management(db)
+                    show_user_management(db)  # ستفتح التبويب السادس الخاص بالمراحل
                 else:
                     st.error("🚫 غير مصرح")
-            elif choice == "⚡ حضور سريع":
-                show_quick_checkin(db)
+            elif choice == "👩‍🎓 طالباتي":
+                show_my_students(db)
             elif choice == "📋 الحضور":
-                show_attendance(db)
-            elif choice == "📈 لوحة تحكم الحضور":
                 show_attendance(db)
             elif choice == "💬 الافتقاد":
                 show_followup(db)
@@ -5953,8 +2556,6 @@ def main():
                 show_class_competition_scores(db)
             elif choice == "📝 المسابقات والاختبارات":
                 show_quizzes(db)
-            elif choice == "📅 الفعاليات":
-                show_events_page(db)
             elif choice == "📊 التقارير والإحصائيات":
                 show_reports(db)
             elif choice == "📜 سجل العمليات":
@@ -5972,3 +2573,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
