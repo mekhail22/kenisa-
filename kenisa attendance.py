@@ -1459,6 +1459,64 @@ class Database:
                                            "browser", "os", "device_type", "screen_size", "ip_masked",
                                            "country", "city", "region", "privacy_consent"])
 
+    # --- Events ---
+    def get_events(self):
+        return self._sheet_to_df("Events")
+
+    def add_event(self, event_data):
+        df = self.get_events()
+        if df.empty:
+            df = pd.DataFrame(columns=["event_id", "event_name", "event_date", "location", "event_type",
+                                       "description", "max_attendees", "created_by", "created_at"])
+        df = pd.concat([df, pd.DataFrame([event_data])], ignore_index=True)
+        if len(df) > 2000:
+            df = df.tail(2000)
+        self._df_to_sheet("Events", df, ["event_id", "event_name", "event_date", "location", "event_type",
+                                         "description", "max_attendees", "created_by", "created_at"])
+
+    def delete_event(self, event_id):
+        df = self.get_events()
+        df = df[df.event_id != event_id]
+        self._df_to_sheet("Events", df, ["event_id", "event_name", "event_date", "location", "event_type",
+                                         "description", "max_attendees", "created_by", "created_at"])
+
+    # --- EventRSVPs ---
+    def get_event_rsvps(self):
+        return self._sheet_to_df("EventRSVPs")
+
+    def add_event_rsvp(self, rsvp_data):
+        df = self.get_event_rsvps()
+        if df.empty:
+            df = pd.DataFrame(columns=["rsvp_id", "event_id", "student_id", "student_name",
+                                       "rsvp_status", "rsvp_date", "actual_attendance"])
+        df = pd.concat([df, pd.DataFrame([rsvp_data])], ignore_index=True)
+        if len(df) > 2000:
+            df = df.tail(2000)
+        self._df_to_sheet("EventRSVPs", df, ["rsvp_id", "event_id", "student_id", "student_name",
+                                             "rsvp_status", "rsvp_date", "actual_attendance"])
+
+    def update_event_attendance(self, event_id, student_id, attendance_status):
+        df = self.get_event_rsvps()
+        idx = df[(df.event_id == event_id) & (df.student_id == student_id)].index
+        if len(idx) > 0:
+            df.at[idx[0], "actual_attendance"] = attendance_status
+            self._df_to_sheet("EventRSVPs", df, ["rsvp_id", "event_id", "student_id", "student_name",
+                                                 "rsvp_status", "rsvp_date", "actual_attendance"])
+            return True
+        return False
+
+    def delete_event_rsvps(self, event_id):
+        df = self.get_event_rsvps()
+        df = df[df.event_id != event_id]
+        self._df_to_sheet("EventRSVPs", df, ["rsvp_id", "event_id", "student_id", "student_name",
+                                             "rsvp_status", "rsvp_date", "actual_attendance"])
+
+    def get_event_attendees_count(self, event_id):
+        df = self.get_event_rsvps()
+        if df.empty:
+            return 0
+        return len(df[df.event_id == event_id])
+
 # =============================================================================
 # JWT & Session Helpers
 # =============================================================================
@@ -4291,17 +4349,17 @@ def show_events_page(db: Database):
                                     key="rsvp_student_select"
                                 )
                                 
-                                if selected_student:
-                                    student_name = student_options[student_options.student_id == selected_student]["full_name"].values[0]
-                                    if st.button("✅ تسجيل الحضور المتوقع", use_container_width=True, key="rsvp_submit"):
-                                        success = add_event_rsvp(db, selected_event_id, selected_student, student_name)
-                                        if success:
-                                            st.success(f"✅ تم تسجيل {student_name} في الفعالية")
-                                            st.toast("✅ تم التسجيل!", icon="🎫")
-                                            time.sleep(1)
-                                            st.rerun()
-                                        else:
-                                            st.warning("هذا العضو مسجل بالفعل")
+                        if selected_student:
+                            student_name = student_options[student_options.student_id == selected_student]["full_name"].values[0]
+                            if st.button("✅ تسجيل الحضور المتوقع", use_container_width=True, key="rsvp_submit"):
+                                success = add_event_rsvp(db, selected_event_id, selected_student, student_name)
+                                if success:
+                                    st.success(f"✅ تم تسجيل {student_name} في الفعالية")
+                                    st.toast("✅ تم التسجيل!", icon="🎫")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.warning("هذا العضو مسجل بالفعل")
     
     with tab4:
         st.subheader("✅ تسجيل حضور الفعالية")
@@ -4309,7 +4367,7 @@ def show_events_page(db: Database):
             st.info("لا توجد فعاليات.")
         else:
             events_df["event_date"] = pd.to_datetime(events_df["event_date"], errors="coerce")
-            past_events = events_df[events_df.event_date < get_cairo_now().replace(tzinfo=None)]
+            past_events = events_df[events_df["event_date"] < get_cairo_now().replace(tzinfo=None)]
             
             if past_events.empty:
                 st.info("لا توجد فعاليات منتهية.")
@@ -4326,7 +4384,7 @@ def show_events_page(db: Database):
                     event_name = event_row.get("event_name", "")
                     st.markdown(f"**الفعالية:** {event_name}")
                     
-                    event_rsvps = rsvps_df[rsvps_df.event_id == selected_event_id] if not rsvps_df.empty else pd.DataFrame()
+                    event_rsvps = rsvps_df[rsvps_df["event_id"] == selected_event_id] if not rsvps_df.empty else pd.DataFrame()
                     
                     if event_rsvps.empty:
                         st.info("لا يوجد مسجلين في هذه الفعالية.")
@@ -4367,9 +4425,9 @@ def show_events_page(db: Database):
                         st.markdown("---")
                         st.subheader("📊 ملخص الحضور")
                         if not event_rsvps.empty and "actual_attendance" in event_rsvps.columns:
-                            attended = len(event_rsvps[event_rsvps.actual_attendance == "حضر"])
-                            absent = len(event_rsvps[event_rsvps.actual_attendance == "لم يحضر"])
-                            not_recorded = len(event_rsvps[event_rsvps.actual_attendance == ""])
+                            attended = len(event_rsvps[event_rsvps["actual_attendance"] == "حضر"])
+                            absent = len(event_rsvps[event_rsvps["actual_attendance"] == "لم يحضر"])
+                            not_recorded = len(event_rsvps[event_rsvps["actual_attendance"] == ""])
                             
                             col1, col2, col3 = st.columns(3)
                             col1.metric("✅ حضر", attended)
@@ -4379,126 +4437,6 @@ def show_events_page(db: Database):
 def get_events_badge_count(db):
     upcoming = get_upcoming_events(db, days=3)
     return len(upcoming)
-
-# =============================================================================
-# Details Logging System
-# =============================================================================
-def log_details_operation(db: Database, student_id: str, student_name: str, status: str, 
-                         operation_type: str, qr_data: str = "", device_info: str = "Default Camera", 
-                         notes: str = ""):
-    """Log operation details to the Details sheet in Google Sheets."""
-    try:
-        db._ensure_details_sheet()
-        timestamp = get_cairo_now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        details_record = {
-            "Timestamp": timestamp,
-            "ID": student_id if student_id else "N/A",
-            "Name": student_name if student_name else "Unknown",
-            "Status": status,
-            "Operation_Type": operation_type,
-            "QR_Data": qr_data if qr_data else "N/A",
-            "Device_Info": device_info,
-            "Notes": notes
-        }
-        
-        # Thread-safe writing to Details sheet
-        with Database._details_lock:
-            df = db._sheet_to_df("Details")
-            if df.empty:
-                df = pd.DataFrame(columns=["Timestamp", "ID", "Name", "Status", "Operation_Type",
-                                           "QR_Data", "Device_Info", "Notes"])
-            df = pd.concat([df, pd.DataFrame([details_record])], ignore_index=True)
-            # Keep only last 2000 records
-            if len(df) > 2000:
-                df = df.tail(2000)
-            db._df_to_sheet("Details", df, ["Timestamp", "ID", "Name", "Status", "Operation_Type",
-                                            "QR_Data", "Device_Info", "Notes"])
-    except Exception as e:
-        print(f"Error logging details: {e}")
-
-def validate_qr_code(db: Database, qr_data: str, students_df: pd.DataFrame) -> dict:
-    """
-    Validate QR code against registered students.
-    Returns dict with 'valid', 'student_id', 'student_name', 'section_id', 'message'
-    """
-    if not qr_data or qr_data.strip() == "":
-        return {
-            "valid": False,
-            "student_id": "",
-            "student_name": "",
-            "section_id": "",
-            "message": "QR Code فارغ"
-        }
-    
-    # Parse QR data
-    parts = qr_data.split('\n')
-    qr_name = ""
-    qr_id = ""
-    
-    for part in parts:
-        trimmed = part.strip()
-        if trimmed.startswith("Member:"):
-            qr_name = trimmed.replace("Member:", "").strip()
-        elif trimmed.startswith("ID:"):
-            qr_id = trimmed.replace("ID:", "").strip()
-    
-    if not qr_id or not qr_name:
-        return {
-            "valid": False,
-            "student_id": "",
-            "student_name": "",
-            "section_id": "",
-            "message": "❌ QR Code غير صالح - بيانات ناقصة"
-        }
-    
-    # Search in students dataframe
-    if students_df.empty or "student_id" not in students_df.columns:
-        return {
-            "valid": False,
-            "student_id": qr_id,
-            "student_name": qr_name,
-            "section_id": "",
-            "message": "❌ QR Code غير معروف - لا توجد طالبات مسجلات"
-        }
-    
-    # Try to match by ID or Name
-    student_match = students_df[
-        (students_df["student_id"] == qr_id) | 
-        (students_df["full_name"] == qr_name)
-    ]
-    
-    if student_match.empty:
-        return {
-            "valid": False,
-            "student_id": qr_id,
-            "student_name": qr_name,
-            "section_id": "",
-            "message": "❌ QR Code غير مسجل في النظام"
-        }
-    
-    student_row = student_match.iloc[0]
-    return {
-        "valid": True,
-        "student_id": student_row.get("student_id", qr_id),
-        "student_name": student_row.get("full_name", qr_name),
-        "section_id": student_row.get("section_id", ""),
-        "message": "✅ QR Code صالح"
-    }
-
-def check_duplicate_attendance(db: Database, student_id: str, date_str: str) -> bool:
-    """Check if student already has attendance record for today."""
-    attendance = db.get_attendance()
-    if attendance.empty or "student_id" not in attendance.columns or "date" not in attendance.columns:
-        return False
-    # Normalize to string for safe comparison
-    attendance["date"] = attendance["date"].astype(str).str.strip()
-    date_str = str(date_str).strip()
-    today_att = attendance[attendance["date"] == date_str]
-    if today_att.empty:
-        return False
-    student_ids = today_att["student_id"].astype(str).str.strip().tolist()
-    return str(student_id).strip() in student_ids
 
 def show_logs(db: Database):
     st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
@@ -4673,6 +4611,139 @@ def show_audit_log(db: Database):
                 st.toast("✅ تم تجهيز الملف للتحميل", icon="📥")
     else:
         st.info("لا توجد سجلات مطابقة للتصفية المحددة.")
+
+# =============================================================================
+# QR Code Functions
+# =============================================================================
+def validate_qr_code(db: Database, qr_data: str, students_df: pd.DataFrame) -> dict:
+    """
+    Validate QR code against registered students.
+    Returns dict with 'valid', 'student_id', 'student_name', 'section_id', 'message'
+    """
+    if not qr_data or qr_data.strip() == "":
+        return {
+            "valid": False,
+            "student_id": "",
+            "student_name": "",
+            "section_id": "",
+            "message": "QR Code فارغ"
+        }
+    
+    # Parse QR data
+    parts = qr_data.split('\n')
+    qr_name = ""
+    qr_id = ""
+    
+    for part in parts:
+        trimmed = part.strip()
+        if trimmed.startswith("Member:"):
+            qr_name = trimmed.replace("Member:", "").strip()
+        elif trimmed.startswith("ID:"):
+            qr_id = trimmed.replace("ID:", "").strip()
+    
+    if not qr_id or not qr_name:
+        return {
+            "valid": False,
+            "student_id": "",
+            "student_name": "",
+            "section_id": "",
+            "message": "❌ QR Code غير صالح - بيانات ناقصة"
+        }
+    
+    # Search in students dataframe
+    if students_df.empty or "student_id" not in students_df.columns:
+        return {
+            "valid": False,
+            "student_id": qr_id,
+            "student_name": qr_name,
+            "section_id": "",
+            "message": "❌ QR Code غير معروف - لا توجد طالبات مسجلات"
+        }
+    
+    # Try to match by ID or Name
+    student_match = students_df[
+        (students_df["student_id"] == qr_id) | 
+        (students_df["full_name"] == qr_name)
+    ]
+    
+    if student_match.empty:
+        return {
+            "valid": False,
+            "student_id": qr_id,
+            "student_name": qr_name,
+            "section_id": "",
+            "message": "❌ QR Code غير مسجل في النظام"
+        }
+    
+    student_row = student_match.iloc[0]
+    return {
+        "valid": True,
+        "student_id": student_row.get("student_id", qr_id),
+        "student_name": student_row.get("full_name", qr_name),
+        "section_id": student_row.get("section_id", ""),
+        "message": "✅ QR Code صالح"
+    }
+
+def check_duplicate_attendance(db: Database, student_id: str, date_str: str) -> bool:
+    """Check if student already has attendance record for today."""
+    attendance = db.get_attendance()
+    if attendance.empty or "student_id" not in attendance.columns or "date" not in attendance.columns:
+        return False
+    # Normalize dates to YYYY-MM-DD format for comparison
+    today_date = get_cairo_now().strftime("%Y-%m-%d")
+    try:
+        attendance["date_normalized"] = pd.to_datetime(attendance["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    except Exception:
+        attendance["date_normalized"] = attendance["date"].astype(str).str.strip()
+    
+    today_att = attendance[attendance["date_normalized"] == today_date]
+    if today_att.empty:
+        return False
+    # Normalize student_id for comparison
+    try:
+        student_ids = today_att["student_id"].astype(str).str.strip().tolist()
+    except Exception:
+        student_ids = []
+    return str(student_id).strip() in student_ids
+
+def log_details_operation(db: Database, student_id: str, student_name: str, status: str,
+                         operation_type: str, qr_data: str = "", device_info: str = "QR Scanner",
+                         notes: str = ""):
+    """Log operation details to the Details sheet in Google Sheets with security info."""
+    try:
+        db._ensure_details_sheet()
+        timestamp = get_cairo_now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Get enhanced client info for security logging
+        client_info = get_client_info()
+        ip_address = get_ip_address()
+        
+        details_record = {
+            "Timestamp": timestamp,
+            "ID": student_id if student_id else "Unknown",
+            "Name": student_name if student_name else "Unknown",
+            "Status": status,
+            "Operation_Type": operation_type,
+            "QR_Data": qr_data[:200] if qr_data else "N/A",
+            "Device_Info": device_info,
+            "Notes": notes
+        }
+        
+        # Thread-safe writing to Details sheet
+        with Database._details_lock:
+            df = db._sheet_to_df("Details")
+            if df.empty:
+                df = pd.DataFrame(columns=["Timestamp", "ID", "Name", "Status", "Operation_Type",
+                                         "QR_Data", "Device_Info", "Notes"])
+            df = pd.concat([df, pd.DataFrame([details_record])], ignore_index=True)
+            # Keep only last 2000 records
+            if len(df) > 2000:
+                df = df.tail(2000)
+            db._df_to_sheet("Details", df, ["Timestamp", "ID", "Name", "Status", "Operation_Type",
+                                            "QR_Data", "Device_Info", "Notes"])
+    except Exception as e:
+        st.warning(f"تحذير: فشل حفظ السجل التفصيلي: {str(e)}")
+
 
 # =============================================================================
 # Events Management System (Google Sheets)
