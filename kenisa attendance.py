@@ -969,17 +969,28 @@ class Database:
         self._ensure_required_sheets()
 
     def _ensure_required_sheets(self):
-        """Ensure all required sheets exist with proper headers."""
+        """Ensure all required sheets exist with proper headers - runs on app startup."""
         sheets_config = {
+            "Users": ["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email"],
+            "Students": ["student_id", "full_name", "section_id", "qr_code", "teacher_id", "phone", "parent_phone", "birthdate", "address", "school", "notes", "status"],
+            "Sections": ["section_id", "section_name", "manager_user_id", "stage_id"],
+            "Stages": ["stage_id", "stage_name", "manager_user_id"],
+            "Attendance": ["record_id", "timestamp", "date", "time", "student_id", "student_name", "section_id", "stage_id", "status", "method", "recorded_by"],
+            "FollowUp": ["record_id", "student_id", "teacher_id", "followup_date", "followup_type", "notes", "regularity_status"],
+            "Quizzes": ["quiz_id", "title", "description", "created_by", "section_id", "num_questions", "time_limit_minutes", "total_marks", "expiry_date", "quiz_code", "password", "is_active"],
+            "QuizQuestions": ["question_id", "quiz_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer"],
+            "QuizResults": ["result_id", "quiz_id", "student_id", "student_name", "score", "total_marks", "start_time", "submission_time", "answers", "status"],
             "Logs": ["log_id", "timestamp", "user_id", "user_name", "action", "details",
                      "browser", "os", "device_type", "screen_size", "ip_masked",
                      "country", "city", "region"],
-            "Attendance": ["record_id", "timestamp", "date", "student_id", "student_name",
-                          "status", "method", "recorded_by", "section_id"],
             "Events": ["event_id", "event_name", "event_date", "location", "event_type",
                        "description", "max_attendees", "created_by", "created_at"],
             "EventRSVPs": ["rsvp_id", "event_id", "student_id", "student_name",
-                           "rsvp_status", "rsvp_date", "actual_attendance"]
+                           "rsvp_status", "rsvp_date", "actual_attendance"],
+            "Details": ["Timestamp", "ID", "Name", "Status", "Operation_Type", "QR_Data", "Device_Info", "Notes"],
+            "AuditLog": ["timestamp", "user_id", "user_name", "action", "details",
+                         "browser", "os", "device_type", "screen_size", "ip_masked",
+                         "country", "city", "region", "privacy_consent"]
         }
         for sheet_name, columns in sheets_config.items():
             try:
@@ -1217,11 +1228,12 @@ class Database:
     def add_student(self, student_data):
         df = self.get_students()
         if df.empty:
-            df = pd.DataFrame(columns=["student_id", "full_name", "section_id", "teacher_id",
+            df = pd.DataFrame(columns=["student_id", "full_name", "section_id", "qr_code", "teacher_id",
                                        "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
         student_data["teacher_id"] = ""
+        student_data["qr_code"] = student_data.get("qr_code", "")
         df = pd.concat([df, pd.DataFrame([student_data])], ignore_index=True)
-        self._df_to_sheet("Students", df, ["student_id", "full_name", "section_id", "teacher_id",
+        self._df_to_sheet("Students", df, ["student_id", "full_name", "section_id", "qr_code", "teacher_id",
                                            "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
 
     def update_student(self, student_id, updates):
@@ -1246,7 +1258,7 @@ class Database:
             return
         df = self.get_attendance()
         if df.empty:
-            df = pd.DataFrame(columns=["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+            df = pd.DataFrame(columns=["record_id", "timestamp", "date", "time", "student_id", "student_name", "section_id", "stage_id", "status", "method", "recorded_by"])
         existing_ids = set(df["record_id"].tolist()) if not df.empty else set()
         new_records = []
         for rec in records_list:
@@ -1259,7 +1271,7 @@ class Database:
         if new_records:
             new_df = pd.DataFrame(new_records)
             df = pd.concat([df, new_df], ignore_index=True)
-        self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+        self._df_to_sheet("Attendance", df, ["record_id", "timestamp", "date", "time", "student_id", "student_name", "section_id", "stage_id", "status", "method", "recorded_by"])
 
     def get_attendance_by_date_section(self, date_str, section_id):
         df = self.get_attendance()
@@ -4618,7 +4630,7 @@ def show_audit_log(db: Database):
 def validate_qr_code(db: Database, qr_data: str, students_df: pd.DataFrame) -> dict:
     """
     Validate QR code against registered students.
-    Returns dict with 'valid', 'student_id', 'student_name', 'section_id', 'message'
+    Returns dict with 'valid', 'student_id', 'student_name', 'section_id', 'stage_id', 'message'
     """
     if not qr_data or qr_data.strip() == "":
         return {
@@ -4626,13 +4638,15 @@ def validate_qr_code(db: Database, qr_data: str, students_df: pd.DataFrame) -> d
             "student_id": "",
             "student_name": "",
             "section_id": "",
+            "stage_id": "",
             "message": "QR Code فارغ"
         }
     
-    # Parse QR data
+    # Parse QR data - support various formats
     parts = qr_data.split('\n')
     qr_name = ""
     qr_id = ""
+    qr_code = ""
     
     for part in parts:
         trimmed = part.strip()
@@ -4640,47 +4654,65 @@ def validate_qr_code(db: Database, qr_data: str, students_df: pd.DataFrame) -> d
             qr_name = trimmed.replace("Member:", "").strip()
         elif trimmed.startswith("ID:"):
             qr_id = trimmed.replace("ID:", "").strip()
+        elif trimmed.startswith("QR:"):
+            qr_code = trimmed.replace("QR:", "").strip()
     
-    if not qr_id or not qr_name:
-        return {
-            "valid": False,
-            "student_id": "",
-            "student_name": "",
-            "section_id": "",
-            "message": "❌ QR Code غير صالح - بيانات ناقصة"
-        }
+    # Also check raw QR data as a qr_code field (direct QR code content)
+    if not qr_code and qr_data.strip():
+        qr_code = qr_data.strip()
     
-    # Search in students dataframe
+    # Search in students dataframe - check all possible fields
     if students_df.empty or "student_id" not in students_df.columns:
         return {
             "valid": False,
-            "student_id": qr_id,
+            "student_id": qr_id if qr_id else qr_code,
             "student_name": qr_name,
             "section_id": "",
+            "stage_id": "",
             "message": "❌ QR Code غير معروف - لا توجد طالبات مسجلات"
         }
     
-    # Try to match by ID or Name
-    student_match = students_df[
-        (students_df["student_id"] == qr_id) | 
-        (students_df["full_name"] == qr_name)
-    ]
+    student_match = pd.DataFrame()
+    
+    # Try to match by student_id
+    if qr_id and "student_id" in students_df.columns:
+        student_match = students_df[students_df["student_id"] == qr_id]
+    
+    # Try to match by qr_code field if still not found
+    if student_match.empty and qr_code and "qr_code" in students_df.columns:
+        student_match = students_df[students_df["qr_code"] == qr_code]
+    
+    # Try to match by name
+    if student_match.empty and qr_name and "full_name" in students_df.columns:
+        student_match = students_df[students_df["full_name"] == qr_name]
     
     if student_match.empty:
         return {
             "valid": False,
-            "student_id": qr_id,
+            "student_id": qr_id if qr_id else qr_code,
             "student_name": qr_name,
             "section_id": "",
+            "stage_id": "",
             "message": "❌ QR Code غير مسجل في النظام"
         }
     
     student_row = student_match.iloc[0]
+    
+    # Get stage_id from sections
+    stage_id = ""
+    section_id = student_row.get("section_id", "")
+    sections = db.get_sections()
+    if not sections.empty and section_id and "section_id" in sections.columns:
+        sec_row = sections[sections["section_id"] == section_id]
+        if not sec_row.empty and "stage_id" in sec_row.columns:
+            stage_id = sec_row.iloc[0].get("stage_id", "")
+    
     return {
         "valid": True,
         "student_id": student_row.get("student_id", qr_id),
         "student_name": student_row.get("full_name", qr_name),
-        "section_id": student_row.get("section_id", ""),
+        "section_id": section_id,
+        "stage_id": stage_id,
         "message": "✅ QR Code صالح"
     }
 
@@ -5305,6 +5337,31 @@ def show_quick_checkin(db: Database):
                     device_info="QR Scanner",
                     notes=validation['message']
                 )
+                # Log to AuditLog for invalid QR attempts
+                try:
+                    client_info = get_client_info()
+                    ip_address = get_ip_address()
+                    location = get_location_from_ip(ip_address)
+                    audit_entry = {
+                        "timestamp": get_cairo_now().isoformat(),
+                        "user_id": user.get("user_id", "Unknown"),
+                        "user_name": user.get("full_name", "Unknown"),
+                        "action": "QR_Scan_Invalid",
+                        "details": validation['message'],
+                        "browser": client_info['browser'],
+                        "os": client_info['os'],
+                        "device_type": client_info['device_type'],
+                        "screen_size": f"{client_info['screen_width']}x{client_info['screen_height']}",
+                        "ip_masked": mask_ip(ip_address),
+                        "country": location['country'],
+                        "city": location['city'],
+                        "region": location['region'],
+                        "privacy_consent": "✅ Agreed"
+                    }
+                    db.add_audit_log_sheet(audit_entry)
+                except Exception as e:
+                    print(f"Failed to log invalid QR to AuditLog: {e}")
+                
                 if st.button("🔁 إعادة المسح", use_container_width=True, key="retry_invalid_qr"):
                     st.session_state.qr_scan_result = None
                     st.rerun()
@@ -5825,7 +5882,7 @@ def main():
                 if st.session_state.user.get("role") == "System Admin":
                     show_logs(db)
                 else:
-                    st.error("🚫 غير مصرح")
+                     st.error("🚫 غير مصرح")
             elif choice == "🔒 تغيير كلمة المرور":
                 change_password(db)
             st.markdown("</div>", unsafe_allow_html=True)
