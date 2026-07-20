@@ -13,11 +13,6 @@ import time
 import requests
 from functools import wraps
 import threading
-import qrcode
-from io import BytesIO
-from PIL import Image
-import base64
-import hashlib
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -34,95 +29,6 @@ def format_cairo_time(dt):
     if dt is None:
         return "غير متاح"
     return dt.astimezone(CAIRO_TZ).strftime("%Y-%m-%d %I:%M:%S %p")
-
-# =============================================================================
-# نظام الصلاحيات والتفويض (RBAC)
-# =============================================================================
-PERMISSIONS = {
-    "System Admin": {
-        "pages": ["🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 الحضور", "💬 الافتقاد",
-                  "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "📜 سجل العمليات", "🔒 تغيير كلمة المرور"],
-        "actions": ["manage_users", "manage_teachers", "manage_students", "manage_sections", "manage_stages",
-                    "register_attendance", "manage_followup", "manage_quizzes", "view_reports", "view_logs",
-                    "change_password", "manage_settings", "security_access"]
-    },
-    "Father Account": {
-        "pages": ["🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
-        "actions": ["view_dashboard", "view_reports", "change_password"]
-    },
-    "Service Manager": {
-        "pages": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد", "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
-        "actions": ["view_dashboard", "manage_students", "manage_followup", "manage_quizzes", "view_reports", "change_password"]
-    },
-    "Teacher": {
-        "pages": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد", "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"],
-        "actions": ["view_dashboard", "view_own_class", "register_attendance", "manage_followup", "view_quiz_scores", "change_password"]
-    }
-}
-
-def check_permission(action: str) -> bool:
-    """Check if current user has permission for the given action."""
-    if not st.session_state.get("authenticated"):
-        return False
-    user = st.session_state.get("user")
-    if not user:
-        return False
-    role = user.get("role", "")
-    if role not in PERMISSIONS:
-        return False
-    return action in PERMISSIONS[role].get("actions", [])
-
-def check_page_access(page: str) -> bool:
-    """Check if current user can access the given page."""
-    if not st.session_state.get("authenticated"):
-        return False
-    user = st.session_state.get("user")
-    if not user:
-        return False
-    role = user.get("role", "")
-    if role not in PERMISSIONS:
-        return False
-    return page in PERMISSIONS[role].get("pages", [])
-
-def require_permission(action: str, show_error: bool = True):
-    """Decorator/context manager for permission checking - call at start of protected functions."""
-    if not check_permission(action):
-        if show_error:
-            st.error("🚫 غير مصرح لك بالوصول إلى هذه الصفحة.")
-        return False
-    return True
-
-def get_user_status() -> str:
-    """Get current user's status (active/inactive)."""
-    user = st.session_state.get("user")
-    if user:
-        return user.get("status", "active")
-    return "inactive"
-
-def is_user_active() -> bool:
-    """Check if current user account is active."""
-    return get_user_status() == "active"
-
-def get_user_role() -> str:
-    """Get current authenticated user's role."""
-    user = st.session_state.get("user")
-    if user:
-        return user.get("role", "")
-    return ""
-
-def get_user_section() -> str:
-    """Get current user's assigned section."""
-    user = st.session_state.get("user")
-    if user:
-        return user.get("section_id", "")
-    return ""
-
-def get_user_stage() -> str:
-    """Get current user's assigned stage."""
-    user = st.session_state.get("user")
-    if user:
-        return user.get("stage_id", "")
-    return ""
 
 st.set_page_config(
     page_title="نظام- كنيسة الشهيدة دميانة",
@@ -556,21 +462,14 @@ class Database:
     def get_users(self):
         return self._sheet_to_df("Users")
 
-    @staticmethod
-    def _get_default_user_columns():
-        """Return default user table columns."""
-        return ["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email", "status"]
-
     def add_user(self, user_data):
         df = self.get_users()
-        cols = self._get_default_user_columns()
         if df.empty:
-            df = pd.DataFrame(columns=cols)
-        # Ensure status is set
-        if "status" not in user_data:
-            user_data["status"] = "active"
+            df = pd.DataFrame(columns=["user_id", "username", "password", "role",
+                                       "full_name", "section_id", "phone", "email"])
         df = pd.concat([df, pd.DataFrame([user_data])], ignore_index=True)
-        self._df_to_sheet("Users", df, cols)
+        self._df_to_sheet("Users", df, ["user_id", "username", "password", "role",
+                                        "full_name", "section_id", "phone", "email"])
 
     def update_user(self, user_id, updates):
         df = self.get_users()
@@ -898,7 +797,7 @@ def generate_quiz_token(quiz_id: str, student_id: str) -> str:
 def verify_quiz_token(token: str):
     try:
         return jwt.decode(token, QUIZ_JWT_SECRET, algorithms=["HS256"])
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, Exception):
+    except:
         return None
 
 def verify_token(token: str, secret: str):
@@ -1033,182 +932,6 @@ def show_help_dialog():
                     st.balloons()
                 else:
                     st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
-
-# =============================================================================
-# QR Code Generation Functions
-# =============================================================================
-def generate_qr_code(data: str, size: int = 200) -> bytes:
-    """Generate a secure QR code as PNG bytes."""
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    img = img.resize((size, size))
-    buffer = BytesIO()
-    img.save(buffer, format='PNG')
-    return buffer.getvalue()
-
-def get_qr_for_user(user_id: str, user_type: str = "user") -> str:
-    """Get or generate QR code data URL for a user/teacher/student."""
-    # Create unique, secure identifier
-    qr_data = f"{user_type}:{user_id}:{hashlib.sha256(user_id.encode()).hexdigest()[:8]}"
-    qr_bytes = generate_qr_code(qr_data)
-    return f"data:image/png;base64,{base64.b64encode(qr_bytes).decode()}"
-
-# =============================================================================
-# Pagination Helper
-# =============================================================================
-def paginate_df(df: pd.DataFrame, page_key: str, page_size: int = 10):
-    """Paginate a dataframe with session state support."""
-    if df.empty:
-        return df, 1, 1
-    
-    total_items = len(df)
-    total_pages = max(1, (total_items + page_size - 1) // page_size)
-    
-    if page_key not in st.session_state:
-        st.session_state[page_key] = 1
-    
-    current_page = min(max(1, st.session_state[page_key]), total_pages)
-    
-    start_idx = (current_page - 1) * page_size
-    end_idx = start_idx + page_size
-    
-    paginated_df = df.iloc[start_idx:end_idx].reset_index(drop=True)
-    return paginated_df, current_page, total_pages
-
-# =============================================================================
-# Search & Filter Helpers
-# =============================================================================
-def search_users(users: pd.DataFrame, search_term: str):
-    """Intelligent search for users with Arabic/English support and partial matching."""
-    if users.empty or not search_term:
-        return users
-    
-    search_lower = search_term.lower().strip()
-    
-    mask = pd.Series([False] * len(users))
-    search_cols = ["full_name", "username", "phone", "email"]
-    
-    for col in search_cols:
-        if col in users.columns:
-            mask |= users[col].astype(str).str.lower().str.contains(search_lower, na=False)
-    
-    return users[mask]
-
-def search_students(students: pd.DataFrame, search_term: str):
-    """Intelligent search for students with Arabic/English support."""
-    if students.empty or not search_term:
-        return students
-    
-    search_lower = search_term.lower().strip()
-    mask = pd.Series([False] * len(students))
-    
-    search_cols = ["full_name", "phone", "parent_phone", "school"]
-    for col in search_cols:
-        if col in students.columns:
-            mask |= students[col].astype(str).str.lower().str.contains(search_lower, na=False)
-    
-    return students[mask]
-
-def filter_users(users: pd.DataFrame, role_filter: str = None, status_filter: str = None, section_filter: str = None):
-    """Advanced filtering for users."""
-    filtered = users.copy()
-    
-    if role_filter and role_filter != "الكل" and "role" in filtered.columns:
-        filtered = filtered[filtered["role"] == role_filter]
-    
-    if status_filter and status_filter != "الكل" and "status" in filtered.columns:
-        filtered = filtered[filtered["status"] == status_filter]
-    
-    if section_filter and section_filter != "الكل" and "section_id" in filtered.columns:
-        filtered = filtered[filtered["section_id"] == section_filter]
-    
-    return filtered
-
-def calculate_age(birthdate_str: str) -> int:
-    """Calculate age from birthdate string."""
-    try:
-        birthdate = pd.to_datetime(birthdate_str)
-        today = get_cairo_now()
-        age = today.year - birthdate.year - ((today.month, today.day) < (birthdate.month, birthdate.day))
-        return age
-    except Exception:
-        return 0
-
-# =============================================================================
-# Member Card UI Component
-# =============================================================================
-def render_member_card(record: pd.Series, member_type: str = "user"):
-    """Render a premium member card with avatar, status, and quick actions."""
-    full_name = record.get("full_name", "غير محدد")
-    status = record.get("status", "active")
-    phone = record.get("phone", "")
-    
-    # Status badge styling
-    status_colors = {
-        "active": "linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)",
-        "inactive": "linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)"
-    }
-    status_bg = status_colors.get(status, "#95a5a6")
-    status_text = "نشط" if status == "active" else "معطل"
-    
-    # Generate avatar from name
-    avatar_letter = full_name[0].upper() if full_name else "?"
-    avatar_colors = ["#667eea", "#764ba2", "#3498db", "#2ecc71", "#f39c12", "#e74c3c"]
-    avatar_color = avatar_colors[hash(full_name) % len(avatar_colors)] if full_name else avatar_colors[0]
-    
-    col_avatar, col_info, col_actions = st.columns([1, 4, 2])
-    
-    with col_avatar:
-        st.markdown(f"""
-        <div style="
-            width: 60px; height: 60px; border-radius: 50%; 
-            background: {avatar_color}; color: white; 
-            display: flex; align-items: center; justify-content: center;
-            font-size: 24px; font-weight: bold; margin: 5px auto;
-        ">{avatar_letter}</div>
-        """, unsafe_allow_html=True)
-    
-    with col_info:
-        st.markdown(f"**{full_name}**")
-        if member_type == "user":
-            role = record.get("role", "")
-            section = record.get("section_id", "")
-            st.caption(f"الدور: {role} | الهاتف: {phone}")
-        elif member_type == "student":
-            section = record.get("section_id", "")
-            school = record.get("school", "")
-            st.caption(f"الفصل: {section} | المدرسة: {school}")
-    
-    with col_actions:
-        st.markdown(f"""
-        <span style="background: {status_bg}; color: white; 
-            padding: 4px 12px; border-radius: 12px; 
-            font-size: 0.85rem; font-weight: 600;">{status_text}</span>
-        """, unsafe_allow_html=True)
-
-# =============================================================================
-# Export Functions
-# =============================================================================
-def export_to_csv(df: pd.DataFrame, filename: str = "data.csv"):
-    """Export dataframe to CSV."""
-    if df.empty:
-        return None
-    return df.to_csv(index=False).encode('utf-8')
-
-def export_to_excel(df: pd.DataFrame, filename: str = "data.xlsx"):
-    """Export dataframe to Excel."""
-    if df.empty:
-        return None
-    buffer = BytesIO()
-    df.to_excel(buffer, index=False, engine='openpyxl')
-    return buffer.getvalue()
 
 # =============================================================================
 # Validation Function
@@ -1428,7 +1151,7 @@ def show_student_quiz(db: Database):
                         answers_str = attempt.get("answers", "{}")
                         try:
                             saved_answers = json.loads(answers_str) if answers_str else {}
-                        except json.JSONDecodeError:
+                        except:
                             saved_answers = {}
                         score = grade_attempt(db, quiz["quiz_id"], saved_answers)
                         db.submit_quiz_attempt(attempt["result_id"], score, json.dumps(saved_answers, ensure_ascii=False))
@@ -1660,31 +1383,12 @@ def show_student_quiz(db: Database):
 # =============================================================================
 # Sidebar Navigation
 # =============================================================================
-def get_role_badge(role: str) -> str:
-    """Return styled role badge HTML."""
-    badges = {
-        "System Admin": "<span style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;'>🛡️ مدير النظام</span>",
-        "Father Account": "<span style='background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;'>✝️ أبونا</span>",
-        "Service Manager": "<span style='background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;'>📋 أمين خدمة</span>",
-        "Teacher": "<span style='background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;'>👩‍🏫 مدرسة</span>"
-    }
-    return badges.get(role, "<span style='background: #95a5a6; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;'>❓ غير معروف</span>")
-
 def show_sidebar_navigation(db: Database):
     with st.sidebar:
         st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
         st.markdown(f"**👤 {user.get('full_name', '')}**")
-        st.markdown(get_role_badge(user.get('role', '')), unsafe_allow_html=True)
-        
-        # Show section/stage assignment for Teacher/Service Manager
-        section_id = user.get('section_id', '')
-        if section_id:
-            sections = db.get_sections()
-            if not sections.empty:
-                sec_name = sections[sections.section_id == section_id]['section_name'].values
-                if len(sec_name) > 0:
-                    st.caption(f"📍 الفصل: {sec_name[0]}")
+        st.caption(f"الصلاحية: {user.get('role', '')}")
         st.divider()
 
         role = user.get("role", "")
@@ -1852,45 +1556,11 @@ def show_user_management(db: Database):
 
     with tab1:
         st.subheader("قائمة المستخدمين (خدام)")
-        
-        # Advanced Search and Filter
-        col_search, col_filter, col_export = st.columns([2, 1, 1])
-        with col_search:
-            search_term = st.text_input("🔍 بحث بالاسم أو الهاتف أو البريد", key="user_search")
-        with col_filter:
-            role_filter = st.selectbox("تصفية حسب الصلاحية", ["الكل", "System Admin", "Father Account", "Service Manager", "Teacher"], key="user_role_filter")
-        with col_filter:
-            status_filter = st.selectbox("تصفية حسب الحالة", ["الكل", "active", "inactive"], key="user_status_filter")
-        with col_export:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if not users.empty:
-                csv_data = export_to_csv(users)
-                if csv_data:
-                    st.download_button("📥 تصدير CSV", csv_data, "users.csv", "text/csv")
-        
-        # Apply search and filter
-        filtered_users = search_users(users, search_term)
-        filtered_users = filter_users(filtered_users, role_filter if role_filter != "الكل" else None, 
-                                    status_filter if status_filter != "الكل" else None)
-        
-        if not filtered_users.empty:
-            # Pagination
-            paginated, current_page, total_pages = paginate_df(filtered_users, "users_page", 10)
-            display_cols = [c for c in ["user_id", "username", "full_name", "role", "section_id", "phone", "email", "status"] if c in paginated.columns]
-            
-            # Render as Member Cards
-            for _, row in paginated.iterrows():
-                with st.container():
-                    col_img, col_info, col_qr = st.columns([1, 4, 1])
-                    with col_info:
-                        render_member_card(row, "user")
-                    with col_qr:
-                        if st.button(" QR", key=f"qr_{row['user_id']}"):
-                            qr_data = get_qr_for_user(row['user_id'], "user")
-                            st.image(qr_data, caption="رمز الاستجابة السريعة", width=80)
-            st.caption(f"الصفحة {current_page} من {total_pages}")
+        if not users.empty:
+            display_cols = [c for c in ["user_id", "username", "full_name", "role", "section_id", "phone", "email"] if c in users.columns]
+            st.dataframe(users[display_cols], use_container_width=True)
         else:
-            st.info("لا توجد نتائج مطابقة للبحث.")
+            st.info("لا يوجد مستخدمون مسجلون.")
         with st.expander("➕ إضافة مستخدم جديد"):
             with st.form("add_user_form"):
                 col1, col2 = st.columns(2)
@@ -2045,7 +1715,7 @@ def show_user_management(db: Database):
                 existing_birthdate = student_row.get("birthdate", "")
                 if existing_birthdate:
                     try: birth_date_val = pd.to_datetime(existing_birthdate).date()
-                    except (ValueError, TypeError): birth_date_val = None
+                    except: birth_date_val = None
                 else: birth_date_val = None
                 new_birthdate = st.date_input("تاريخ الميلاد", value=birth_date_val, key="student_birthdate")
                 new_school = st.text_input("المدرسة", value=student_row.get("school", ""), key="student_school")
@@ -2673,7 +2343,7 @@ def show_quizzes(db: Database):
                             lambda x: format_cairo_time(x.replace(tzinfo=CAIRO_TZ)) if pd.notna(x) else ""
                         )
                         time_cols.append("بداية الاختبار")
-                    except (ValueError, TypeError, AttributeError):
+                    except:
                         pass
                 if "submission_time" in results.columns:
                     try:
@@ -2681,7 +2351,7 @@ def show_quizzes(db: Database):
                             lambda x: format_cairo_time(x.replace(tzinfo=CAIRO_TZ)) if pd.notna(x) else ""
                         )
                         time_cols.append("تسليم الاختبار")
-                    except (ValueError, TypeError, AttributeError):
+                    except:
                         pass
                 display_cols = base_cols + time_cols
             else:
@@ -2795,29 +2465,6 @@ def main():
     db = st.session_state.db_instance
     jwt_secret = get_jwt_secret()
 
-    # Session validation and user status check
-    if st.session_state.authenticated and st.session_state.user:
-        # Verify token validity
-        token_data = verify_token(st.session_state.token, jwt_secret)
-        if not token_data:
-            st.error("⏰ انتهت صلاحية الجلسة أو انتهت صلاحية التوكن.")
-            st.session_state.clear()
-            time.sleep(2)
-            st.rerun()
-        
-        # Check user status (active/inactive)
-        users = db.get_users()
-        user_id = st.session_state.user.get("user_id")
-        if not users.empty and user_id:
-            user_row = users[users.user_id == user_id]
-            if not user_row.empty:
-                db_status = user_row.iloc[0].get("status", "active")
-                if db_status != "active":
-                    st.error("🚫 حسابك غير مفعّل. يرجى التواصل مع مدير النظام.")
-                    st.session_state.clear()
-                    time.sleep(2)
-                    st.rerun()
-
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
@@ -2926,3 +2573,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
