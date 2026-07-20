@@ -3078,6 +3078,128 @@ def _show_exam_analytics(db: Database, role: str, section_id: str):
         top_students = top_students.sort_values("score", ascending=False).head(10)
         st.dataframe(top_students[["full_name", "score"]], use_container_width=True)
 
+def _show_exam_results(db: Database, role: str, section_id: str):
+    """Display comprehensive exam results with search and filters."""
+    st.markdown("### 📊 نتائج الاختبارات")
+    
+    results = db.get_quiz_results()
+    quizzes = db.get_quizzes()
+    students = db.get_students()
+    
+    if results.empty:
+        st.info("لا توجد نتائج اختبارات مسجلة بعد.")
+        return
+    
+    # Convert status filter
+    if "status" in results.columns:
+        results = results[results["status"] == "submitted"]
+    
+    # Filters
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        search_term = st.text_input("🔍 بحث بالطالبة أو الاختبار", placeholder="اكتب اسم...")
+    
+    with col2:
+        status_filter = st.selectbox("📊 التصفية", ["الكل", "ناجح", "راسب"])
+    
+    with col3:
+        if not quizzes.empty and "exam_id" in quizzes.columns:
+            quiz_options = ["الكل"] + quizzes["exam_id"].tolist()
+            quiz_filter = st.selectbox("📋 الاختبار", quiz_options,
+                format_func=lambda x: "الكل" if x == "الكل" else quizzes[quizzes["exam_id"]==x]["title"].values[0])
+        elif not quizzes.empty and "quiz_id" in quizzes.columns:
+            quiz_options = ["الكل"] + quizzes["quiz_id"].tolist()
+            quiz_filter = st.selectbox("📋 الاختبار", quiz_options,
+                format_func=lambda x: "الكل" if x == "الكل" else quizzes[quizzes["quiz_id"]==x]["title"].values[0])
+        else:
+            quiz_filter = "الكل"
+    
+    # Apply filters
+    filtered = results.copy()
+    
+    if search_term:
+        mask = pd.Series([False] * len(filtered))
+        if "student_name" in filtered.columns:
+            mask |= filtered["student_name"].astype(str).str.contains(search_term, case=False, na=False)
+        st.markdown("---")
+        st.markdown("📊 تحليل النتائج:")
+        if "score" in filtered.columns:
+            avg_score = filtered["score"].mean()
+            pass_rate = (len(filtered[filtered["score"] >= 10]) / len(filtered) * 100) if len(filtered) > 0 else 0
+            c1, c2 = st.columns(2)
+            c1.metric("📊 المتوسط", f"{avg_score:.1f}")
+            c2.metric("✅ نسبة النجاح", f"{pass_rate:.1f}%")
+    
+    if quiz_filter != "الكل":
+        filtered = filtered[filtered["quiz_id"] == quiz_filter]
+    
+    if status_filter == "ناجح" and "score" in filtered.columns:
+        quizzes_df = db.get_quizzes()
+        passing = 10
+        if not quizzes_df.empty:
+            quiz_row = quizzes_df[quizzes_df["quiz_id"] == quiz_filter if quiz_filter != "الكل" else quizzes_df.iloc[0]]
+            passing = int(quiz_row.iloc[0].get("passing_score", 10)) if len(quiz_row) > 0 else 10
+        filtered = filtered[filtered["score"] >= passing]
+    elif status_filter == "راسب" and "score" in filtered.columns:
+        quizzes_df = db.get_quizzes()
+        passing = 10
+        if not quizzes_df.empty:
+            quiz_row = quizzes_df[quizzes_df["quiz_id"] == quiz_filter if quiz_filter != "الكل" else quizzes_df.iloc[0]]
+            passing = int(quiz_row.iloc[0].get("passing_score", 10)) if len(quiz_row) > 0 else 10
+        filtered = filtered[filtered["score"] < passing]
+    
+    if "score" in filtered.columns:
+        filtered["score"] = pd.to_numeric(filtered["score"], errors="coerce").fillna(0)
+    
+    if not filtered.empty:
+        st.markdown("---")
+        st.dataframe(filtered[["student_name", "quiz_id", "score", "submission_time"]], use_container_width=True)
+    else:
+        st.info("لا توجد نتائج مطابقة للبحث.")
+
+def _show_exam_analytics(db: Database, role: str, section_id: str):
+    """Display exam analytics and statistics."""
+    st.markdown("### 📈 تحليلات الاختبارات")
+    
+    quizzes = db.get_quizzes()
+    results = db.get_quiz_results()
+    students = db.get_students()
+    
+    if quizzes.empty:
+        st.info("لا توجد اختبارات لعرض التحليلات.")
+        return
+    
+    if not results.empty and "status" in results.columns:
+        results = results[results["status"] == "submitted"]
+    
+    # Overall statistics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📚 إجمالي الاختبارات", len(quizzes))
+    col2.metric("📊 إجمالي النتائج", len(results))
+    col3.metric("✅ متوسط الدرجات", f"{results['score'].mean():.1f}" if not results.empty and "score" in results.columns else "0")
+    col4.metric("👥 الطالبات المشاركات", len(results['student_id'].unique()) if not results.empty and "student_id" in results.columns else 0)
+    
+    st.markdown("---")
+    
+    # Charts
+    if not results.empty and not quizzes.empty:
+        st.markdown("#### 📊 توزيع الدرجات حسب الاختبارات")
+        if "quiz_id" in results.columns and "score" in results.columns:
+            score_summary = results.groupby("quiz_id")["score"].mean().reset_index()
+            score_summary = score_summary.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
+            if not score_summary.empty:
+                fig = px.bar(score_summary, x="title", y="score", title="متوسط الدرجات حسب الاختبار")
+                fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("#### 🏆 أفضل 10 طالبات")
+    if not results.empty and "student_id" in results.columns and "score" in results.columns and not students.empty:
+        top_students = results.groupby("student_id")["score"].sum().reset_index()
+        top_students = top_students.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+        top_students = top_students.sort_values("score", ascending=False).head(10)
+        st.dataframe(top_students[["full_name", "score"]], use_container_width=True)
+
 def show_reports(db: Database):
     st.markdown("<h2 class='main-header'>📊 التقارير والإحصائيات</h2>", unsafe_allow_html=True)
     user = st.session_state.user
