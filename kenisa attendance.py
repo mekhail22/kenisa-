@@ -52,12 +52,12 @@ PERMISSIONS = {
         "actions": ["view_dashboard", "view_reports", "change_password", "view_followup_dashboard"]
     },
     "Service Manager": {
-        "pages": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
+        "pages": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📱 حضور الطالبات QR", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
                   "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
         "actions": ["view_dashboard", "manage_followup", "manage_quizzes", "view_reports", "change_password", "view_followup_dashboard"]
     },
     "Teacher": {
-        "pages": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
+        "pages": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "📱 حضور الطالبات QR", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
                   "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"],
         "actions": ["view_dashboard", "view_own_class", "register_attendance", "manage_followup", "view_quiz_scores", "change_password", "view_followup_dashboard"]
     }
@@ -741,25 +741,122 @@ class Database:
 
     # --- Quizzes ---
     def get_quizzes(self):
-        return self._sheet_to_df("Exams")
+        """
+        Return quizzes from Quizzes worksheet with proper column structure.
+        Falls back to Exams worksheet for backward compatibility.
+        Merges data from both worksheets if both exist.
+        """
+        # Try reading from Quizzes sheet first
+        df_quizzes = self._sheet_to_df("Quizzes")
+        
+        # Also try reading from Exams sheet for backward compatibility
+        df_exams = pd.DataFrame()
+        try:
+            Database._rate_limit()
+            ws = self.spreadsheet.worksheet("Exams")
+            df_exams = self._read_sheet_raw("Exams")
+        except (gspread.WorksheetNotFound, Exception):
+            pass
+        
+        # Merge both dataframes if both have data
+        if df_quizzes.empty and not df_exams.empty:
+            # Only Exams data exists - map columns
+            df = df_exams.copy()
+            column_mapping = {
+                "exam_id": "quiz_id",
+                "exam_code": "quiz_code",
+                "class_id": "section_id",
+                "end_date": "expiry_date"
+            }
+            df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns and v not in df.columns})
+            return df
+        elif not df_quizzes.empty and not df_exams.empty:
+            # Both exist - merge with Quizzes taking priority
+            df = df_quizzes.copy()
+            exam_cols_mapped = df_exams.copy()
+            column_mapping = {
+                "exam_id": "quiz_id",
+                "exam_code": "quiz_code",
+                "class_id": "section_id",
+                "end_date": "expiry_date"
+            }
+            exam_cols_mapped = exam_cols_mapped.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns and v not in df.columns})
+            # Merge missing rows from Exams that are not already in Quizzes
+            if "quiz_id" in exam_cols_mapped.columns and "quiz_id" in df.columns:
+                existing_ids = set(df["quiz_id"].tolist())
+                new_rows = exam_cols_mapped[~exam_cols_mapped["quiz_id"].isin(existing_ids)]
+                if not new_rows.empty:
+                    df = pd.concat([df, new_rows], ignore_index=True)
+            return df
+        elif df_quizzes.empty and df_exams.empty:
+            return pd.DataFrame()
+        
+        # Map exam columns to quiz columns for backwards compatibility
+        column_mapping = {
+            "exam_id": "quiz_id",
+            "exam_code": "quiz_code",
+            "class_id": "section_id",
+            "end_date": "expiry_date"
+        }
+        df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns and v not in df.columns})
+        return df
+
+    @staticmethod
+    def _get_default_quiz_columns():
+        """Return default quiz table columns as per specification."""
+        return ["quiz_id", "title", "description", "created_by", "section_id",
+                "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
+                "quiz_code", "password", "is_active"]
 
     @staticmethod
     def _get_default_exam_columns():
-        """Return default exam table columns."""
-        return ["exam_id", "exam_code", "title", "description", "category", "exam_type", 
-                "class_id", "stage_id", "start_date", "end_date", "time_limit_minutes", 
-                "total_marks", "passing_score", "random_question_order", "random_answer_order",
-                "max_attempts", "visibility", "is_active", "auto_publish", "auto_close",
-                "instructions", "created_by", "created_at", "updated_at", "question_count"]
+        """Return default exam table columns for Exams worksheet."""
+        return ["exam_id", "quiz_id", "title", "description", "category", "exam_type",
+                "class_id", "section_id", "stage_id", "start_date", "end_date",
+                "expiry_date", "time_limit_minutes", "total_marks", "passing_score",
+                "random_question_order", "random_answer_order", "max_attempts",
+                "visibility", "is_active", "auto_publish", "auto_close",
+                "instructions", "created_by", "password", "num_questions",
+                "question_count", "created_at", "updated_at"]
 
     def add_exam(self, exam_data):
-        """Add a new exam/quiz with enhanced fields."""
+        """Add a new exam/quiz with enhanced fields.
+        Writes to both Quizzes sheet (for student access) and Exams sheet (for enhanced fields).
+        """
+        # Prepare quiz columns data (Quizzes sheet)
+        quiz_cols = ["quiz_id", "title", "description", "created_by", "section_id",
+                     "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
+                     "quiz_code", "password", "is_active"]
+        
+        quiz_row = {
+            "quiz_id": exam_data.get("quiz_id", str(uuid.uuid4())),
+            "title": exam_data.get("title", ""),
+            "description": exam_data.get("description", ""),
+            "created_by": exam_data.get("created_by", ""),
+            "section_id": exam_data.get("section_id", ""),
+            "num_questions": exam_data.get("num_questions", 0),
+            "time_limit_minutes": exam_data.get("time_limit_minutes", 15),
+            "total_marks": exam_data.get("total_marks", 20),
+            "expiry_date": exam_data.get("expiry_date", ""),
+            "quiz_code": exam_data.get("exam_code", ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))),
+            "password": exam_data.get("password", ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))),
+            "is_active": "True"
+        }
+        
+        # Write to Quizzes sheet
+        df_quizzes = self._sheet_to_df("Quizzes")
+        if df_quizzes.empty:
+            df_quizzes = pd.DataFrame(columns=quiz_cols)
+        df_quizzes = pd.concat([df_quizzes, pd.DataFrame([quiz_row])], ignore_index=True)
+        self._df_to_sheet("Quizzes", df_quizzes, quiz_cols)
+        
+        # Also write to Exams sheet for enhanced fields (backward compatibility)
         df = self.get_quizzes()
         cols = self._get_default_exam_columns()
         if df.empty:
             df = pd.DataFrame(columns=cols)
         # Set defaults
-        exam_data.setdefault("exam_code", ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)))
+        exam_data.setdefault("exam_code", quiz_row["quiz_code"])
         exam_data.setdefault("visibility", "public")
         exam_data.setdefault("is_active", "True")
         exam_data.setdefault("auto_publish", "False")
@@ -769,10 +866,16 @@ class Database:
         exam_data.setdefault("max_attempts", 1)
         exam_data.setdefault("total_marks", 20)
         exam_data.setdefault("passing_score", 10)
+        exam_data.setdefault("quiz_code", quiz_row["quiz_code"])
+        exam_data.setdefault("password", quiz_row["password"])
+        exam_data.setdefault("quiz_id", quiz_row["quiz_id"])
         exam_data.setdefault("created_at", get_cairo_now().isoformat())
         exam_data.setdefault("updated_at", get_cairo_now().isoformat())
         df = pd.concat([df, pd.DataFrame([exam_data])], ignore_index=True)
         self._df_to_sheet("Exams", df, cols)
+        
+        # Return the generated quiz code and password for display
+        return quiz_row["quiz_code"], quiz_row["password"]
 
     def update_exam(self, exam_id, updates):
         """Update an existing exam."""
@@ -831,10 +934,31 @@ class Database:
                                                "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
     def get_quiz_questions(self, quiz_id):
+        """Get questions for a quiz - supports both quiz_id and exam_id."""
         df = self._sheet_to_df("QuizQuestions")
         if df.empty:
             return pd.DataFrame()
-        return df[df.quiz_id == quiz_id]
+        # Support both quiz_id and exam_id columns for flexibility
+        if "quiz_id" in df.columns:
+            return df[df.quiz_id == quiz_id]
+        elif "exam_id" in df.columns:
+            return df[df.exam_id == quiz_id]
+        return pd.DataFrame()
+
+    def get_exam_questions(self, exam_id):
+        """Get questions for an exam by exam_id."""
+        df = self._sheet_to_df("ExamQuestions")
+        if df.empty:
+            # Fallback to QuizQuestions
+            df = self._sheet_to_df("QuizQuestions")
+            if df.empty:
+                return pd.DataFrame()
+            # Try matching by quiz_id or exam_id
+            if "exam_id" in df.columns:
+                return df[df.exam_id == exam_id]
+            elif "quiz_id" in df.columns:
+                return df[df.quiz_id == exam_id]
+        return df[df.exam_id == exam_id] if "exam_id" in df.columns else pd.DataFrame()
 
     def add_question(self, q_data):
         df = self._sheet_to_df("QuizQuestions")
@@ -1216,6 +1340,18 @@ def get_qr_for_user(user_id: str, user_type: str = "user") -> str:
     qr_data = f"{user_type}:{user_id}:{hashlib.sha256(user_id.encode()).hexdigest()[:8]}"
     qr_bytes = generate_qr_code(qr_data)
     return f"data:image/png;base64,{base64.b64encode(qr_bytes).decode()}"
+
+def generate_student_qr_data(student_id: str, section_id: str) -> bytes:
+    """
+    Generate a student QR code containing JSON with ONLY student_id and section_id.
+    No sensitive information is stored in the QR code.
+    Format: {"student_id": "STU000125", "section_id": "SEC003"}
+    """
+    qr_json = json.dumps({
+        "student_id": student_id,
+        "section_id": section_id
+    }, ensure_ascii=False)
+    return generate_qr_code(qr_json)
 
 # =============================================================================
 # Pagination Helper
@@ -1848,7 +1984,7 @@ def show_sidebar_navigation(db: Database):
         menus = {
             "System Admin": [
                 "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", 
-                "📋 حضور المدرسين", "📋 الحضور", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية",
+                "📋 حضور المدرسين", "📱 حضور الطالبات QR", "📱 حضور المدرسين QR", "📋 الحضور", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية",
                 "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
                 "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
             ],
@@ -1856,11 +1992,11 @@ def show_sidebar_navigation(db: Database):
                 "🏠 لوحة التحكم", "📋 حضور المدرسين", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
             ],
             "Service Manager": [
-                "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
+                "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📱 حضور الطالبات QR", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
                 "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
             ],
             "Teacher": [
-                "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية",
+                "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "📱 حضور الطالبات QR", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية",
                 "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
             ]
         }
@@ -3919,14 +4055,14 @@ def main():
                 role = st.session_state.user.get("role", "")
                 menus = {
                     "System Admin": [
-                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 حضور المدرسين", "📋 الحضور", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية",
+                        "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 حضور المدرسين", "📱 حضور الطالبات QR", "📱 حضور المدرسين QR", "📋 الحضور", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية",
                         "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
                         "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
                     ],
                     "Father Account": ["🏠 لوحة التحكم", "📋 حضور المدرسين", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
-                    "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
+                    "Service Manager": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📱 حضور الطالبات QR", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
                                         "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
-                    "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
+                    "Teacher": ["🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "📱 حضور الطالبات QR", "💬 الافتقاد", "💬 لوحة متابعة الافتقاد الذكية", "📋 حضور المدرسين",
                                 "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"]
                 }
                 menu_items = menus.get(role, [])
@@ -3988,153 +4124,558 @@ def main():
 # =============================================================================
 
 def show_student_qr_attendance(db: Database):
-    """Student QR attendance - scan QR to record attendance."""
+    """Student QR attendance - scan QR to record attendance with camera permission handling.
+    
+    Flow:
+    1. Open page → automatically request camera permission
+    2. If permission denied → show dialog: Camera access is required to scan QR Codes
+       Provide: Retry | Cancel
+    3. QR scanner starts scanning (fps=30, high accuracy)
+    4. Student scans QR → read student_id, section_id from JSON
+    5. Search student → verify account exists → verify status = ACTIVE
+    6. Verify section_id matches
+    7. Check today's attendance for duplicate (same student_id AND same date)
+    8. If duplicate: "Attendance already recorded today."
+    9. Otherwise: save new attendance record in existing Attendance sheet
+    10. Auto-stop scanner after success
+    """
     st.markdown("<h2 class='main-header'>📱 حضور الطالبات بالرمز الثنائي</h2>", unsafe_allow_html=True)
     
-    # Camera permission check
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        if st.button("🔄 محاولة مرة أخرى"):
-            st.session_state.pop("qr_camera_error", None)
+    # Initialize QR scanning state
+    if 'qr_scanning_active' not in st.session_state:
+        st.session_state.qr_scanning_active = True
+    if 'qr_scan_success' not in st.session_state:
+        st.session_state.qr_scan_success = False
+    if 'qr_scan_result' not in st.session_state:
+        st.session_state.qr_scan_result = None
+    if 'qr_permission_denied' not in st.session_state:
+        st.session_state.qr_permission_denied = False
+    
+    # Camera permission denied dialog
+    if st.session_state.get("qr_permission_denied"):
+        st.error("⚠️ **وصول الكاميرا مطلوب لمسح رموز QR**")
+        st.markdown("""
+        <div style="
+            text-align: center; 
+            padding: 2rem; 
+            border: 2px solid #e74c3c; 
+            border-radius: 15px; 
+            background: rgba(231, 76, 60, 0.05);
+            margin: 1rem 0;
+        ">
+            <h3 style="color: #e74c3c;">📷 وصول الكاميرا مطلوب</h3>
+            <p>يجب السماح باستخدام الكاميرا لمسح رموز QR.</p>
+            <p style="font-size: 0.9rem; color: #666;">يرجى السماح بالوصول إلى الكاميرا في المتصفح، ثم حاول مرة أخرى.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 إعادة المحاولة", use_container_width=True, key="qr_retry_btn"):
+                st.session_state.qr_permission_denied = False
+                st.session_state.qr_scanning_active = True
+                st.session_state.qr_scan_success = False
+                st.rerun()
+        with col2:
+            if st.button("❌ إلغاء", use_container_width=True, key="qr_cancel_btn"):
+                st.session_state.qr_permission_denied = False
+                st.session_state.qr_scanning_active = False
+                st.session_state.qr_scan_success = False
+                st.rerun()
+        return
+    
+    # Show result message if we have a result stored
+    if st.session_state.get("qr_scan_result_message"):
+        msg = st.session_state.qr_scan_result_message
+        if msg["type"] == "success":
+            st.success(msg["text"])
+            st.balloons()
+        elif msg["type"] == "warning":
+            st.warning(msg["text"])
+        elif msg["type"] == "error":
+            st.error(msg["text"])
+        
+        # Show student info if available
+        if msg.get("student_name"):
+            st.markdown(f"**الاسم:** {msg['student_name']}")
+        if msg.get("section_name"):
+            st.markdown(f"**الفصل:** {msg['section_name']}")
+        if msg.get("time"):
+            st.markdown(f"**الوقت:** {msg['time']}")
+        
+        # Reset button
+        if st.button("📱 مسح QR جديد", use_container_width=True, key="new_qr_scan_btn"):
+            st.session_state.qr_scan_result_message = None
+            st.session_state.qr_scanning_active = True
+            st.session_state.qr_scan_success = False
             st.rerun()
+        return
     
-    # QR scanner placeholder
-    st.markdown("""
-    <div style="
-        border: 2px dashed #667eea;
-        border-radius: 15px;
-        padding: 3rem;
-        text-align: center;
-        background: rgba(102, 126, 234, 0.05);
-        margin: 1rem 0;
-    ">
-        <h3>📷 كاميرا مسح QR</h3>
-        <p>طلب إذن الكاميرا...</p>
-        <p style="color: #666; font-size: 0.9rem;">
-            (إذا كانت الكاميرا غير متاحة، استخدم الإدخال اليدوي أدناه)
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # QR scanner with automatic camera permission request and improved detection
+    if st.session_state.qr_scanning_active and not st.session_state.qr_scan_success:
+        st.components.v1.html("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body { margin: 0; padding: 0; font-family: 'Cairo', sans-serif; background: transparent; }
+                #qr-reader { 
+                    width: 100%; 
+                    min-height: 300px; 
+                    border-radius: 15px; 
+                    overflow: hidden;
+                    background: #000;
+                }
+                #qr-status { 
+                    text-align: center; 
+                    padding: 1rem; 
+                    color: #667eea;
+                    font-weight: 600;
+                }
+                .scan-line {
+                    width: 100%;
+                    height: 3px;
+                    background: linear-gradient(90deg, transparent, #667eea, #764ba2, transparent);
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    animation: scanMove 2s ease-in-out infinite;
+                }
+                @keyframes scanMove {
+                    0%, 100% { top: 0; }
+                    50% { top: 100%; }
+                }
+                #qr-reader-container {
+                    position: relative;
+                    overflow: hidden;
+                }
+                .error-msg {
+                    color: #e74c3c;
+                    text-align: center;
+                    padding: 1rem;
+                }
+            </style>
+        </head>
+        <body>
+            <div id="qr-status">📱 جاري طلب الإذن بالكاميرا...</div>
+            <div id="qr-reader-container">
+                <div id="qr-reader"></div>
+                <div class="scan-line"></div>
+            </div>
+            <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+            <script>
+                let html5QrCode = null;
+                let scanningActive = false;
+                
+                function startScanner() {
+                    const statusEl = document.getElementById('qr-status');
+                    
+                    html5QrCode = new Html5Qrcode("qr-reader");
+                    
+                    html5QrCode.start(
+                        { facingMode: "environment" },
+                        {
+                            fps: 30,
+                            qrbox: { width: 280, height: 280 },
+                            aspectRatio: 1.0,
+                            disableFlip: false
+                        },
+                        function(decodedText) {
+                            if (!scanningActive) {
+                                scanningActive = true;
+                                statusEl.innerHTML = '✅ تم المسح بنجاح! جاري المعالجة...';
+                                
+                                // Stop scanner immediately after success
+                                if (html5QrCode) {
+                                    html5QrCode.stop().catch(() => {});
+                                }
+                                
+                                parent.postMessage({
+                                    type: 'QR_SCANNED',
+                                    data: decodedText
+                                }, '*');
+                            }
+                        },
+                        function(error) {
+                            // Silent - no error spam
+                        }
+                    ).catch(function(err) {
+                        statusEl.innerHTML = '❌ خطأ في فتح الكاميرا: ' + err;
+                        parent.postMessage({
+                            type: 'CAMERA_ERROR',
+                            error: err.toString()
+                        }, '*');
+                    });
+                }
+                
+                // Request camera permission immediately
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+                    .then(function(stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                        document.getElementById('qr-status').innerHTML = '✅ تم الحصول على الإذن - ضع رمز QR أمام الكاميرا';
+                        startScanner();
+                    })
+                    .catch(function(err) {
+                        document.getElementById('qr-status').innerHTML = '❌ رفض الإذن بالكاميرا';
+                        parent.postMessage({
+                            type: 'CAMERA_PERMISSION_DENIED',
+                            error: err.toString()
+                        }, '*');
+                    });
+                
+                // Listen for stop command
+                window.addEventListener('message', function(event) {
+                    if (event.data && event.data.type === 'STOP_SCANNER') {
+                        if (html5QrCode) {
+                            html5QrCode.stop().catch(() => {});
+                        }
+                    }
+                });
+            </script>
+        </body>
+        </html>
+        """, height=420)
     
-    # Manual QR input fallback
-    st.markdown("#### إدخال QR يدوياً")
-    qr_input = st.text_area("الصق بيانات QR هنا أو امسح بالكاميرا", height=100, key="student_qr_manual_input")
+    # Process QR scan results from the HTML component
+    qr_result = st.session_state.get("qr_scan_result")
+    if qr_result and not st.session_state.get("qr_scan_result_message"):
+        st.session_state.qr_scanning_active = False
+        result = _process_student_qr_attendance(db, qr_result)
+        if result and isinstance(result, dict):
+            st.session_state.qr_scan_result_message = result
+            st.session_state.qr_scan_success = True
+        elif result and result is True:
+            st.session_state.qr_scan_success = True
+        st.rerun()
     
-    if st.button("معالجة QR", key="process_student_qr_btn"):
-        if qr_input and qr_input.strip():
-            _process_student_qr_attendance(db, qr_input.strip())
-        else:
-            st.error("يرجى إدخال أو مسح رمز QR أولاً")
+    # Manual QR input fallback (shown only when no success yet)
+    if not st.session_state.qr_scan_success and not st.session_state.get("qr_scan_result_message"):
+        st.markdown("---")
+        st.markdown("#### 💻 إدخال QR يدوياً")
+        qr_input = st.text_area("الصق بيانات QR هنا (نص JSON)", height=80, key="student_qr_manual_input")
+        if st.button("معالجة QR", key="process_student_qr_btn", use_container_width=True):
+            if qr_input and qr_input.strip():
+                result = _process_student_qr_attendance(db, qr_input.strip())
+                if result and isinstance(result, dict):
+                    st.session_state.qr_scan_result_message = result
+                    st.session_state.qr_scan_success = True
+                    st.rerun()
+                elif result is True:
+                    st.session_state.qr_scan_success = True
+                    st.rerun()
+            else:
+                st.error("يرجى إدخال نص QR أولاً")
 
 def _process_student_qr_attendance(db: Database, qr_data: str):
-    """Process student QR code and record attendance."""
+    """
+    Process student QR code and record attendance.
+    
+    QR Format (JSON):
+    {
+        "student_id": "STU000125",
+        "section_id": "SEC003"
+    }
+    
+    Flow:
+    1. Parse JSON → extract student_id, section_id
+    2. Find student in Students sheet
+    3. Verify student exists
+    4. Verify student status = ACTIVE
+    5. Verify QR section_id matches student's section_id
+    6. Check Attendance sheet for duplicate (same student_id + same date)
+    7. If duplicate → return warning
+    8. Insert new row into Attendance sheet
+    """
     students = db.get_students()
     if students.empty:
-        st.error("لا توجد طالبات مسجلات في النظام")
-        return
+        return {"type": "error", "text": "❌ لا توجد طالبات مسجلات في النظام"}
     
-    # Parse QR data (format: "student:{student_id}:{checksum}")
-    if not qr_data.startswith("student:"):
-        st.error("❌ رمز QR غير صالح - يجب أن يكون للطالبات")
-        return
-    
+    # Parse JSON from QR code
     try:
-        parts = qr_data.split(":")
-        if len(parts) < 2:
-            st.error("❌ تنسيق رمز QR غير صحيح")
-            return
-        
-        student_id = parts[1]
-        student_row = students[students.student_id == student_id]
-        
-        if student_row.empty:
-            st.error("❌ الطالبة غير موجودة في النظام")
-            return
-        
-        student = student_row.iloc[0].to_dict()
-        
-        # Check for duplicate attendance today
-        today = get_cairo_now().strftime("%Y-%m-%d")
-        attendance = db.get_attendance()
-        if not attendance.empty:
-            existing = attendance[
-                (attendance.student_id == student_id) & 
-                (attendance.date == today)
-            ]
-            if not existing.empty:
-                st.warning(f"⚠️ تم تسجيل حضور هذه الطالبة مسبقاً اليوم")
-                st.markdown(f"**الاسم:** {student.get('full_name', '')}")
-                st.markdown(f"**الوقت:** {existing.iloc[0].get('submission_time', '')[:16]}")
-                return
-        
-        # Record attendance
-        record = {
-            "record_id": str(uuid.uuid4()),
-            "date": today,
-            "student_id": student_id,
-            "status": "حاضر",
-            "notes": "QR Scan",
-            "recorded_by": st.session_state.user.get("user_id", "") if st.session_state.get("user") else "",
-            "section_id": student.get("section_id", "")
+        qr_json = json.loads(qr_data)
+    except json.JSONDecodeError:
+        # Try legacy format: "student:{student_id}:{checksum}"
+        if qr_data.startswith("student:"):
+            try:
+                parts = qr_data.split(":")
+                if len(parts) >= 2:
+                    student_id = parts[1]
+                    student_row = students[students.student_id == student_id]
+                    if student_row.empty:
+                        return {"type": "error", "text": "❌ الطالبة غير موجودة في النظام"}
+                    student = student_row.iloc[0].to_dict()
+                    # Legacy: skip strict section validation, just record
+                    return _save_qr_attendance(db, student, student_id, student.get("section_id", ""))
+            except Exception:
+                pass
+        return {"type": "error", "text": "❌ رمز QR غير صالح - يجب أن يكون بصيغة JSON"}
+    
+    # Validate required fields
+    if "student_id" not in qr_json or "section_id" not in qr_json:
+        return {"type": "error", "text": "❌ رمز QR غير مكتمل - يجب أن يحتوي على student_id و section_id"}
+    
+    student_id = str(qr_json["student_id"]).strip()
+    qr_section_id = str(qr_json["section_id"]).strip()
+    
+    if not student_id or not qr_section_id:
+        return {"type": "error", "text": "❌ رمز QR غير صالح - student_id أو section_id فارغ"}
+    
+    # Find student in database
+    student_row = students[students.student_id == student_id]
+    if student_row.empty:
+        return {"type": "error", "text": f"❌ الطالبة برقم {student_id} غير موجودة في النظام"}
+    
+    student = student_row.iloc[0].to_dict()
+    
+    # Verify student status = ACTIVE
+    student_status = str(student.get("status", "active")).strip().lower()
+    if student_status != "active":
+        return {"type": "error", "text": f"❌ حساب الطالبة {student.get('full_name', '')} غير نشط"}
+    
+    # Verify section_id matches between QR and student record
+    student_section_id = str(student.get("section_id", "")).strip()
+    if student_section_id and student_section_id != qr_section_id:
+        return {
+            "type": "error",
+            "text": f"❌ رمز QR لا يخص طالبة في هذا الفصل. الفصل المسجل: {student_section_id}"
         }
-        
-        df = db.get_attendance()
-        if df.empty:
-            df = pd.DataFrame(columns=["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
-        df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
-        db._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
-        
-        st.success(f"✅ تم تسجيل حضور الطالبة: {student.get('full_name', '')}")
-        st.balloons()
-        
-        # Display success info
-        sections = db.get_sections()
-        if not sections.empty and not pd.isna(student.get("section_id")):
-            sec = sections[sections.section_id == student.get("section_id")]
-            if not sec.empty:
-                st.markdown(f"**الفصل:** {sec.iloc[0].get('section_name', '')}")
-        st.markdown(f"**الوقت:** {get_cairo_now().strftime('%H:%M:%S')}")
-        
-        db.add_log("", f"QR Attendance: {student.get('full_name', '')}")
-        
-    except Exception as e:
-        st.error(f"❌ خطأ في معالجة الرمز: {str(e)}")
+    
+    # All validations passed - save attendance
+    return _save_qr_attendance(db, student, student_id, qr_section_id)
+
+def _save_qr_attendance(db: Database, student: dict, student_id: str, section_id: str):
+    """
+    Save QR attendance record to Attendance sheet.
+    Uses existing Attendance worksheet columns:
+    record_id, date, student_id, status, notes, recorded_by, section_id
+    
+    Duplicate protection: Same student_id + Same date → reject
+    """
+    today = get_cairo_now().strftime("%Y-%m-%d")
+    now_time = get_cairo_now().strftime("%H:%M:%S")
+    user = st.session_state.get("user", {})
+    recorded_by = user.get("user_id", "") if user else ""
+    
+    # --- DUPLICATE PROTECTION ---
+    # Check Attendance sheet for existing record with same student_id AND same date
+    attendance = db.get_attendance()
+    if not attendance.empty:
+        existing = attendance[
+            (attendance.student_id == student_id) & 
+            (attendance.date == today)
+        ]
+        if not existing.empty:
+            section_name = ""
+            sections = db.get_sections()
+            if not sections.empty and section_id:
+                sec = sections[sections.section_id == section_id]
+                if not sec.empty:
+                    section_name = sec.iloc[0].get("section_name", "")
+            
+            return {
+                "type": "warning",
+                "text": "⚠️ **تم تسجيل الحضور مسبقاً اليوم**",
+                "student_name": student.get("full_name", ""),
+                "section_name": section_name,
+                "time": now_time
+            }
+    
+    # --- CREATE NEW ATTENDANCE RECORD ---
+    record = {
+        "record_id": str(uuid.uuid4()),
+        "date": today,
+        "student_id": student_id,
+        "status": "Present",
+        "notes": "QR Attendance",
+        "recorded_by": recorded_by,
+        "section_id": section_id
+    }
+    
+    # Insert into existing Attendance sheet using existing columns
+    df = db.get_attendance()
+    if df.empty:
+        df = pd.DataFrame(columns=["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+    df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
+    db._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+    
+    # Get section name for display
+    section_name = ""
+    sections = db.get_sections()
+    if not sections.empty and section_id:
+        sec = sections[sections.section_id == section_id]
+        if not sec.empty:
+            section_name = sec.iloc[0].get("section_name", "")
+    
+    # Log the action
+    db.add_log(recorded_by, f"QR Attendance: {student.get('full_name', '')} - {today}")
+    
+    return {
+        "type": "success",
+        "text": f"✅ **تم تسجيل حضور الطالبة بنجاح**",
+        "student_name": student.get("full_name", ""),
+        "section_name": section_name,
+        "time": now_time
+    }
 
 def show_teacher_qr_attendance(db: Database):
-    """Teacher QR attendance - scan QR to record teacher attendance."""
+    """Teacher QR attendance - scan QR to record teacher attendance with camera permission handling."""
     st.markdown("<h2 class='main-header'>📱 حضور المدرسين بالرمز الثنائي</h2>", unsafe_allow_html=True)
     
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        if st.button("🔄 محاولة مرة أخرى"):
-            st.session_state.pop("qr_camera_error", None)
-            st.rerun()
+    # Initialize QR scanning state
+    if 'qr_teacher_scanning_active' not in st.session_state:
+        st.session_state.qr_teacher_scanning_active = True
+    if 'qr_teacher_scan_success' not in st.session_state:
+        st.session_state.qr_teacher_scan_success = False
+    if 'qr_teacher_scan_result' not in st.session_state:
+        st.session_state.qr_teacher_scan_result = None
     
-    st.markdown("""
-    <div style="
-        border: 2px dashed #667eea;
-        border-radius: 15px;
-        padding: 3rem;
-        text-align: center;
-        background: rgba(102, 126, 234, 0.05);
-        margin: 1rem 0;
-    ">
-        <h3>📷 كاميرا مسح QR</h3>
-        <p>طلب إذن الكاميرا...</p>
-        <p style="color: #666; font-size: 0.9rem;">
-            (إذا كانت الكاميرا غير متاحة، استخدم الإدخال اليدوي أدناه)
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # Camera permission check with professional dialog
+    if st.session_state.get("qr_camera_error"):
+        st.markdown("""
+        <style>
+        .qr-permission-dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            z-index: 99999;
+            max-width: 400px;
+            width: 90%;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="qr-permission-dialog">
+            <h3 style="color: #e74c3c; text-align: center;">⚠️ إذن الكاميرا مطلوب</h3>
+            <p style="text-align: center; margin: 1rem 0;">
+                يرجى السماح باستخدام الكاميرا لمسح رموز الاستجابة السريعة.<br>
+                اضغط على "سماح" أو "Allow" عند طلب الإذن.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 إعادة المحاولة", use_container_width=True):
+                st.session_state.qr_camera_error = False
+                st.session_state.qr_teacher_scanning_active = True
+                st.rerun()
+        with col2:
+            if st.button("❌ إلغاء", use_container_width=True):
+                st.session_state.qr_camera_error = False
+                st.session_state.qr_teacher_scanning_active = False
+                st.rerun()
+        return
     
-    st.markdown("#### إدخال QR يدوياً")
-    qr_input = st.text_area("الصق بيانات QR هنا أو امسح بالكاميرا", height=100, key="teacher_qr_manual_input")
+    # QR scanner with automatic camera permission request
+    if st.session_state.qr_teacher_scanning_active and not st.session_state.qr_teacher_scan_success:
+        st.components.v1.html("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body { margin: 0; padding: 0; font-family: 'Cairo', sans-serif; background: transparent; }
+                #qr-reader { width: 100%; min-height: 300px; border-radius: 15px; overflow: hidden; }
+                #qr-status { text-align: center; padding: 1rem; color: #667eea; }
+                .scanning-animation {
+                    width: 100%;
+                    height: 4px;
+                    background: linear-gradient(90deg, #667eea, #764ba2, #667eea);
+                    animation: scanning 2s infinite;
+                    margin-top: 1rem;
+                }
+                @keyframes scanning {
+                    0% { transform: translateX(-100%); }
+                    100% { transform: translateX(100%); }
+                }
+            </style>
+        </head>
+        <body>
+            <div id="qr-status">📱 طلب إذن الكاميرا... يرجى السماح</div>
+            <div id="qr-reader"></div>
+            <div class="scanning-animation"></div>
+            <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+            <script>
+                let html5QrCode;
+                let scanning = false;
+                
+                // Request camera permission immediately on page load
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+                    .then(function(stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                        document.getElementById('qr-status').innerHTML = '✅ تم الحصول على إذن الكاميرا - ضع رمز QR أمام الكاميرا';
+                        
+                        html5QrCode = new Html5Qrcode("qr-reader");
+                        html5QrCode.start(
+                            { facingMode: "environment" },
+                            {
+                                fps: 15,
+                                qrbox: { width: 250, height: 250 },
+                                aspectRatio: 1.0,
+                                disableFlip: false
+                            },
+                            function(decodedText) {
+                                if (!scanning) {
+                                    scanning = true;
+                                    document.getElementById('qr-status').innerHTML = '✅ تم المسح بنجاح! جاري المعالجة...';
+                                    parent.postMessage({type: 'QR_SCANNED', data: decodedText}, '*');
+                                }
+                            },
+                            function(error) {
+                                // Silent scanning - no error display for better UX
+                            }
+                        ).catch(function(err) {
+                            document.getElementById('qr-status').innerHTML = '❌ خطأ في فتح الكاميرا: ' + err;
+                            parent.postMessage({type: 'CAMERA_ERROR', error: err}, '*');
+                        });
+                    })
+                    .catch(function(err) {
+                        document.getElementById('qr-status').innerHTML = '❌ إذن الكاميرا مرفوض أو غير متاح';
+                        parent.postMessage({type: 'CAMERA_PERMISSION_DENIED', error: err}, '*');
+                    });
+                
+                window.addEventListener('message', function(event) {
+                    if (event.data && event.data.type === 'STOP_SCANNER') {
+                        if (html5QrCode && scanning) {
+                            html5QrCode.stop().catch(() => {});
+                        }
+                    }
+                });
+            </script>
+        </body>
+        </html>
+        """, height=400)
+        
+        # Stop scanning after successful attendance
+        if st.session_state.qr_teacher_scan_success:
+            st.components.v1.html("""
+            <script>
+                parent.postMessage({type: 'STOP_SCANNER'}, '*');
+            </script>
+            """, height=0)
     
-    if st.button("معالجة QR", key="process_teacher_qr_btn"):
-        if qr_input and qr_input.strip():
-            _process_teacher_qr_attendance(db, qr_input.strip())
-        else:
-            st.error("يرجى إدخال أو مسح رمز QR أولاً")
+    # Show QR input or success message
+    if st.session_state.qr_teacher_scan_success:
+        st.success(f"✅ تم تسجيل الحضور بنجاح!")
+        st.session_state.qr_teacher_scanning_active = False
+    else:
+        st.markdown("#### إدخال QR يدوياً (إذا كانت الكاميرا غير متاحة)")
+        qr_input = st.text_area("الصق بيانات QR هنا أو امسح بالكاميرا", height=100, key="teacher_qr_manual_input")
+        
+        if st.button("معالجة QR", key="process_teacher_qr_btn"):
+            if qr_input and qr_input.strip():
+                result = _process_teacher_qr_attendance(db, qr_input.strip())
+                if result:
+                    st.session_state.qr_teacher_scan_success = True
+                    st.rerun()
+            else:
+                st.error("يرجى إدخال أو مسح رمز QR أولاً")
 
 def _process_teacher_qr_attendance(db: Database, qr_data: str):
     """Process teacher QR code and record attendance."""
