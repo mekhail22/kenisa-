@@ -28,3 +28,5 @@ python-dateutil>=2.9.0.post0
 plotly>=5.24.1
 
 cachetools>=5.5.0
+opencv-python>=4.8.0
+pyzbar>=0.1.8
