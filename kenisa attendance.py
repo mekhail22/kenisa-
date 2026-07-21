@@ -780,7 +780,7 @@ class Database:
                 "class_id": "section_id",
                 "end_date": "expiry_date"
             }
-            exam_cols_mapped = exam_cols_mapped.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns and v not in df.columns})
+            exam_cols_mapped = exam_cols_mapped.rename(columns={k: v for k, v in column_mapping.items() if k in exam_cols_mapped.columns and v not in exam_cols_mapped.columns})
             # Merge missing rows from Exams that are not already in Quizzes
             if "quiz_id" in exam_cols_mapped.columns and "quiz_id" in df.columns:
                 existing_ids = set(df["quiz_id"].tolist())
@@ -791,7 +791,8 @@ class Database:
         elif df_quizzes.empty and df_exams.empty:
             return pd.DataFrame()
         
-        # Map exam columns to quiz columns for backwards compatibility
+        # Only Quizzes data exists - map columns for backwards compatibility and return
+        df = df_quizzes.copy()
         column_mapping = {
             "exam_id": "quiz_id",
             "exam_code": "quiz_code",
@@ -893,6 +894,32 @@ class Database:
                 for k, v in updates.items():
                     df.at[idx[0], k] = self._safe_str(v)
                 self._df_to_sheet("Exams", df, df.columns.tolist())
+
+    def update_quiz(self, quiz_id, updates):
+        """Update a quiz in the Quizzes sheet by quiz_id."""
+        df = self._sheet_to_df("Quizzes")
+        if df.empty:
+            return
+        idx = df[df.quiz_id == quiz_id].index
+        if len(idx) > 0:
+            for k, v in updates.items():
+                df.at[idx[0], k] = self._safe_str(v)
+            quiz_cols = ["quiz_id", "title", "description", "created_by", "section_id",
+                         "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
+                         "quiz_code", "password", "is_active"]
+            self._df_to_sheet("Quizzes", df, quiz_cols)
+        # Also update in Exams sheet for backward compatibility
+        try:
+            df_exams = self._read_sheet_raw("Exams")
+            if not df_exams.empty:
+                idx_exam = df_exams[df_exams.quiz_id == quiz_id].index
+                if len(idx_exam) > 0:
+                    for k, v in updates.items():
+                        if k in df_exams.columns:
+                            df_exams.at[idx_exam[0], k] = self._safe_str(v)
+                    self._df_to_sheet("Exams", df_exams, df_exams.columns.tolist())
+        except Exception:
+            pass
 
     def delete_exam(self, exam_id):
         """Delete an exam and its questions."""
@@ -1556,6 +1583,18 @@ def show_initialization(db: Database):
             time.sleep(2)
             st.rerun()
         st.stop()
+
+def ensure_all_users_active(db: Database):
+    """Ensure all existing users have active status."""
+    try:
+        users = db.get_users()
+        if not users.empty:
+            for _, user in users.iterrows():
+                current_status = user.get("status", "")
+                if current_status != "active":
+                    db.update_user(user.get("user_id", ""), {"status": "active"})
+    except Exception:
+        pass
 
 def show_login_page(db: Database, jwt_secret: str):
     st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة</h1>", unsafe_allow_html=True)
@@ -2531,8 +2570,8 @@ def show_user_management(db: Database):
 def show_attendance(db: Database):
     user = st.session_state.user
     role = user.get("role", "")
-    if role == "Service Manager":
-        st.error("🚫 أمناء الخدمة لا يمكنهم تسجيل الحضور، هذه المهمة خاصة بالمدرسات فقط.")
+    if role not in ["System Admin", "Service Manager", "Teacher"]:
+        st.error("🚫 غير مصرح لك بتسجيل الحضور.")
         if st.button("🔙 العودة إلى لوحة التحكم"):
             st.session_state.menu_choice = "🏠 لوحة التحكم"
             st.rerun()
@@ -3991,6 +4030,7 @@ def main():
             st.stop()
     db = st.session_state.db_instance
     jwt_secret = get_jwt_secret()
+    ensure_all_users_active(db)
 
     # Session validation and user status check
     if st.session_state.authenticated and st.session_state.user:
@@ -4124,24 +4164,20 @@ def main():
 # =============================================================================
 
 def show_student_qr_attendance(db: Database):
-    """Student QR attendance - scan QR to record attendance with camera permission handling.
-    
-    Flow:
-    1. Open page → automatically request camera permission
-    2. If permission denied → show dialog: Camera access is required to scan QR Codes
-       Provide: Retry | Cancel
-    3. QR scanner starts scanning (fps=30, high accuracy)
-    4. Student scans QR → read student_id, section_id from JSON
-    5. Search student → verify account exists → verify status = ACTIVE
-    6. Verify section_id matches
-    7. Check today's attendance for duplicate (same student_id AND same date)
-    8. If duplicate: "Attendance already recorded today."
-    9. Otherwise: save new attendance record in existing Attendance sheet
-    10. Auto-stop scanner after success
-    """
+    """Student QR attendance - scan QR to record attendance with camera permission handling."""
     st.markdown("<h2 class='main-header'>📱 حضور الطالبات بالرمز الثنائي</h2>", unsafe_allow_html=True)
     
-    # Initialize QR scanning state
+    user = st.session_state.user
+    if not user:
+        st.error("يجب تسجيل الدخول أولاً")
+        st.stop()
+    
+    # Check permission
+    if not check_permission("register_attendance"):
+        st.error("🚫 غير مصرح لك بتسجيل الحضور")
+        st.stop()
+    
+    # Initialize QR scanning state with camera availability check
     if 'qr_scanning_active' not in st.session_state:
         st.session_state.qr_scanning_active = True
     if 'qr_scan_success' not in st.session_state:
@@ -4150,10 +4186,12 @@ def show_student_qr_attendance(db: Database):
         st.session_state.qr_scan_result = None
     if 'qr_permission_denied' not in st.session_state:
         st.session_state.qr_permission_denied = False
+    if 'qr_camera_check_done' not in st.session_state:
+        st.session_state.qr_camera_check_done = False
     
     # Camera permission denied dialog
     if st.session_state.get("qr_permission_denied"):
-        st.error("⚠️ **وصول الكاميرا مطلوب لمسح رموز QR**")
+        st.error("📷 **وصول الكاميرا مطلوب لمسح رموز QR**")
         st.markdown("""
         <div style="
             text-align: center; 
@@ -4163,9 +4201,9 @@ def show_student_qr_attendance(db: Database):
             background: rgba(231, 76, 60, 0.05);
             margin: 1rem 0;
         ">
-            <h3 style="color: #e74c3c;">📷 وصول الكاميرا مطلوب</h3>
-            <p>يجب السماح باستخدام الكاميرا لمسح رموز QR.</p>
-            <p style="font-size: 0.9rem; color: #666;">يرجى السماح بالوصول إلى الكاميرا في المتصفح، ثم حاول مرة أخرى.</p>
+            <h3 style="color: #e74c3c;">⚠️ إذن الكاميرا مطلوب</h3>
+            <p>يجب السماح باستخدام الكاميرا لمسح رموز الاستجابة السريعة.</p>
+            <p style="font-size: 0.9rem; color: #666;">اضغط على "سماح" أو "Allow" عند طلب الإذن في المتصفح.</p>
         </div>
         """, unsafe_allow_html=True)
         col1, col2 = st.columns(2)
@@ -4174,6 +4212,7 @@ def show_student_qr_attendance(db: Database):
                 st.session_state.qr_permission_denied = False
                 st.session_state.qr_scanning_active = True
                 st.session_state.qr_scan_success = False
+                st.session_state.qr_camera_check_done = False
                 st.rerun()
         with col2:
             if st.button("❌ إلغاء", use_container_width=True, key="qr_cancel_btn"):
@@ -4212,27 +4251,31 @@ def show_student_qr_attendance(db: Database):
     
     # QR scanner with automatic camera permission request and improved detection
     if st.session_state.qr_scanning_active and not st.session_state.qr_scan_success:
-        st.components.v1.html("""
+        # Unique ID for this scanner instance to avoid conflicts on rerun
+        scanner_id = f"qr-reader-{user.get('user_id', 'default')}"
+        
+        st.components.v1.html(f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
             <style>
-                body { margin: 0; padding: 0; font-family: 'Cairo', sans-serif; background: transparent; }
-                #qr-reader { 
+                body {{ margin: 0; padding: 0; font-family: 'Cairo', sans-serif; background: transparent; }}
+                #{scanner_id} {{ 
                     width: 100%; 
                     min-height: 300px; 
                     border-radius: 15px; 
                     overflow: hidden;
                     background: #000;
-                }
-                #qr-status { 
+                }}
+                #qr-status {{ 
                     text-align: center; 
                     padding: 1rem; 
                     color: #667eea;
                     font-weight: 600;
-                }
-                .scan-line {
+                    direction: rtl;
+                }}
+                .scan-line {{
                     width: 100%;
                     height: 3px;
                     background: linear-gradient(90deg, transparent, #667eea, #764ba2, transparent);
@@ -4240,97 +4283,139 @@ def show_student_qr_attendance(db: Database):
                     top: 0;
                     left: 0;
                     animation: scanMove 2s ease-in-out infinite;
-                }
-                @keyframes scanMove {
-                    0%, 100% { top: 0; }
-                    50% { top: 100%; }
-                }
-                #qr-reader-container {
+                    pointer-events: none;
+                }}
+                @keyframes scanMove {{
+                    0%, 100% {{ top: 0; }}
+                    50% {{ top: 100%; }}
+                }}
+                #qr-reader-container {{
                     position: relative;
                     overflow: hidden;
-                }
-                .error-msg {
-                    color: #e74c3c;
-                    text-align: center;
-                    padding: 1rem;
-                }
+                }}
             </style>
         </head>
         <body>
-            <div id="qr-status">📱 جاري طلب الإذن بالكاميرا...</div>
+            <div id="qr-status">📱 جاري طلب إذن الكاميرا...</div>
             <div id="qr-reader-container">
-                <div id="qr-reader"></div>
+                <div id="{scanner_id}"></div>
                 <div class="scan-line"></div>
             </div>
             <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
             <script>
                 let html5QrCode = null;
                 let scanningActive = false;
+                const scannerId = "{scanner_id}";
+                const statusEl = document.getElementById('qr-status');
                 
-                function startScanner() {
-                    const statusEl = document.getElementById('qr-status');
-                    
-                    html5QrCode = new Html5Qrcode("qr-reader");
-                    
-                    html5QrCode.start(
-                        { facingMode: "environment" },
-                        {
-                            fps: 30,
-                            qrbox: { width: 280, height: 280 },
-                            aspectRatio: 1.0,
-                            disableFlip: false
-                        },
-                        function(decodedText) {
-                            if (!scanningActive) {
-                                scanningActive = true;
-                                statusEl.innerHTML = '✅ تم المسح بنجاح! جاري المعالجة...';
-                                
-                                // Stop scanner immediately after success
-                                if (html5QrCode) {
-                                    html5QrCode.stop().catch(() => {});
-                                }
-                                
-                                parent.postMessage({
-                                    type: 'QR_SCANNED',
-                                    data: decodedText
-                                }, '*');
-                            }
-                        },
-                        function(error) {
-                            // Silent - no error spam
-                        }
-                    ).catch(function(err) {
-                        statusEl.innerHTML = '❌ خطأ في فتح الكاميرا: ' + err;
-                        parent.postMessage({
+                function startScanner() {{
+                    try {{
+                        html5QrCode = new Html5Qrcode(scannerId);
+                        
+                        html5QrCode.start(
+                            {{ facingMode: "environment" }},
+                            {{
+                                fps: 30,
+                                qrbox: {{ width: 280, height: 280 }},
+                                aspectRatio: 1.0,
+                                disableFlip: false
+                            }},
+                            function(decodedText) {{
+                                if (!scanningActive) {{
+                                    scanningActive = true;
+                                    statusEl.innerHTML = '✅ تم المسح بنجاح! جاري المعالجة...';
+                                    
+                                    // Stop scanner immediately after success
+                                    if (html5QrCode) {{
+                                        html5QrCode.stop().catch(() => {{}});
+                                    }}
+                                    
+                                    parent.postMessage({{
+                                        type: 'QR_SCANNED',
+                                        data: decodedText
+                                    }}, '*');
+                                }}
+                            }},
+                            function(error) {{
+                                // Silent - no error spam for better UX
+                            }}
+                        ).catch(function(err) {{
+                            statusEl.innerHTML = '❌ خطأ في فتح الكاميرا: ' + err;
+                            parent.postMessage({{
+                                type: 'CAMERA_ERROR',
+                                error: err.toString()
+                            }}, '*');
+                        }});
+                    }} catch(e) {{
+                        statusEl.innerHTML = '❌ خطأ في تهيئة الماسح: ' + e.message;
+                        parent.postMessage({{
                             type: 'CAMERA_ERROR',
-                            error: err.toString()
-                        }, '*');
-                    });
-                }
+                            error: e.message
+                        }}, '*');
+                    }}
+                }}
                 
-                // Request camera permission immediately
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-                    .then(function(stream) {
+                // Request camera permission with proper error handling
+                function requestCamera() {{
+                    statusEl.innerHTML = '📱 جاري طلب إذن الكاميرا...';
+                    
+                    // First check if mediaDevices is supported
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {{
+                        statusEl.innerHTML = '❌ المتصفح لا يدعم الوصول للكاميرا';
+                        parent.postMessage({{
+                            type: 'CAMERA_ERROR',
+                            error: 'المتصفح لا يدعم الوصول للكاميرا'
+                        }}, '*');
+                        return;
+                    }}
+                    
+                    // Request camera permission
+                    navigator.mediaDevices.getUserMedia({{ 
+                        video: {{ 
+                            facingMode: "environment",
+                            width: {{ ideal: 1280 }},
+                            height: {{ ideal: 720 }}
+                        }} 
+                    }})
+                    .then(function(stream) {{
+                        // Stop the test stream immediately
                         stream.getTracks().forEach(track => track.stop());
-                        document.getElementById('qr-status').innerHTML = '✅ تم الحصول على الإذن - ضع رمز QR أمام الكاميرا';
+                        statusEl.innerHTML = '✅ تم الحصول على الإذن - ضع رمز QR أمام الكاميرا';
+                        // Start the actual scanner
                         startScanner();
-                    })
-                    .catch(function(err) {
-                        document.getElementById('qr-status').innerHTML = '❌ رفض الإذن بالكاميرا';
-                        parent.postMessage({
+                    }})
+                    .catch(function(err) {{
+                        let errorMsg = '❌ رفض الإذن بالكاميرا';
+                        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {{
+                            errorMsg = '❌ تم رفض إذن الكاميرا. يرجى السماح بالوصول من إعدادات المتصفح.';
+                        }} else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {{
+                            errorMsg = '❌ لم يتم العثور على كاميرا. تأكد من توصيل الكاميرا.';
+                        }} else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {{
+                            errorMsg = '❌ الكاميرا قيد الاستخدام من تطبيق آخر.';
+                        }}
+                        statusEl.innerHTML = errorMsg;
+                        parent.postMessage({{
                             type: 'CAMERA_PERMISSION_DENIED',
                             error: err.toString()
-                        }, '*');
-                    });
+                        }}, '*');
+                    }});
+                }}
+                
+                // Request camera immediately when page loads
+                if (document.readyState === 'loading') {{
+                    document.addEventListener('DOMContentLoaded', requestCamera);
+                }} else {{
+                    requestCamera();
+                }}
                 
                 // Listen for stop command
-                window.addEventListener('message', function(event) {
-                    if (event.data && event.data.type === 'STOP_SCANNER') {
-                        if (html5QrCode) {
-                            html5QrCode.stop().catch(() => {});
-                        }
-                    }
-                });
+                window.addEventListener('message', function(event) {{
+                    if (event.data && event.data.type === 'STOP_SCANNER') {{
+                        if (html5QrCode && scanningActive) {{
+                            html5QrCode.stop().catch(() => {{}});
+                        }}
+                    }}
+                }});
             </script>
         </body>
         </html>
@@ -4344,6 +4429,11 @@ def show_student_qr_attendance(db: Database):
         if result and isinstance(result, dict):
             st.session_state.qr_scan_result_message = result
             st.session_state.qr_scan_success = True
+            # Stop scanner in iframe
+            try:
+                st.components.v1.html("<script>parent.postMessage({type: 'STOP_SCANNER'}, '*');</script>", height=0)
+            except Exception:
+                pass
         elif result and result is True:
             st.session_state.qr_scan_success = True
         st.rerun()
@@ -4353,18 +4443,27 @@ def show_student_qr_attendance(db: Database):
         st.markdown("---")
         st.markdown("#### 💻 إدخال QR يدوياً")
         qr_input = st.text_area("الصق بيانات QR هنا (نص JSON)", height=80, key="student_qr_manual_input")
-        if st.button("معالجة QR", key="process_student_qr_btn", use_container_width=True):
-            if qr_input and qr_input.strip():
-                result = _process_student_qr_attendance(db, qr_input.strip())
-                if result and isinstance(result, dict):
-                    st.session_state.qr_scan_result_message = result
-                    st.session_state.qr_scan_success = True
-                    st.rerun()
-                elif result is True:
-                    st.session_state.qr_scan_success = True
-                    st.rerun()
-            else:
-                st.error("يرجى إدخال نص QR أولاً")
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("🔍 معالجة QR", key="process_student_qr_btn", use_container_width=True):
+                if qr_input and qr_input.strip():
+                    result = _process_student_qr_attendance(db, qr_input.strip())
+                    if result and isinstance(result, dict):
+                        st.session_state.qr_scan_result_message = result
+                        st.session_state.qr_scan_success = True
+                        st.rerun()
+                    elif result is True:
+                        st.session_state.qr_scan_success = True
+                        st.rerun()
+                else:
+                    st.error("يرجى إدخال نص QR أولاً")
+        with col_btn2:
+            if st.button("🔄 إعادة مسح الكاميرا", key="rescan_btn", use_container_width=True):
+                st.session_state.qr_scanning_active = True
+                st.session_state.qr_scan_success = False
+                st.session_state.qr_scan_result_message = None
+                st.session_state.qr_camera_check_done = False
+                st.rerun()
 
 def _process_student_qr_attendance(db: Database, qr_data: str):
     """
@@ -4743,14 +4842,23 @@ def _process_teacher_qr_attendance(db: Database, qr_data: str):
         st.error(f"❌ خطأ في معالجة الرمز: {str(e)}")
 
 def generate_qr_for_all_users(db: Database):
-    """Generate QR codes for all existing users."""
+    """Generate QR codes for authorized users only (Service Managers, Teachers, and Students)."""
     users = db.get_users()
     if users.empty:
         return {}
     
+    # Authorized roles for QR code generation
+    authorized_roles = ["Service Manager", "Teacher"]
+    
     qr_codes = {}
     for _, user in users.iterrows():
         user_id = user.get("user_id", "")
+        role = user.get("role", "")
+        
+        # Only generate QR codes for authorized roles
+        if role not in authorized_roles:
+            continue
+        
         user_type = "user"
         qr_codes[user_id] = get_qr_for_user(user_id, user_type)
     return qr_codes
