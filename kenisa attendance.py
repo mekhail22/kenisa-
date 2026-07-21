@@ -19,9 +19,6 @@ from PIL import Image
 import base64
 import hashlib
 import hmac
-import cv2
-import numpy as np
-from pyzbar.pyzbar import decode as pyzbar_decode
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -292,24 +289,6 @@ def inject_css():
         }
     </style>
     """, unsafe_allow_html=True)
-
-# =============================================================================
-# QR Code Decoding Helper (Native OpenCV + pyzbar)
-# =============================================================================
-def _decode_qr_from_image_opencv(image_bytes: bytes) -> str:
-    """Decode QR code from image bytes using OpenCV + pyzbar."""
-    try:
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            return None
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        decoded_objects = pyzbar_decode(gray)
-        for obj in decoded_objects:
-            return obj.data.decode('utf-8', errors='replace')
-    except Exception:
-        return None
-    return None
 
 # =============================================================================
 # تحسين الأداء: كاش مركزي داخل session_state
@@ -3695,10 +3674,10 @@ def main():
         st.session_state.open_help_dialog = False
 
 # =============================================================================
-# QR ATTENDANCE - Students (Native OpenCV/pyzbar)
+# Native Browser QR Scanner Component
 # =============================================================================
 def show_student_qr_attendance(db: Database):
-    """Student QR attendance with native OpenCV/pyzbar camera scanning."""
+    """Student QR attendance using browser-native Barcode Detection API."""
     st.markdown("<h2 class='main-header'>📱 حضور الطالبات بالرمز الثنائي</h2>", unsafe_allow_html=True)
     user = st.session_state.user
     if not user:
@@ -3730,16 +3709,13 @@ def show_student_qr_attendance(db: Database):
         st.markdown("---")
     if not st.session_state.get("qr_student_result_message"):
         st.markdown("### 📷 كاميرا QR", unsafe_allow_html=True)
-        camera_image = st.camera_input("التقط صورة لرمز QR", key="student_qr_camera")
-        if camera_image:
-            qr_text = _decode_qr_from_image_opencv(camera_image.getvalue())
-            if qr_text:
-                result = _process_student_qr_attendance(db, qr_text)
-                if result and isinstance(result, dict):
-                    st.session_state.qr_student_result_message = result
-                    st.rerun()
-            else:
-                st.error("❌ لم يتم التعرف على رمز QR. يرجى المحاولة مرة أخرى.")
+        # Use browser-native QR scanner via component
+        qr_result = _browser_qr_scanner("student")
+        if qr_result:
+            result = _process_student_qr_attendance(db, qr_result)
+            if result and isinstance(result, dict):
+                st.session_state.qr_student_result_message = result
+                st.rerun()
         st.markdown("---")
         st.markdown("### 💻 إدخال يدوي (إذا كانت الكاميرا غير متاحة)")
         st.info("💡 انسخ بيانات QR الطالبة (JSON) والصقها في الخانة أدناه")
@@ -3759,63 +3735,190 @@ def show_student_qr_attendance(db: Database):
                 st.session_state.qr_student_result_message = None
                 st.rerun()
 
-def _process_student_scan(db: Database, student_id: str, section_id: str):
-    students = db.get_students()
-    if students.empty:
-        return {"type": "error", "text": "❌ لا توجد طالبات مسجلات في النظام"}
-    student_id = student_id.strip()
-    section_id = section_id.strip()
-    if not student_id or not section_id:
-        return {"type": "error", "text": "❌ رمز QR غير مكتمل"}
-    student_row = students[students.student_id == student_id]
-    if student_row.empty:
-        return {"type": "error", "text": f"❌ الطالبة برقم {student_id} غير موجودة"}
-    student = student_row.iloc[0].to_dict()
-    student_status = str(student.get("status", "active")).strip().lower()
-    if student_status != "active":
-        return {"type": "error", "text": f"❌ حساب {student.get('full_name', '')} غير نشط"}
-    student_section = str(student.get("section_id", "")).strip()
-    if student_section and student_section != section_id:
-        return {"type": "error", "text": f"❌ الفصل في QR ({section_id}) لا يطابق سجل الطالبة ({student_section})"}
-    today = get_cairo_now().strftime("%Y-%m-%d")
-    attendance = db.get_attendance()
-    if not attendance.empty:
-        existing = attendance[(attendance.student_id == student_id) & (attendance.date == today)]
-        if not existing.empty:
-            section_name = ""
-            sections = db.get_sections()
-            if not sections.empty and section_id:
-                sec = sections[sections.section_id == section_id]
-                if not sec.empty:
-                    section_name = sec.iloc[0].get("section_name", "")
-            return {
-                "type": "warning", "text": "⚠️ تم تسجيل الحضور مسبقاً اليوم",
-                "student_name": student.get("full_name", ""), "section_name": section_name,
-                "time": get_cairo_now().strftime("%H:%M:%S")
-            }
-    user = st.session_state.get("user", {})
-    recorded_by = user.get("user_id", "") if user else ""
-    record = {
-        "record_id": str(uuid.uuid4()), "date": today, "student_id": student_id,
-        "status": "Present", "notes": "QR Attendance", "recorded_by": recorded_by, "section_id": section_id
-    }
-    df = db.get_attendance()
-    if df.empty:
-        df = pd.DataFrame(columns=["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
-    df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
-    db._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
-    db.add_log(recorded_by, f"QR Attendance: {student.get('full_name', '')} - {today}")
-    section_name = ""
-    sections = db.get_sections()
-    if not sections.empty and section_id:
-        sec = sections[sections.section_id == section_id]
-        if not sec.empty:
-            section_name = sec.iloc[0].get("section_name", "")
-    return {
-        "type": "success", "text": "✅ تم تسجيل حضور الطالبة بنجاح",
-        "student_name": student.get("full_name", ""), "section_name": section_name,
-        "time": get_cairo_now().strftime("%H:%M:%S")
-    }
+def show_teacher_qr_attendance(db: Database):
+    """Teacher QR attendance using browser-native Barcode Detection API."""
+    st.markdown("<h2 class='main-header'>📱 حضور المدرسين بالرمز الثنائي</h2>", unsafe_allow_html=True)
+    user = st.session_state.user
+    if not user:
+        st.error("يجب تسجيل الدخول أولاً")
+        st.stop()
+    if not check_permission("register_attendance"):
+        st.error("🚫 غير مصرح لك بتسجيل الحضور")
+        st.stop()
+    if 'qr_teacher_result_message' not in st.session_state:
+        st.session_state.qr_teacher_result_message = None
+    if st.session_state.get("qr_teacher_result_message"):
+        msg = st.session_state.qr_teacher_result_message
+        if msg["type"] == "success":
+            st.success(msg["text"])
+            st.balloons()
+        else:
+            st.warning(msg["text"])
+        if msg.get("teacher_name"):
+            st.markdown(f"**الاسم:** {msg['teacher_name']}")
+        if msg.get("section_name"):
+            st.markdown(f"**الفصل:** {msg['section_name']}")
+        if msg.get("time"):
+            st.markdown(f"**الوقت:** {msg['time']}")
+        if st.button("✅ مسح رمز آخر", use_container_width=True, key="new_teacher_qr_scan_btn"):
+            st.session_state.qr_teacher_result_message = None
+            st.rerun()
+        st.markdown("---")
+    if not st.session_state.get("qr_teacher_result_message"):
+        st.markdown("### 📷 كاميرا QR", unsafe_allow_html=True)
+        # Use browser-native QR scanner via component
+        qr_result = _browser_qr_scanner("teacher")
+        if qr_result:
+            result = _process_teacher_qr_attendance(db, qr_result)
+            if result:
+                st.session_state.qr_teacher_result_message = result
+                st.rerun()
+        st.markdown("---")
+        st.markdown("### 💻 إدخال يدوي (إذا كانت الكاميرا غير متاحة)")
+        st.info("💡 انسخ بيانات QR المدرس (JSON) والصقها في الخانة أدناه")
+        qr_input = st.text_area("بيانات QR (JSON)", height=100, key="teacher_qr_manual_input")
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("✅ معالجة QR", key="process_teacher_qr_btn_main", use_container_width=True):
+                if qr_input and qr_input.strip():
+                    result = _process_teacher_qr_attendance(db, qr_input.strip())
+                    if result:
+                        st.session_state.qr_teacher_result_message = result
+                        st.rerun()
+                else:
+                    st.error("يرجى إدخال بيانات QR أولاً")
+        with col_btn2:
+            if st.button("🔄 إعادة تعيين", key="reset_teacher_qr_btn", use_container_width=True):
+                st.session_state.qr_teacher_result_message = None
+                st.rerun()
+
+def _browser_qr_scanner(scanner_type: str) -> str:
+    """Native browser QR scanner using Barcode Detection API."""
+    scanner_id = f"qr_scanner_{scanner_type}"
+    
+    # HTML component with native Barcode Detection API
+    html_code = f"""
+    <div id="{scanner_id}_container" style="position: relative; width: 100%; max-width: 640px; margin: 0 auto;">
+        <video id="{scanner_id}_video" autoplay playsinline muted 
+            style="width: 100%; border-radius: 15px; border: 3px solid #667eea; box-shadow: 0 4px 12px rgba(102,126,234,0.3);">
+        </video>
+        <canvas id="{scanner_id}_canvas" style="display: none;"></canvas>
+        <div id="{scanner_id}_status" style="text-align: center; padding: 1rem; color: #667eea; font-size: 1.1rem; font-weight: 600;">
+            ⏳ جاري تحميل الكاميرا...
+        </div>
+        <div id="{scanner_id}_error" style="display: none; text-align: center; padding: 1rem; color: #e74c3c;">
+            <p>❌ خطأ في الوصول للكاميرا</p>
+            <p style="font-size: 0.9rem;">يرجى التأكد من إعطاء الإذن للكاميرا</p>
+        </div>
+    </div>
+    <script>
+    (function() {{
+        const video = document.getElementById('{scanner_id}_video');
+        const canvas = document.getElementById('{scanner_id}_canvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('{scanner_id}_status');
+        const errorEl = document.getElementById('{scanner_id}_error');
+        let scanning = true;
+        let detector = null;
+        
+        // Check if Barcode Detection API is supported
+        async function initScanner() {{
+            if (!('BarcodeDetector' in window)) {{
+                statusEl.innerHTML = '❌ متصفحك لا يدعم مسح QR تلقائياً<br>يرجى استخدام الإدخال اليدوي أدناه';
+                return;
+            }}
+            
+            try {{
+                detector = new BarcodeDetector({{ formats: ['qr_code'] }});
+                await startCamera();
+            }} catch (err) {{
+                console.error('Scanner init error:', err);
+                statusEl.innerHTML = '❌ فشل تهيئة الماسح';
+                errorEl.style.display = 'block';
+            }}
+        }}
+        
+        async function startCamera() {{
+            try {{
+                const stream = await navigator.mediaDevices.getUserMedia({{ 
+                    video: {{ facingMode: 'environment' }} 
+                }});
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {{
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    statusEl.innerHTML = '✅ وجه رمز QR للكاميرا';
+                    scanQR();
+                }};
+            }} catch (err) {{
+                console.error('Camera error:', err);
+                statusEl.innerHTML = '❌ لم يتم السماح بالكاميرا';
+                errorEl.style.display = 'block';
+            }}
+        }}
+        
+        async function scanQR() {{
+            if (!scanning || !detector) return;
+            
+            try {{
+                // Draw video frame to canvas
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Detect QR codes
+                const barcodes = await detector.detect(canvas);
+                
+                if (barcodes.length > 0) {{
+                    const qrData = barcodes[0].rawValue;
+                    console.log('QR detected:', qrData);
+                    scanning = false;
+                    
+                    // Send result to Streamlit
+                    statusEl.innerHTML = '✅ تم المسح بنجاح!';
+                    statusEl.style.color = '#27ae60';
+                    
+                    // Use Streamlit's component value mechanism
+                    window.parent.postMessage({{
+                        type: 'streamlit:setComponentValue',
+                        value: qrData
+                    }}, '*');
+                    
+                    // Stop camera
+                    if (video.srcObject) {{
+                        video.srcObject.getTracks().forEach(track => track.stop());
+                    }}
+                    return;
+                }}
+            }} catch (err) {{
+                console.error('Scan error:', err);
+            }}
+            
+            // Continue scanning
+            if (scanning) {{
+                requestAnimationFrame(scanQR);
+            }}
+        }}
+        
+        // Start scanner when component loads
+        initScanner();
+        
+        // Stop scanning when component unmounts
+        window.addEventListener('beforeunload', () => {{
+            scanning = false;
+            if (video.srcObject) {{
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }}
+        }});
+    }})();
+    </script>
+    """
+    
+    # Render the scanner component
+    component_value = st.components.v1.html(html_code, height=420, scrolling=False)
+    
+    # Return the scanned QR data
+    if component_value:
+        return str(component_value)
+    return None
 
 def _process_student_qr_attendance(db: Database, qr_data: str):
     """Process student QR code and record attendance."""
@@ -3856,11 +3959,25 @@ def _process_student_qr_attendance(db: Database, qr_data: str):
         return {"type": "error", "text": f"❌ رمز QR لا يخص طالبة في هذا الفصل. الفصل المسجل: {student_section_id}"}
     return _process_student_scan(db, student_id, qr_section_id)
 
-def _save_qr_attendance(db: Database, student: dict, student_id: str, section_id: str):
+def _process_student_scan(db: Database, student_id: str, section_id: str):
+    students = db.get_students()
+    if students.empty:
+        return {"type": "error", "text": "❌ لا توجد طالبات مسجلات في النظام"}
+    student_id = student_id.strip()
+    section_id = section_id.strip()
+    if not student_id or not section_id:
+        return {"type": "error", "text": "❌ رمز QR غير مكتمل"}
+    student_row = students[students.student_id == student_id]
+    if student_row.empty:
+        return {"type": "error", "text": f"❌ الطالبة برقم {student_id} غير موجودة"}
+    student = student_row.iloc[0].to_dict()
+    student_status = str(student.get("status", "active")).strip().lower()
+    if student_status != "active":
+        return {"type": "error", "text": f"❌ حساب {student.get('full_name', '')} غير نشط"}
+    student_section = str(student.get("section_id", "")).strip()
+    if student_section and student_section != section_id:
+        return {"type": "error", "text": f"❌ الفصل في QR ({section_id}) لا يطابق سجل الطالبة ({student_section})"}
     today = get_cairo_now().strftime("%Y-%m-%d")
-    now_time = get_cairo_now().strftime("%H:%M:%S")
-    user = st.session_state.get("user", {})
-    recorded_by = user.get("user_id", "") if user else ""
     attendance = db.get_attendance()
     if not attendance.empty:
         existing = attendance[(attendance.student_id == student_id) & (attendance.date == today)]
@@ -3872,226 +3989,132 @@ def _save_qr_attendance(db: Database, student: dict, student_id: str, section_id
                 if not sec.empty:
                     section_name = sec.iloc[0].get("section_name", "")
             return {
-                "type": "warning", "text": "⚠️ **تم تسجيل الحضور مسبقاً اليوم**",
-                "student_name": student.get("full_name", ""), "section_name": section_name, "time": now_time
+                "type": "warning", "text": "⚠️ تم تسجيل الحضور مسبقاً اليوم",
+                "student_name": student.get("full_name", ""), "section_name": section_name,
+                "time": get_cairo_now().strftime("%H:%M:%S")
             }
+    user = st.session_state.get("user", {})
+    recorded_by = user.get("user_id", "") if user else ""
     record = {
-        "record_id": str(uuid.uuid4()), "date": today, "student_id": student_id,
-        "status": "Present", "notes": "QR Attendance", "recorded_by": recorded_by, "section_id": section_id
+        "record_id": str(uuid.uuid4()),
+        "date": today,
+        "student_id": student_id,
+        "status": "حاضر",
+        "notes": "",
+        "recorded_by": recorded_by,
+        "section_id": section_id
     }
-    df = db.get_attendance()
-    if df.empty:
-        df = pd.DataFrame(columns=["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
-    df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
-    db._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+    db.batch_add_attendance([record])
+    db.add_log(recorded_by, f"تسجيل حضور QR للطالبة {student.get('full_name', student_id)}")
     section_name = ""
     sections = db.get_sections()
     if not sections.empty and section_id:
         sec = sections[sections.section_id == section_id]
         if not sec.empty:
             section_name = sec.iloc[0].get("section_name", "")
-    db.add_log(recorded_by, f"QR Attendance: {student.get('full_name', '')} - {today}")
     return {
-        "type": "success", "text": "✅ **تم تسجيل حضور الطالبة بنجاح**",
-        "student_name": student.get("full_name", ""), "section_name": section_name, "time": now_time
+        "type": "success",
+        "text": f"✅ تم تسجيل حضور الطالبة: {student.get('full_name', student_id)}",
+        "student_name": student.get("full_name", ""),
+        "section_name": section_name,
+        "time": get_cairo_now().strftime("%H:%M:%S")
     }
 
-# =============================================================================
-# QR ATTENDANCE - Teachers (Native OpenCV/pyzbar)
-# =============================================================================
-def show_teacher_qr_attendance(db: Database):
-    """Teacher QR attendance with native OpenCV/pyzbar camera scanning."""
-    st.markdown("<h2 class='main-header'>📱 حضور المدرسين بالرمز الثنائي</h2>", unsafe_allow_html=True)
-    user = st.session_state.user
-    if not user:
-        st.error("يجب تسجيل الدخول أولاً")
-        st.stop()
-    if not check_permission("register_attendance"):
-        st.error("🚫 غير مصرح لك بتسجيل الحضور")
-        st.stop()
-    if 'qr_teacher_result_message' not in st.session_state:
-        st.session_state.qr_teacher_result_message = None
-    if st.session_state.get("qr_teacher_result_message"):
-        msg = st.session_state.qr_teacher_result_message
-        if msg["type"] == "success":
-            st.success(msg["text"])
-            st.balloons()
-        else:
-            st.warning(msg["text"])
-        if msg.get("teacher_name"):
-            st.markdown(f"**الاسم:** {msg['teacher_name']}")
-        if msg.get("section_name"):
-            st.markdown(f"**الفصل:** {msg['section_name']}")
-        if msg.get("time"):
-            st.markdown(f"**الوقت:** {msg['time']}")
-        if st.button("✅ مسح رمز آخر", use_container_width=True, key="new_teacher_qr_scan_btn"):
-            st.session_state.qr_teacher_result_message = None
-            st.rerun()
-        st.markdown("---")
-    if not st.session_state.get("qr_teacher_result_message"):
-        st.markdown("### 📷 كاميرا QR", unsafe_allow_html=True)
-        camera_image = st.camera_input("التقط صورة لرمز QR المدرس", key="teacher_qr_camera")
-        if camera_image:
-            qr_text = _decode_qr_from_image_opencv(camera_image.getvalue())
-            if qr_text:
-                result = _process_teacher_qr_attendance(db, qr_text)
-                if result:
-                    st.session_state.qr_teacher_result_message = result
-                    st.rerun()
-            else:
-                st.error("❌ لم يتم التعرف على رمز QR. يرجى المحاولة مرة أخرى.")
-        st.markdown("---")
-        st.markdown("### 💻 إدخال يدوي (إذا كانت الكاميرا غير متاحة)")
-        st.info("💡 الصق بيانات QR المدرس هنا. التنسيق: user:USER_ID")
-        qr_input = st.text_area("بيانات QR", height=100, key="teacher_qr_manual_input")
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("✅ معالجة QR", key="process_teacher_qr_btn_main", use_container_width=True):
-                if qr_input and qr_input.strip():
-                    result = _process_teacher_qr_attendance(db, qr_input.strip())
-                    if result:
-                        st.session_state.qr_teacher_result_message = result
-                        st.rerun()
-                else:
-                    st.error("يرجى إدخال بيانات QR أولاً")
-        with col_btn2:
-            if st.button("🔄 إعادة تعيين", key="reset_teacher_qr_btn", use_container_width=True):
-                st.session_state.qr_teacher_result_message = None
-                st.rerun()
+def _save_qr_attendance(db: Database, student: dict, student_id: str, section_id: str):
+    today = get_cairo_now().strftime("%Y-%m-%d")
+    attendance = db.get_attendance()
+    if not attendance.empty:
+        existing = attendance[(attendance.student_id == student_id) & (attendance.date == today)]
+        if not existing.empty:
+            section_name = ""
+            sections = db.get_sections()
+            if not sections.empty and section_id:
+                sec = sections[sections.section_id == section_id]
+                if not sec.empty:
+                    section_name = sec.iloc[0].get("section_name", "")
+            return {
+                "type": "warning",
+                "text": "⚠️ تم تسجيل الحضور مسبقاً اليوم",
+                "student_name": student.get("full_name", ""),
+                "section_name": section_name,
+                "time": get_cairo_now().strftime("%H:%M:%S")
+            }
+    user = st.session_state.get("user", {})
+    recorded_by = user.get("user_id", "") if user else ""
+    record = {
+        "record_id": str(uuid.uuid4()),
+        "date": today,
+        "student_id": student_id,
+        "status": "حاضر",
+        "notes": "",
+        "recorded_by": recorded_by,
+        "section_id": section_id
+    }
+    db.batch_add_attendance([record])
+    db.add_log(recorded_by, f"تسجيل حضور QR للطالبة {student.get('full_name', student_id)}")
+    section_name = ""
+    sections = db.get_sections()
+    if not sections.empty and section_id:
+        sec = sections[sections.section_id == section_id]
+        if not sec.empty:
+            section_name = sec.iloc[0].get("section_name", "")
+    return {
+        "type": "success",
+        "text": f"✅ تم تسجيل حضور الطالبة: {student.get('full_name', student_id)}",
+        "student_name": student.get("full_name", ""),
+        "section_name": section_name,
+        "time": get_cairo_now().strftime("%H:%M:%S")
+    }
 
 def _process_teacher_qr_attendance(db: Database, qr_data: str):
-    """Process teacher QR code from camera or manual input."""
-    result = _process_teacher_scan(db, qr_data)
-    if result:
-        return result
-    return {"type": "error", "text": "❌ تنسيق QR غير صحيح"}
-
-def _process_teacher_scan(db: Database, qr_data: str):
-    """Process teacher QR scan - supports both HMAC-signed JSON and simple user:ID format."""
-    # Try JSON format first (HMAC-signed)
-    try:
-        data = json.loads(qr_data)
-        if "teacher_id" in data and "teacher_name" in data:
-            teacher_id = data.get("teacher_id", "")
-            teacher_name = data.get("teacher_name", "")
-            if not teacher_id or not teacher_name:
-                return {"type": "error", "text": "❌ بيانات QR غير مكتملة"}
-            users = db.get_users()
-            teacher = users[(users.user_id == teacher_id) & (users.role == "Teacher")]
-            if teacher.empty:
-                return {"type": "error", "text": "❌ المدرس غير موجود"}
-            teacher_status = str(teacher.iloc[0].get("status", "active")).strip().lower()
-            if teacher_status != "active":
-                return {"type": "error", "text": f"❌ حساب {teacher_name} غير مفعّل"}
-            today = get_cairo_now().strftime("%Y-%m-%d")
-            ta = db.get_teacher_attendance()
-            if not ta.empty:
-                existing = ta[(ta.teacher_id == teacher_id) & (ta.date == today)]
-                if not existing.empty:
-                    section_name = ""
-                    sections = db.get_sections()
-                    if not sections.empty and teacher.iloc[0].get("section_id"):
-                        sec = sections[sections.section_id == teacher.iloc[0].get("section_id")]
-                        if not sec.empty:
-                            section_name = sec.iloc[0].get("section_name", "")
-                    return {
-                        "type": "warning", "text": "⚠️ تم تسجيل حضور هذا المدرس مسبقاً اليوم",
-                        "teacher_name": teacher_name, "section_name": section_name,
-                        "time": existing.iloc[0].get('check_in_time', 'غير مسجل')
-                    }
-            user = st.session_state.get("user", {})
-            recorded_by = user.get("user_id", "") if user else ""
-            record = {
-                "id": str(uuid.uuid4()), "teacher_id": teacher_id, "teacher_name": teacher_name,
-                "date": today, "status": "present", "check_in_time": get_cairo_now().strftime("%H:%M:%S"),
-                "method": "qr", "recorded_by": recorded_by
-            }
-            db.add_teacher_attendance(record)
-            db.add_log(recorded_by, f"QR Teacher Attendance: {teacher_name} - {today}")
-            sections = db.get_sections()
-            section_name = ""
-            if not sections.empty and teacher.iloc[0].get("section_id"):
-                sec = sections[sections.section_id == teacher.iloc[0].get("section_id")]
-                if not sec.empty:
-                    section_name = sec.iloc[0].get("section_name", "")
-            return {
-                "type": "success", "text": "✅ تم تسجيل حضور المدرس بنجاح",
-                "teacher_name": teacher_name, "section_name": section_name,
-                "time": get_cairo_now().strftime("%H:%M:%S")
-            }
-    except json.JSONDecodeError:
-        pass
-    # Try simple format: "user:teacher_id"
-    try:
-        parts = qr_data.split(":")
-        if len(parts) >= 2 and parts[0].strip().lower() == "user":
-            teacher_id = parts[1].strip()
-            if not teacher_id:
-                return {"type": "error", "text": "❌ تنسيق QR غير صحيح"}
-            users = db.get_users()
-            teachers = users[users.role == "Teacher"]
-            teacher_row = teachers[teachers.user_id == teacher_id]
-            if teacher_row.empty:
-                return {"type": "error", "text": "❌ المدرس غير موجود"}
-            teacher = teacher_row.iloc[0].to_dict()
-            teacher_status = str(teacher.get("status", "active")).strip().lower()
-            if teacher_status != "active":
-                return {"type": "error", "text": f"❌ حساب {teacher.get('full_name', '')} غير مفعّل"}
-            today = get_cairo_now().strftime("%Y-%m-%d")
-            ta = db.get_teacher_attendance()
-            if not ta.empty:
-                existing = ta[(ta.teacher_id == teacher_id) & (ta.date == today)]
-                if not existing.empty:
-                    section_name = ""
-                    sections = db.get_sections()
-                    if not sections.empty and teacher.get("section_id"):
-                        sec = sections[sections.section_id == teacher.get("section_id")]
-                        if not sec.empty:
-                            section_name = sec.iloc[0].get("section_name", "")
-                    return {
-                        "type": "warning", "text": "⚠️ تم تسجيل حضور هذا المدرس مسبقاً اليوم",
-                        "teacher_name": teacher.get("full_name", ""), "section_name": section_name,
-                        "time": existing.iloc[0].get('check_in_time', 'غير مسجل')
-                    }
-            user = st.session_state.get("user", {})
-            recorded_by = user.get("user_id", "") if user else ""
-            record = {
-                "id": str(uuid.uuid4()), "teacher_id": teacher_id,
-                "teacher_name": teacher.get("full_name", ""), "date": today,
-                "status": "present", "check_in_time": get_cairo_now().strftime("%H:%M:%S"),
-                "method": "qr", "recorded_by": recorded_by
-            }
-            db.add_teacher_attendance(record)
-            db.add_log(recorded_by, f"QR Teacher Attendance: {teacher.get('full_name', '')} - {today}")
-            sections = db.get_sections()
-            section_name = ""
-            if not sections.empty and teacher.get("section_id"):
-                sec = sections[sections.section_id == teacher.get("section_id")]
-                if not sec.empty:
-                    section_name = sec.iloc[0].get("section_name", "")
-            return {
-                "type": "success", "text": "✅ تم تسجيل حضور المدرس بنجاح",
-                "teacher_name": teacher.get("full_name", ""), "section_name": section_name,
-                "time": get_cairo_now().strftime("%H:%M:%S")
-            }
-    except Exception:
-        pass
-    return {"type": "error", "text": "❌ تنسيق QR غير صحيح"}
-
-def generate_qr_for_all_users(db: Database):
+    """Process teacher QR code and record attendance."""
     users = db.get_users()
     if users.empty:
-        return {}
-    authorized_roles = ["Service Manager", "Teacher"]
-    qr_codes = {}
-    for _, user in users.iterrows():
-        user_id = user.get("user_id", "")
-        role = user.get("role", "")
-        if role not in authorized_roles:
-            continue
-        user_type = "user"
-        qr_codes[user_id] = get_qr_for_user(user_id, user_type)
-    return qr_codes
+        return {"type": "error", "text": "❌ لا يوجد مستخدمون مسجلون في النظام"}
+    try:
+        qr_json = json.loads(qr_data)
+    except json.JSONDecodeError:
+        return {"type": "error", "text": "❌ رمز QR غير صالح - يجب أن يكون بصيغة JSON"}
+    teacher_id = str(qr_json.get("teacher_id", "")).strip()
+    teacher_name = str(qr_json.get("teacher_name", "")).strip()
+    if not teacher_id or not teacher_name:
+        return {"type": "error", "text": "❌ رمز QR غير مكتمل - يجب أن يحتوي على teacher_id و teacher_name"}
+    teacher_row = users[(users.user_id == teacher_id) & (users.role == "Teacher")]
+    if teacher_row.empty:
+        return {"type": "error", "text": f"❌ المدرس برقم {teacher_id} غير موجود في النظام"}
+    teacher_status = str(teacher_row.iloc[0].get("status", "active")).strip().lower()
+    if teacher_status != "active":
+        return {"type": "error", "text": f"❌ حساب المدرس {teacher_name} غير نشط"}
+    today = get_cairo_now().strftime("%Y-%m-%d")
+    existing = db.get_teacher_attendance_by_date(today, teacher_id)
+    if not existing.empty:
+        return {
+            "type": "warning",
+            "text": "⚠️ تم تسجيل حضور المدرس مسبقاً اليوم",
+            "teacher_name": teacher_name,
+            "time": existing.iloc[0].get("check_in_time", "غير مسجل")
+        }
+    record = {
+        "id": str(uuid.uuid4()),
+        "teacher_id": teacher_id,
+        "teacher_name": teacher_name,
+        "date": today,
+        "status": "present",
+        "check_in_time": get_cairo_now().strftime("%H:%M:%S"),
+        "method": "qr",
+        "recorded_by": st.session_state.user.get("user_id", ""),
+        "recorded_by_name": st.session_state.user.get("full_name", ""),
+        "ip_address": get_client_info()[0],
+        "session_id": st.session_state.get("session_id", str(uuid.uuid4()))
+    }
+    db.add_teacher_attendance(record)
+    db.add_log(st.session_state.user.get("user_id", ""), f"تم تسجيل حضور مدرس {teacher_name} عبر QR")
+    return {
+        "type": "success",
+        "text": f"✅ تم تسجيل حضور المدرس: {teacher_name}",
+        "teacher_name": teacher_name,
+        "time": record["check_in_time"]
+    }
 
 if __name__ == "__main__":
     main()
