@@ -2884,6 +2884,20 @@ def show_class_competition_scores(db: Database):
                 ranking = filtered_df.groupby("اسم الطالبة")["score"].sum().reset_index().sort_values("score", ascending=False)
                 ranking.index = range(1, len(ranking) + 1)
                 st.dataframe(ranking, use_container_width=True)
+                
+                # Export leaderboard
+                st.markdown("---")
+                st.subheader("📥 تصدير قائمة المتقدمين")
+                col1, col2 = st.columns(2)
+                with col1:
+                    csv_data = export_to_csv(ranking)
+                    if csv_data:
+                        st.download_button("📥 تصدير CSV", csv_data, "leaderboard.csv", "text/csv", use_container_width=True)
+                with col2:
+                    excel_data = export_to_excel(ranking)
+                    if excel_data:
+                        st.download_button("📥 تصدير Excel", excel_data, "leaderboard.xlsx", 
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     else:
         st.info("لا توجد نتائج مطابقة للبحث.")
 
@@ -4551,7 +4565,7 @@ def main():
 # =============================================================================
 
 def show_student_qr_attendance(db: Database):
-    """Student QR attendance - scan QR to record attendance with camera permission handling."""
+    """Student QR attendance - manual QR entry (no CDN dependency)."""
     st.markdown("<h2 class='main-header'>📱 حضور الطالبات بالرمز الثنائي</h2>", unsafe_allow_html=True)
     
     user = st.session_state.user
@@ -4559,20 +4573,14 @@ def show_student_qr_attendance(db: Database):
         st.error("يجب تسجيل الدخول أولاً")
         st.stop()
     
-    # Check permission
     if not check_permission("register_attendance"):
         st.error("🚫 غير مصرح لك بتسجيل الحضور")
         st.stop()
     
-    # Initialize QR scanning state
-    if 'qr_scanning_active' not in st.session_state:
-        st.session_state.qr_scanning_active = True
     if 'qr_scan_success' not in st.session_state:
         st.session_state.qr_scan_success = False
-    if 'qr_scan_result' not in st.session_state:
-        st.session_state.qr_scan_result = None
-    if 'qr_permission_denied' not in st.session_state:
-        st.session_state.qr_permission_denied = False
+    if 'qr_scan_result_message' not in st.session_state:
+        st.session_state.qr_scan_result_message = None
     
     # Scanner error dialog
     if st.session_state.get("qr_scanner_error"):
@@ -4603,7 +4611,6 @@ def show_student_qr_attendance(db: Database):
         elif msg["type"] == "error":
             st.error(msg["text"])
         
-        # Show student info if available
         if msg.get("student_name"):
             st.markdown(f"**الاسم:** {msg['student_name']}")
         if msg.get("section_name"):
@@ -4611,228 +4618,36 @@ def show_student_qr_attendance(db: Database):
         if msg.get("time"):
             st.markdown(f"**الوقت:** {msg['time']}")
         
-        # Reset button
-        if st.button("📱 مسح QR جديد", use_container_width=True, key="new_qr_scan_btn"):
-            # Clear all QR related state
-            for key in ['qr_scan_result_message', 'qr_scanning_active', 'qr_scan_success', 
-                        'qr_scan_result', 'qr_permission_denied', 'qr_scanner_error']:
-                if key in st.session_state:
-                    st.session_state[key] = None if 'message' in key or 'result' in key or 'error' in key else False
-            st.session_state.qr_scanning_active = True
+        if st.button("✅ تسجيل جديد", use_container_width=True, key="new_qr_scan_btn"):
+            st.session_state.qr_scan_result_message = None
+            st.session_state.qr_scan_success = False
             st.rerun()
         return
     
-    # QR scanner with robust initialization and error handling
-    if st.session_state.qr_scanning_active and not st.session_state.qr_scan_success:
-        scanner_id = f"qr-scanner-{user.get('user_id', 'default')}-{int(time.time())}"
-        
-        st.components.v1.html(f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                body {{ 
-                    margin: 0; 
-                    padding: 0; 
-                    font-family: 'Cairo', 'Segoe UI', sans-serif; 
-                    background: transparent; 
-                }}
-                #{scanner_id} {{ 
-                    width: 100%; 
-                    min-height: 400px; 
-                    border-radius: 15px; 
-                    overflow: hidden;
-                    background: #000;
-                }}
-                #qr-status {{ 
-                    text-align: center; 
-                    padding: 1.5rem; 
-                    color: #667eea;
-                    font-weight: 600;
-                    font-size: 1.1rem;
-                    direction: rtl;
-                }}
-                #qr-error {{
-                    display: none;
-                    text-align: center;
-                    padding: 1.5rem;
-                    color: #e74c3c;
-                    font-weight: 600;
-                    direction: rtl;
-                }}
-            </style>
-        </head>
-        <body>
-            <div id="qr-status">⏳ جاري التحميل...</div>
-            <div id="qr-error"></div>
-            <div id="{scanner_id}"></div>
-            
-            <script>
-                (function() {{
-                    const scannerId = "{scanner_id}";
-                    const statusEl = document.getElementById('qr-status');
-                    const errorEl = document.getElementById('qr-error');
-                    let html5QrCode = null;
-                    let isScanning = false;
-                    let initAttempts = 0;
-                    const MAX_INIT_ATTEMPTS = 50;
-                    
-                    function showError(message) {{
-                        statusEl.style.display = 'none';
-                        errorEl.style.display = 'block';
-                        errorEl.innerHTML = '❌ ' + message;
-                        parent.postMessage({{type: 'SCANNER_ERROR', error: message}}, '*');
-                    }}
-                    
-                    function showStatus(message) {{
-                        statusEl.innerHTML = message;
-                    }}
-                    
-                    function startScanner() {{
-                        try {{
-                            if (typeof Html5Qrcode === 'undefined') {{
-                                showError('مكتبة المسح غير محملة. يرجى تحديث الصفحة.');
-                                return;
-                            }}
-                            
-                            html5QrCode = new Html5Qrcode(scannerId);
-                            
-                            html5QrCode.start(
-                                {{ facingMode: "environment" }},
-                                {{
-                                    fps: 20,
-                                    qrbox: {{ width: 280, height: 280 }},
-                                    aspectRatio: 1.0,
-                                    disableFlip: false,
-                                    experimentalFeatures: {{}}
-                                }},
-                                function(decodedText) {{
-                                    if (!isScanning) {{
-                                        isScanning = true;
-                                        showStatus('✅ تم المسح بنجاح!');
-                                        
-                                        setTimeout(function() {{
-                                            parent.postMessage({{type: 'QR_SCANNED', data: decodedText}}, '*');
-                                        }}, 100);
-                                    }}
-                                }},
-                                function(errorMessage) {{
-                                    // Silent scan errors
-                                }}
-                            ).catch(function(err) {{
-                                let errorMsg = 'خطأ في فتح الكاميرا';
-                                if (err && err.name === 'NotAllowedError') {{
-                                    errorMsg = 'تم رفض إذن الكاميرا. يرجى السماح بالوصصول من إعدادات المتصفح.';
-                                }} else if (err && err.name === 'NotFoundError') {{
-                                    errorMsg = 'لم يتم العثور على كاميرا.';
-                                }} else if (err && err.name === 'NotReadableError') {{
-                                    errorMsg = 'الكاميرا قيد الاستخدام.';
-                                }}
-                                showError(errorMsg);
-                            }});
-                            
-                        }} catch(e) {{
-                            showError('خطأ في تهيئة الماسح: ' + (e.message || e));
-                        }}
-                    }}
-                    
-                    function waitForLibrary() {{
-                        if (typeof Html5Qrcode !== 'undefined') {{
-                            showStatus('✓ تم تحميل المكتبة - جاري طلب الإذن...');
-                            setTimeout(startScanner, 100);
-                        }} else if (initAttempts < MAX_INIT_ATTEMPTS) {{
-                            initAttempts++;
-                            if (initAttempts === 1) {{
-                                showStatus('⏳ جاري تحميل مكتبة المسح...');
-                            }}
-                            setTimeout(waitForLibrary, 200);
-                        }} else {{
-                            showError('فشل تحميل مكتبة المسح بعد عدة محاولات. يرجى تحديث الصفحة.');
-                        }}
-                    }}
-                    
-                    // Load library dynamically
-                    function loadLibrary() {{
-                        if (typeof Html5Qrcode !== 'undefined') {{
-                            waitForLibrary();
-                            return;
-                        }}
-                        
-                        const script = document.createElement('script');
-                        script.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js';
-                        script.onload = function() {{
-                            showStatus('✓ تم تحميل المكتبة - جاري التهيئة...');
-                            setTimeout(waitForLibrary, 100);
-                        }};
-                        script.onerror = function() {{
-                            showError('فشل تحميل مكتبة المسح من CDN. يرجى التحقق من الإنترنت.');
-                        }};
-                        document.head.appendChild(script);
-                    }}
-                    
-                    // Initialize immediately
-                    if (document.readyState === 'loading') {{
-                        document.addEventListener('DOMContentLoaded', loadLibrary);
-                    }} else {{
-                        loadLibrary();
-                    }}
-                    
-                    // Listen for stop command
-                    window.addEventListener('message', function(event) {{
-                        if (event.data && event.data.type === 'STOP_SCANNER') {{
-                            if (html5QrCode && isScanning) {{
-                                html5QrCode.stop().then(function() {{
-                                    isScanning = false;
-                                }}).catch(function() {{}});
-                            }}
-                        }}
-                    }});
-                }})();
-            </script>
-        </body>
-        </html>
-        """, height=450)
-    
-    # Process QR scan results from the HTML component
-    qr_result = st.session_state.get("qr_scan_result")
-    if qr_result and not st.session_state.get("qr_scan_result_message"):
-        st.session_state.qr_scanning_active = False
-        result = _process_student_qr_attendance(db, qr_result)
-        if result and isinstance(result, dict):
-            st.session_state.qr_scan_result_message = result
-            st.session_state.qr_scan_success = True
-        elif result and result is True:
-            st.session_state.qr_scan_success = True
-        st.rerun()
-    
-    # Manual QR input fallback (shown only when no success yet)
-    if not st.session_state.qr_scan_success and not st.session_state.get("qr_scan_result_message"):
-        st.markdown("---")
-        st.markdown("#### 💻 إدخال QR يدوياً")
-        qr_input = st.text_area("الصق بيانات QR هنا (نص JSON)", height=80, key="student_qr_manual_input")
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("🔍 معالجة QR", key="process_student_qr_btn", use_container_width=True):
-                if qr_input and qr_input.strip():
-                    result = _process_student_qr_attendance(db, qr_input.strip())
-                    if result and isinstance(result, dict):
-                        st.session_state.qr_scan_result_message = result
-                        st.session_state.qr_scan_success = True
-                        st.rerun()
-                    elif result is True:
-                        st.session_state.qr_scan_success = True
-                        st.rerun()
-                else:
-                    st.error("يرجى إدخال نص QR أولاً")
-        with col_btn2:
-            if st.button("🔄 إعادة مسح الكاميرا", key="rescan_btn", use_container_width=True):
-                st.session_state.qr_scanning_active = True
-                st.session_state.qr_scan_success = False
-                st.session_state.qr_scan_result_message = None
-                st.session_state.qr_camera_check_done = False
-                st.rerun()
+    # Manual QR input (PRIMARY - no CDN needed)
+    st.markdown("### 💻 إدخال بيانات QR")
+    st.info("💡 انسخ بيانات QR الطالبة (JSON) والصقها في الخانة أدناه")
+    qr_input = st.text_area("بيانات QR (JSON)", height=100, key="student_qr_manual_input_main")
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("✅ تسجيل الحضور", key="process_student_qr_btn_main", use_container_width=True):
+            if qr_input and qr_input.strip():
+                result = _process_student_qr_attendance(db, qr_input.strip())
+                if result and isinstance(result, dict):
+                    st.session_state.qr_scan_result_message = result
+                    st.session_state.qr_scan_success = True
+                    st.rerun()
+                elif result is True:
+                    st.session_state.qr_scan_success = True
+                    st.rerun()
+            else:
+                st.error("يرجى إدخال بيانات QR أولاً")
+    with col_btn2:
+        if st.button("🔄 إعادة تعيين", key="reset_qr_btn", use_container_width=True):
+            st.session_state.qr_scan_result_message = None
+            st.session_state.qr_scan_success = False
+            st.rerun()
+
 
 def _process_student_qr_attendance(db: Database, qr_data: str):
     """
