@@ -4654,40 +4654,61 @@ def show_student_qr_attendance(db: Database):
         <body>
             <div id="qr-status">⏳ جاري تحميل مكتبة المسح...</div>
             <div id="qr-reader"></div>
-            <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js" id="html5qrcode-student"></script>
             <script>
-            let scanning = false;
-            function startScanning() {
-                if (scanning) return;
-                scanning = true;
-                try {
+            (function() {
+                function _log(msg) { console.log('[QR] ' + msg); }
+                function _showStatus(html) {
+                    var el = document.getElementById('qr-status');
+                    if (el) el.innerHTML = html;
+                }
+                function _startScanner() {
+                    if (typeof window.Html5Qrcode === 'undefined') {
+                        _showStatus('❌ فشل تحميل مكتبة المسح. يرجى تحديث الصفحة.');
+                        _log('ERROR: Html5Qrcode is not defined');
+                        try { parent.postMessage({type: 'CAMERA_ERROR', error: 'Html5Qrcode is not defined'}, '*'); } catch(e) {}
+                        return;
+                    }
+                    _log('window.Html5Qrcode detected. Starting scanner...');
                     var html5QrCode = new Html5Qrcode("qr-reader");
                     html5QrCode.start(
                         { facingMode: "environment" },
                         { fps: 15, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0, disableFlip: false },
                         function(decodedText) {
-                            if (!scanning) return;
-                            scanning = false;
-                            document.getElementById('qr-status').innerHTML = '✅ تم المسح بنجاح!';
-                            parent.postMessage({type: 'STUDENT_QR_SCANNED', data: decodedText}, '*');
+                            _log('QR detected: ' + decodedText);
+                            _showStatus('✅ تم المسح بنجاح!');
+                            try { parent.postMessage({type: 'STUDENT_QR_SCANNED', data: decodedText}, '*'); } catch(e) {}
                         },
                         function(error) { /* Silent scan errors */ }
-                    ).catch(function(err) {
-                        scanning = false;
-                        document.getElementById('qr-status').innerHTML = '❌ خطأ في فتح الكاميرا: ' + err;
-                        parent.postMessage({type: 'CAMERA_ERROR', error: err}, '*');
+                    ).then(function() {
+                        _log('Camera permission granted. Scanner active.');
+                        _showStatus('✅ تم الحصول على الإذن - وجه رمز QR للكاميرا');
+                    }).catch(function(err) {
+                        _log('Camera error: ' + err);
+                        _showStatus('❌ خطأ في فتح الكاميرا: ' + err);
+                        try { parent.postMessage({type: 'CAMERA_ERROR', error: err}, '*'); } catch(e) {}
                     });
-                } catch(e) {
-                    scanning = false;
-                    document.getElementById('qr-status').innerHTML = '❌ خطأ: ' + e.message;
-                    parent.postMessage({type: 'CAMERA_ERROR', error: e.message}, '*');
                 }
-            }
-            if (document.readyState === 'complete') {
-                setTimeout(startScanning, 500);
-            } else {
-                window.addEventListener('load', function() { setTimeout(startScanning, 500); });
-            }
+                function _onScriptLoad() {
+                    _log('html5-qrcode script loaded');
+                    _startScanner();
+                }
+                function _onScriptError() {
+                    _log('ERROR: Failed to load html5-qrcode CDN script');
+                    _showStatus('❌ فشل تحميل مكتبة المسح من الشبكة. يرجى التحقق من الاتصال بالإنترنت.');
+                    try { parent.postMessage({type: 'CAMERA_ERROR', error: 'CDN script failed to load'}, '*'); } catch(e) {}
+                }
+                var script = document.getElementById('html5qrcode-student');
+                if (script) {
+                    script.onload = _onScriptLoad;
+                    script.onerror = _onScriptError;
+                    if (script.readyState === 'complete' || script.readyState === 'loaded') {
+                        _onScriptLoad();
+                    }
+                } else {
+                    _onScriptError();
+                }
+            })();
             </script>
         </body>
         </html>
@@ -5030,40 +5051,61 @@ def show_teacher_qr_attendance(db: Database):
         <body>
             <div id="qr-status">⏳ جاري تحميل مكتبة المسح...</div>
             <div id="qr-reader"></div>
-            <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js" id="html5qrcode-teacher"></script>
             <script>
-            let scanning = false;
-            function startScanning() {
-                if (scanning) return;
-                scanning = true;
-                try {
+            (function() {
+                function _log(msg) { console.log('[QR] ' + msg); }
+                function _showStatus(html) {
+                    var el = document.getElementById('qr-status');
+                    if (el) el.innerHTML = html;
+                }
+                function _startScanner() {
+                    if (typeof window.Html5Qrcode === 'undefined') {
+                        _showStatus('❌ فشل تحميل مكتبة المسح. يرجى تحديث الصفحة.');
+                        _log('ERROR: Html5Qrcode is not defined');
+                        try { parent.postMessage({type: 'CAMERA_ERROR', error: 'Html5Qrcode is not defined'}, '*'); } catch(e) {}
+                        return;
+                    }
+                    _log('window.Html5Qrcode detected. Starting scanner...');
                     var html5QrCode = new Html5Qrcode("qr-reader");
                     html5QrCode.start(
                         { facingMode: "environment" },
                         { fps: 15, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0, disableFlip: false },
                         function(decodedText) {
-                            if (!scanning) return;
-                            scanning = false;
-                            document.getElementById('qr-status').innerHTML = '✅ تم المسح بنجاح!';
-                            parent.postMessage({type: 'TEACHER_QR_SCANNED', data: decodedText}, '*');
+                            _log('QR detected: ' + decodedText);
+                            _showStatus('✅ تم المسح بنجاح!');
+                            try { parent.postMessage({type: 'TEACHER_QR_SCANNED', data: decodedText}, '*'); } catch(e) {}
                         },
                         function(error) { /* Silent scan errors */ }
-                    ).catch(function(err) {
-                        scanning = false;
-                        document.getElementById('qr-status').innerHTML = '❌ خطأ في فتح الكاميرا: ' + err;
-                        parent.postMessage({type: 'CAMERA_ERROR', error: err}, '*');
+                    ).then(function() {
+                        _log('Camera permission granted. Scanner active.');
+                        _showStatus('✅ تم الحصول على الإذن - وجه رمز QR للكاميرا');
+                    }).catch(function(err) {
+                        _log('Camera error: ' + err);
+                        _showStatus('❌ خطأ في فتح الكاميرا: ' + err);
+                        try { parent.postMessage({type: 'CAMERA_ERROR', error: err}, '*'); } catch(e) {}
                     });
-                } catch(e) {
-                    scanning = false;
-                    document.getElementById('qr-status').innerHTML = '❌ خطأ: ' + e.message;
-                    parent.postMessage({type: 'CAMERA_ERROR', error: e.message}, '*');
                 }
-            }
-            if (document.readyState === 'complete') {
-                setTimeout(startScanning, 500);
-            } else {
-                window.addEventListener('load', function() { setTimeout(startScanning, 500); });
-            }
+                function _onScriptLoad() {
+                    _log('html5-qrcode script loaded');
+                    _startScanner();
+                }
+                function _onScriptError() {
+                    _log('ERROR: Failed to load html5-qrcode CDN script');
+                    _showStatus('❌ فشل تحميل مكتبة المسح من الشبكة. يرجى التحقق من الاتصال بالإنترنت.');
+                    try { parent.postMessage({type: 'CAMERA_ERROR', error: 'CDN script failed to load'}, '*'); } catch(e) {}
+                }
+                var script = document.getElementById('html5qrcode-teacher');
+                if (script) {
+                    script.onload = _onScriptLoad;
+                    script.onerror = _onScriptError;
+                    if (script.readyState === 'complete' || script.readyState === 'loaded') {
+                        _onScriptLoad();
+                    }
+                } else {
+                    _onScriptError();
+                }
+            })();
             </script>
         </body>
         </html>
