@@ -4564,7 +4564,7 @@ def show_student_qr_attendance(db: Database):
         st.error("🚫 غير مصرح لك بتسجيل الحضور")
         st.stop()
     
-    # Initialize QR scanning state with camera availability check
+    # Initialize QR scanning state
     if 'qr_scanning_active' not in st.session_state:
         st.session_state.qr_scanning_active = True
     if 'qr_scan_success' not in st.session_state:
@@ -4573,39 +4573,20 @@ def show_student_qr_attendance(db: Database):
         st.session_state.qr_scan_result = None
     if 'qr_permission_denied' not in st.session_state:
         st.session_state.qr_permission_denied = False
-    if 'qr_camera_check_done' not in st.session_state:
-        st.session_state.qr_camera_check_done = False
-    if 'qr_lib_loaded' not in st.session_state:
-        st.session_state.qr_lib_loaded = False
     
-    # Camera permission denied dialog
-    if st.session_state.get("qr_permission_denied"):
-        st.error("📷 **وصول الكاميرا مطلوب لمسح رموز QR**")
-        st.markdown("""
-        <div style="
-            text-align: center; 
-            padding: 2rem; 
-            border: 2px solid #e74c3c; 
-            border-radius: 15px; 
-            background: rgba(231, 76, 60, 0.05);
-            margin: 1rem 0;
-        ">
-            <h3 style="color: #e74c3c;">⚠️ إذن الكاميرا مطلوب</h3>
-            <p>يجب السماح باستخدام الكاميرا لمسح رموز الاستجابة السريعة.</p>
-            <p style="font-size: 0.9rem; color: #666;">اضغط على "سماح" أو "Allow" عند طلب الإذن في المتصفح.</p>
-        </div>
-        """, unsafe_allow_html=True)
+    # Scanner error dialog
+    if st.session_state.get("qr_scanner_error"):
+        st.error(f"❌ خطأ في المسح: {st.session_state.qr_scanner_error}")
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🔄 إعادة المحاولة", use_container_width=True, key="qr_retry_btn"):
-                st.session_state.qr_permission_denied = False
+            if st.button("🔄 إعادة المحاولة", use_container_width=True, key="qr_error_retry_btn"):
+                st.session_state.qr_scanner_error = None
                 st.session_state.qr_scanning_active = True
                 st.session_state.qr_scan_success = False
-                st.session_state.qr_camera_check_done = False
                 st.rerun()
         with col2:
-            if st.button("❌ إلغاء", use_container_width=True, key="qr_cancel_btn"):
-                st.session_state.qr_permission_denied = False
+            if st.button("❌ إلغاء", use_container_width=True, key="qr_error_cancel_btn"):
+                st.session_state.qr_scanner_error = None
                 st.session_state.qr_scanning_active = False
                 st.session_state.qr_scan_success = False
                 st.rerun()
@@ -4632,205 +4613,187 @@ def show_student_qr_attendance(db: Database):
         
         # Reset button
         if st.button("📱 مسح QR جديد", use_container_width=True, key="new_qr_scan_btn"):
-            st.session_state.qr_scan_result_message = None
+            # Clear all QR related state
+            for key in ['qr_scan_result_message', 'qr_scanning_active', 'qr_scan_success', 
+                        'qr_scan_result', 'qr_permission_denied', 'qr_scanner_error']:
+                if key in st.session_state:
+                    st.session_state[key] = None if 'message' in key or 'result' in key or 'error' in key else False
             st.session_state.qr_scanning_active = True
-            st.session_state.qr_scan_success = False
             st.rerun()
         return
     
-    # QR scanner with automatic camera permission request and improved detection
+    # QR scanner with robust initialization and error handling
     if st.session_state.qr_scanning_active and not st.session_state.qr_scan_success:
-        # Unique ID for this scanner instance to avoid conflicts on rerun
-        scanner_id = f"qr-reader-{user.get('user_id', 'default')}"
+        scanner_id = f"qr-scanner-{user.get('user_id', 'default')}-{int(time.time())}"
         
         st.components.v1.html(f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-                body {{ margin: 0; padding: 0; font-family: 'Cairo', sans-serif; background: transparent; }}
+                body {{ 
+                    margin: 0; 
+                    padding: 0; 
+                    font-family: 'Cairo', 'Segoe UI', sans-serif; 
+                    background: transparent; 
+                }}
                 #{scanner_id} {{ 
                     width: 100%; 
-                    min-height: 300px; 
+                    min-height: 400px; 
                     border-radius: 15px; 
                     overflow: hidden;
                     background: #000;
                 }}
                 #qr-status {{ 
                     text-align: center; 
-                    padding: 1rem; 
+                    padding: 1.5rem; 
                     color: #667eea;
                     font-weight: 600;
+                    font-size: 1.1rem;
                     direction: rtl;
                 }}
-                .scan-line {{
-                    width: 100%;
-                    height: 3px;
-                    background: linear-gradient(90deg, transparent, #667eea, #764ba2, transparent);
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    animation: scanMove 2s ease-in-out infinite;
-                    pointer-events: none;
-                }}
-                @keyframes scanMove {{
-                    0%, 100% {{ top: 0; }}
-                    50% {{ top: 100%; }}
-                }}
-                #qr-reader-container {{
-                    position: relative;
-                    overflow: hidden;
+                #qr-error {{
+                    display: none;
+                    text-align: center;
+                    padding: 1.5rem;
+                    color: #e74c3c;
+                    font-weight: 600;
+                    direction: rtl;
                 }}
             </style>
         </head>
         <body>
-            <div id="qr-status">📱 جاري تحميل مكتبة المسح...</div>
-            <div id="qr-reader-container">
-                <div id="{scanner_id}"></div>
-                <div class="scan-line"></div>
-            </div>
-            <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js" 
-                    onload="window.qrLibLoaded = true; document.getElementById('qr-status').innerHTML = '📱 جاري طلب إذن الكاميرا...';"
-                    onerror="window.qrLibLoaded = false; document.getElementById('qr-status').innerHTML = '❌ فشل تحميل مكتبة المسح';"></script>
+            <div id="qr-status">⏳ جاري التحميل...</div>
+            <div id="qr-error"></div>
+            <div id="{scanner_id}"></div>
+            
             <script>
-                let html5QrCode = null;
-                let scanningActive = false;
-                const scannerId = "{scanner_id}";
-                const statusEl = document.getElementById('qr-status');
-                
-                function startScanner() {{
-                    try {{
-                        // Verify Html5Qrcode is available
-                        if (typeof Html5Qrcode === 'undefined') {{
-                            statusEl.innerHTML = '❌ مكتبة المسح غير متاحة. يرجى تحديث الصفحة.';
-                            parent.postMessage({{
-                                type: 'CAMERA_ERROR',
-                                error: 'Html5Qrcode is not defined'
-                            }}, '*');
+                (function() {{
+                    const scannerId = "{scanner_id}";
+                    const statusEl = document.getElementById('qr-status');
+                    const errorEl = document.getElementById('qr-error');
+                    let html5QrCode = null;
+                    let isScanning = false;
+                    let initAttempts = 0;
+                    const MAX_INIT_ATTEMPTS = 50;
+                    
+                    function showError(message) {{
+                        statusEl.style.display = 'none';
+                        errorEl.style.display = 'block';
+                        errorEl.innerHTML = '❌ ' + message;
+                        parent.postMessage({{type: 'SCANNER_ERROR', error: message}}, '*');
+                    }}
+                    
+                    function showStatus(message) {{
+                        statusEl.innerHTML = message;
+                    }}
+                    
+                    function startScanner() {{
+                        try {{
+                            if (typeof Html5Qrcode === 'undefined') {{
+                                showError('مكتبة المسح غير محملة. يرجى تحديث الصفحة.');
+                                return;
+                            }}
+                            
+                            html5QrCode = new Html5Qrcode(scannerId);
+                            
+                            html5QrCode.start(
+                                {{ facingMode: "environment" }},
+                                {{
+                                    fps: 20,
+                                    qrbox: {{ width: 280, height: 280 }},
+                                    aspectRatio: 1.0,
+                                    disableFlip: false,
+                                    experimentalFeatures: {{}}
+                                }},
+                                function(decodedText) {{
+                                    if (!isScanning) {{
+                                        isScanning = true;
+                                        showStatus('✅ تم المسح بنجاح!');
+                                        
+                                        setTimeout(function() {{
+                                            parent.postMessage({{type: 'QR_SCANNED', data: decodedText}}, '*');
+                                        }}, 100);
+                                    }}
+                                }},
+                                function(errorMessage) {{
+                                    // Silent scan errors
+                                }}
+                            ).catch(function(err) {{
+                                let errorMsg = 'خطأ في فتح الكاميرا';
+                                if (err && err.name === 'NotAllowedError') {{
+                                    errorMsg = 'تم رفض إذن الكاميرا. يرجى السماح بالوصصول من إعدادات المتصفح.';
+                                }} else if (err && err.name === 'NotFoundError') {{
+                                    errorMsg = 'لم يتم العثور على كاميرا.';
+                                }} else if (err && err.name === 'NotReadableError') {{
+                                    errorMsg = 'الكاميرا قيد الاستخدام.';
+                                }}
+                                showError(errorMsg);
+                            }});
+                            
+                        }} catch(e) {{
+                            showError('خطأ في تهيئة الماسح: ' + (e.message || e));
+                        }}
+                    }}
+                    
+                    function waitForLibrary() {{
+                        if (typeof Html5Qrcode !== 'undefined') {{
+                            showStatus('✓ تم تحميل المكتبة - جاري طلب الإذن...');
+                            setTimeout(startScanner, 100);
+                        }} else if (initAttempts < MAX_INIT_ATTEMPTS) {{
+                            initAttempts++;
+                            if (initAttempts === 1) {{
+                                showStatus('⏳ جاري تحميل مكتبة المسح...');
+                            }}
+                            setTimeout(waitForLibrary, 200);
+                        }} else {{
+                            showError('فشل تحميل مكتبة المسح بعد عدة محاولات. يرجى تحديث الصفحة.');
+                        }}
+                    }}
+                    
+                    // Load library dynamically
+                    function loadLibrary() {{
+                        if (typeof Html5Qrcode !== 'undefined') {{
+                            waitForLibrary();
                             return;
                         }}
                         
-                        html5QrCode = new Html5Qrcode(scannerId);
-                        
-                        html5QrCode.start(
-                            {{ facingMode: "environment" }},
-                            {{
-                                fps: 30,
-                                qrbox: {{ width: 280, height: 280 }},
-                                aspectRatio: 1.0,
-                                disableFlip: false
-                            }},
-                            function(decodedText) {{
-                                if (!scanningActive) {{
-                                    scanningActive = true;
-                                    statusEl.innerHTML = '✅ تم المسح بنجاح! جاري المعالجة...';
-                                    
-                                    // Stop scanner immediately after success
-                                    if (html5QrCode) {{
-                                        html5QrCode.stop().catch(() => {{}});
-                                    }}
-                                    
-                                    parent.postMessage({{
-                                        type: 'QR_SCANNED',
-                                        data: decodedText
-                                    }}, '*');
-                                }}
-                            }},
-                            function(error) {{
-                                // Silent - no error spam for better UX
-                            }}
-                        ).catch(function(err) {{
-                            statusEl.innerHTML = '❌ خطأ في فتح الكاميرا: ' + err;
-                            parent.postMessage({{
-                                type: 'CAMERA_ERROR',
-                                error: err.toString()
-                            }}, '*');
-                        }});
-                    }} catch(e) {{
-                        statusEl.innerHTML = '❌ خطأ في تهيئة الماسح: ' + e.message;
-                        parent.postMessage({{
-                            type: 'CAMERA_ERROR',
-                            error: e.message
-                        }}, '*');
-                    }}
-                }}
-                
-                // Request camera permission with proper error handling
-                function requestCamera() {{
-                    statusEl.innerHTML = '📱 جاري طلب إذن الكاميرا...';
-                    
-                    // First check if mediaDevices is supported
-                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {{
-                        statusEl.innerHTML = '❌ المتصفح لا يدعم الوصول للكاميرا';
-                        parent.postMessage({{
-                            type: 'CAMERA_ERROR',
-                            error: 'المتصفح لا يدعم الوصول للكاميرا'
-                        }}, '*');
-                        return;
+                        const script = document.createElement('script');
+                        script.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js';
+                        script.onload = function() {{
+                            showStatus('✓ تم تحميل المكتبة - جاري التهيئة...');
+                            setTimeout(waitForLibrary, 100);
+                        }};
+                        script.onerror = function() {{
+                            showError('فشل تحميل مكتبة المسح من CDN. يرجى التحقق من الإنترنت.');
+                        }};
+                        document.head.appendChild(script);
                     }}
                     
-                    // Request camera permission
-                    navigator.mediaDevices.getUserMedia({{ 
-                        video: {{ 
-                            facingMode: "environment",
-                            width: {{ ideal: 1280 }},
-                            height: {{ ideal: 720 }}
-                        }} 
-                    }})
-                    .then(function(stream) {{
-                        // Stop the test stream immediately
-                        stream.getTracks().forEach(track => track.stop());
-                        statusEl.innerHTML = '✅ تم الحصول على الإذن - ضع رمز QR أمام الكاميرا';
-                        // Start the actual scanner
-                        startScanner();
-                    }})
-                    .catch(function(err) {{
-                        let errorMsg = '❌ رفض الإذن بالكاميرا';
-                        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {{
-                            errorMsg = '❌ تم رفض إذن الكاميرا. يرجى السماح بالوصول من إعدادات المتصفح.';
-                        }} else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {{
-                            errorMsg = '❌ لم يتم العثور على كاميرا. تأكد من توصيل الكاميرا.';
-                        }} else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {{
-                            errorMsg = '❌ الكاميرا قيد الاستخدام من تطبيق آخر.';
-                        }}
-                        statusEl.innerHTML = errorMsg;
-                        parent.postMessage({{
-                            type: 'CAMERA_PERMISSION_DENIED',
-                            error: err.toString()
-                        }}, '*');
-                    }});
-                }}
-                
-                // Wait for library to load, then request camera
-                function initializeScanner() {{
-                    if (typeof Html5Qrcode !== 'undefined') {{
-                        requestCamera();
+                    // Initialize immediately
+                    if (document.readyState === 'loading') {{
+                        document.addEventListener('DOMContentLoaded', loadLibrary);
                     }} else {{
-                        statusEl.innerHTML = '⏳ جاري تحميل مكتبة المسح...';
-                        setTimeout(initializeScanner, 500);
+                        loadLibrary();
                     }}
-                }}
-                
-                // Start initialization when page loads
-                if (document.readyState === 'loading') {{
-                    document.addEventListener('DOMContentLoaded', initializeScanner);
-                }} else {{
-                    initializeScanner();
-                }}
-                
-                // Listen for stop command
-                window.addEventListener('message', function(event) {{
-                    if (event.data && event.data.type === 'STOP_SCANNER') {{
-                        if (html5QrCode && scanningActive) {{
-                            html5QrCode.stop().catch(() => {{}});
+                    
+                    // Listen for stop command
+                    window.addEventListener('message', function(event) {{
+                        if (event.data && event.data.type === 'STOP_SCANNER') {{
+                            if (html5QrCode && isScanning) {{
+                                html5QrCode.stop().then(function() {{
+                                    isScanning = false;
+                                }}).catch(function() {{}});
+                            }}
                         }}
-                    }}
-                }});
+                    }});
+                }})();
             </script>
         </body>
         </html>
-        """, height=420)
+        """, height=450)
     
     # Process QR scan results from the HTML component
     qr_result = st.session_state.get("qr_scan_result")
@@ -4840,21 +4803,9 @@ def show_student_qr_attendance(db: Database):
         if result and isinstance(result, dict):
             st.session_state.qr_scan_result_message = result
             st.session_state.qr_scan_success = True
-            # Stop scanner in iframe
-            try:
-                st.components.v1.html("<script>parent.postMessage({type: 'STOP_SCANNER'}, '*');</script>", height=0)
-            except Exception:
-                pass
         elif result and result is True:
             st.session_state.qr_scan_success = True
         st.rerun()
-        
-        # Ensure scanner stops after successful scan
-        if st.session_state.qr_scan_success:
-            try:
-                st.components.v1.html("<script>parent.postMessage({type: 'STOP_SCANNER'}, '*');</script>", height=0)
-            except Exception:
-                pass
     
     # Manual QR input fallback (shown only when no success yet)
     if not st.session_state.qr_scan_success and not st.session_state.get("qr_scan_result_message"):
