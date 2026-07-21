@@ -3219,12 +3219,13 @@ def _show_exam_results(db: Database, role: str, section_id: str):
         st.info("لا توجد نتائج مطابقة للبحث.")
 
 def _show_exam_analytics(db: Database, role: str, section_id: str):
-    """Display exam analytics and statistics."""
+    """Enhanced exam analytics and statistics with comprehensive insights."""
     st.markdown("### 📈 تحليلات الاختبارات")
     
     quizzes = db.get_quizzes()
     results = db.get_quiz_results()
     students = db.get_students()
+    sections = db.get_sections()
     
     if quizzes.empty:
         st.info("لا توجد اختبارات لعرض التحليلات.")
@@ -3233,75 +3234,462 @@ def _show_exam_analytics(db: Database, role: str, section_id: str):
     if not results.empty and "status" in results.columns:
         results = results[results["status"] == "submitted"]
     
-    col1, col2, col3, col4 = st.columns(4)
+    # Safely convert score to numeric - CRITICAL BUG FIX
+    if not results.empty and "score" in results.columns:
+        results["score"] = pd.to_numeric(results["score"], errors="coerce")
+        results = results.dropna(subset=["score"])
+    
+    # Apply role filtering
+    if role in ["Teacher", "Service Manager"] and section_id and not students.empty:
+        if "section_id" in students.columns:
+            students = students[students.section_id == section_id]
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("📚 إجمالي الاختبارات", len(quizzes))
     col2.metric("📊 إجمالي النتائج", len(results) if not results.empty else 0)
-    col3.metric("✅ متوسط الدرجات", f"{results['score'].mean():.1f}" if not results.empty and "score" in results.columns else "0")
+    avg_score = f"{results['score'].mean():.1f}" if not results.empty and "score" in results.columns and not results["score"].empty else "0"
+    col3.metric("✅ متوسط الدرجات", avg_score)
     col4.metric("👥 الطالبات المشاركات", len(results['student_id'].unique()) if not results.empty and "student_id" in results.columns else 0)
+    
+    # Pass rate
+    if not results.empty and "score" in results.columns:
+        passing_scores = results[results["score"] >= 10]
+        pass_rate = (len(passing_scores) / len(results) * 100) if len(results) > 0 else 0
+        col5.metric("📈 نسبة النجاح", f"{pass_rate:.1f}%")
+    
+    st.markdown("---")
+    
+    # Comprehensive Analytics
+    if not results.empty and not quizzes.empty:
+        # Performance by quiz
+        if "quiz_id" in results.columns and "score" in results.columns:
+            st.markdown("#### 📊 أداء كل اختبار")
+            quiz_performance = results.groupby("quiz_id").agg({
+                "score": ["mean", "max", "min", "count"]
+            }).reset_index()
+            quiz_performance.columns = ["quiz_id", "متوسط", "أعلى درجة", "أدنى درجة", "عدد المشاركات"]
+            quiz_performance = quiz_performance.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
+            if not quiz_performance.empty:
+                quiz_performance = quiz_performance.dropna(subset=["متوسط"])
+                if not quiz_performance.empty:
+                    st.dataframe(quiz_performance[["title", "متوسط", "أعلى درجة", "أدنى درجة", "عدد المشاركات"]], use_container_width=True)
+        
+        # Top performing students
+        st.markdown("#### 🏆 أفضل 10 طالبات")
+        if "student_id" in results.columns and "score" in results.columns and not students.empty:
+            if not results.empty and not results["score"].empty:
+                top_students = results.groupby("student_id")["score"].sum().reset_index()
+                top_students = top_students.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+                top_students = top_students.sort_values("score", ascending=False).head(10)
+                if not top_students.empty:
+                    st.dataframe(top_students[["full_name", "score"]], use_container_width=True)
+    
+    # Class performance comparison
+    if not results.empty and not students.empty and not sections.empty and "section_id" in students.columns:
+        st.markdown("#### 🏫 مقارنة الفصول")
+        if "student_id" in results.columns and "score" in results.columns:
+            merged = results.merge(students[["student_id", "section_id"]], on="student_id", how="left")
+            if not merged.empty and "section_id" in merged.columns:
+                class_avg = merged.groupby("section_id")["score"].mean().reset_index()
+                class_avg = class_avg.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
+                if not class_avg.empty:
+                    class_avg = class_avg.dropna(subset=["score"])
+                    if not class_avg.empty:
+                        st.dataframe(class_avg[["section_name", "score"]], use_container_width=True)
     
     st.markdown("---")
     
     if not results.empty and not quizzes.empty:
         st.markdown("#### 📊 توزيع الدرجات حسب الاختبارات")
-        if "quiz_id" in results.columns and "score" in results.columns:
+        if "quiz_id" in results.columns and "score" in results.columns and not results.empty:
             score_summary = results.groupby("quiz_id")["score"].mean().reset_index()
             score_summary = score_summary.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
             if not score_summary.empty:
-                fig = px.bar(score_summary, x="title", y="score", title="متوسط الدرجات حسب الاختبار")
-                fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig, use_container_width=True)
+                score_summary = score_summary.dropna(subset=["score"])
+                if not score_summary.empty:
+                    fig = px.bar(score_summary, x="title", y="score", title="متوسط الدرجات حسب الاختبار")
+                    fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig, use_container_width=True)
     
     st.markdown("#### 🏆 أفضل 10 طالبات")
     if not results.empty and "student_id" in results.columns and "score" in results.columns and not students.empty:
-        top_students = results.groupby("student_id")["score"].sum().reset_index()
-        top_students = top_students.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-        top_students = top_students.sort_values("score", ascending=False).head(10)
-        st.dataframe(top_students[["full_name", "score"]], use_container_width=True)
+        if not results.empty and not results["score"].empty:
+            top_students = results.groupby("student_id")["score"].sum().reset_index()
+            top_students = top_students.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+            top_students = top_students.sort_values("score", ascending=False).head(10)
+            if not top_students.empty:
+                st.dataframe(top_students[["full_name", "score"]], use_container_width=True)
 
 def show_reports(db: Database):
-    st.markdown("<h2 class='main-header'>📊 التقارير والإحصائيات</h2>", unsafe_allow_html=True)
+    """Comprehensive Reports Center with export capabilities."""
+    st.markdown("<h2 class='main-header'>📊 مركز التقارير والإحصائيات</h2>", unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     section_id = user.get("section_id", "")
+    
+    # Get all data sources
     attendance = db.get_attendance()
+    teacher_attendance = db.get_teacher_attendance()
     students = db.get_students()
+    users = db.get_users()
+    quizzes = db.get_quizzes()
+    results = db.get_quiz_results()
+    followup = db.get_followup()
+    sections = db.get_sections()
+    stages = db.get_stages()
+    logs = db.get_logs()
 
+    # Role-based filtering
     if role == "Teacher" and section_id:
         if not attendance.empty and "section_id" in attendance.columns:
             attendance = attendance[attendance.section_id == section_id]
         if not students.empty and "section_id" in students.columns:
             students = students[students.section_id == section_id]
 
+    # Convert dates
+    if not attendance.empty and "date" in attendance.columns:
+        attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
+    if not teacher_attendance.empty and "date" in teacher_attendance.columns:
+        teacher_attendance["date"] = pd.to_datetime(teacher_attendance["date"], errors="coerce")
+
+    # Tab interface for different reports
+    tab_attendance, tab_students, tab_teachers, tab_quizzes, tab_followup, tab_dashboard, tab_audit = st.tabs([
+        "📋 تقارير الحضور", "👥 تقارير الطالبات", "👩‍🏫 تقارير المدرسين", 
+        "📝 تقارير الاختبارات", "💬 تقارير الافتقاد", "📊 إحصائيات لوحة التحكم", "📜 سجل العمليات"
+    ])
+    
+    with tab_attendance:
+        _show_attendance_reports(db, attendance, students, sections)
+    
+    with tab_students:
+        _show_student_reports(db, students, attendance, sections)
+    
+    with tab_teachers:
+        _show_teacher_reports(db, teacher_attendance, users)
+    
+    with tab_quizzes:
+        _show_quiz_reports(db, quizzes, results, students)
+    
+    with tab_followup:
+        _show_followup_reports(db, followup, students)
+    
+    with tab_dashboard:
+        _show_dashboard_statistics(db, attendance, teacher_attendance, students, users, quizzes, results, followup, sections, stages)
+    
+    with tab_audit:
+        _show_audit_logs(db, logs)
+
+def _show_attendance_reports(db: Database, attendance: pd.DataFrame, students: pd.DataFrame, sections: pd.DataFrame):
+    """Attendance reports with filters and export."""
+    st.markdown("### 📋 تقارير الحضور")
+    
     if attendance.empty:
         st.info("لا توجد بيانات حضور.")
         return
-    if "date" in attendance.columns:
-        attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
-    st.subheader("📅 تقرير الغياب الشهري")
-    col1, col2 = st.columns(2)
-    month = col1.selectbox("الشهر", range(1,13), index=get_cairo_now().month-1)
-    year = col2.number_input("السنة", value=get_cairo_now().year, min_value=2020)
-    if "date" in attendance.columns:
-        monthly = attendance[(attendance.date.dt.month == month) & (attendance.date.dt.year == year)]
-        if not monthly.empty:
-            summary = monthly.groupby(["student_id", "status"]).size().reset_index(name="count")
-            pivot = summary.pivot(index="student_id", columns="status", values="count").fillna(0).reset_index()
-            if not students.empty:
-                pivot = pivot.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-            st.dataframe(pivot, use_container_width=True)
-            fig = px.pie(monthly, names="status", title=f"نسب الحضور لشهر {month}/{year}")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("لا توجد بيانات لهذا الشهر.")
+    
+    # Filters
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        date_filter = st.date_input("التاريخ", value=get_cairo_now().date(), key="att_date_filter")
+    with col2:
+        section_filter = st.selectbox("الفصل", ["الكل"] + sections["section_id"].tolist() if not sections.empty else ["الكل"], key="att_section_filter")
+    with col3:
+        status_filter = st.selectbox("الحالة", ["الكل", "حاضر", "غائب", "متأخر", "معفي"], key="att_status_filter")
+    with col4:
+        export_format = st.selectbox("التصدير", ["CSV", "Excel"], key="att_export_format")
+    
+    # Apply filters
+    filtered = attendance.copy()
+    if not filtered.empty:
+        if "date" in filtered.columns:
+            filtered["date"] = pd.to_datetime(filtered["date"], errors="coerce")
+            filtered = filtered[filtered["date"].dt.date == date_filter] if not filtered.empty else filtered
+        
+        if section_filter != "الكل" and "section_id" in filtered.columns:
+            filtered = filtered[filtered.section_id == section_filter]
+        
+        if status_filter != "الكل" and "status" in filtered.columns:
+            filtered = filtered[filtered.status == status_filter]
+    
+    if not filtered.empty:
+        # Merge with student names
+        if not students.empty and "student_id" in students.columns:
+            filtered = filtered.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+        
+        display_cols = ["full_name", "date", "status", "notes", "section_id"]
+        available = [c for c in display_cols if c in filtered.columns]
+        st.dataframe(filtered[available], use_container_width=True)
+        
+        # Export buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if export_format == "CSV":
+                csv_data = export_to_csv(filtered)
+                if csv_data:
+                    st.download_button("📥 تصدير CSV", csv_data, f"attendance_{date_filter}.csv", "text/csv", use_container_width=True)
+            else:
+                excel_data = export_to_excel(filtered)
+                if excel_data:
+                    st.download_button("📥 تصدير Excel", excel_data, f"attendance_{date_filter}.xlsx", 
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    else:
+        st.info("لا توجد بيانات مطابقة للفلاتر.")
 
+def _show_student_reports(db: Database, students: pd.DataFrame, attendance: pd.DataFrame, sections: pd.DataFrame):
+    """Student reports with statistics and export."""
+    st.markdown("### 👥 تقارير الطالبات")
+    
+    if students.empty:
+        st.info("لا توجد طالبات مسجلات.")
+        return
+    
+    # Filters
+    col1, col2 = st.columns(2)
+    with col1:
+        section_filter = st.selectbox("الفصل", ["الكل"] + sections["section_id"].tolist() if not sections.empty else ["الكل"], key="student_section_filter")
+    with col2:
+        status_filter = st.selectbox("الحالة", ["الكل", "active", "inactive"], key="student_status_filter")
+    
+    # Apply filters
+    filtered = students.copy()
+    if section_filter != "الكل" and "section_id" in filtered.columns:
+        filtered = filtered[filtered.section_id == section_filter]
+    if status_filter != "الكل" and "status" in filtered.columns:
+        filtered = filtered[filtered.status == status_filter]
+    
+    if not filtered.empty:
+        # Add attendance statistics
+        if not attendance.empty and "student_id" in attendance.columns:
+            attendance_stats = attendance.groupby("student_id").agg({
+                "status": lambda x: (x == "حاضر").sum(),
+                "date": "count"
+            }).reset_index()
+            attendance_stats.columns = ["student_id", "present_days", "total_days"]
+            filtered = filtered.merge(attendance_stats, on="student_id", how="left")
+            filtered["present_days"] = filtered["present_days"].fillna(0).astype(int)
+            filtered["total_days"] = filtered["total_days"].fillna(0).astype(int)
+            filtered["attendance_pct"] = (filtered["present_days"] / filtered["total_days"] * 100).fillna(0).round(1)
+        
+        display_cols = ["student_id", "full_name", "phone", "parent_phone", "school", "status", "attendance_pct", "present_days", "total_days"]
+        available = [c for c in display_cols if c in filtered.columns]
+        st.dataframe(filtered[available], use_container_width=True)
+        
+        # Export
+        csv_data = export_to_csv(filtered)
+        if csv_data:
+            st.download_button("📥 تصدير CSV", csv_data, "students_report.csv", "text/csv", use_container_width=True)
+    else:
+        st.info("لا توجد طالبات مطابقة للفلاتر.")
+
+def _show_teacher_reports(db: Database, teacher_attendance: pd.DataFrame, users: pd.DataFrame):
+    """Teacher reports with statistics and export."""
+    st.markdown("### 👩‍🏫 تقارير المدرسين")
+    
+    if teacher_attendance.empty:
+        st.info("لا توجد بيانات حضور مدرسين.")
+        return
+    
+    # Get teachers
+    teachers = users[users.role == "Teacher"] if not users.empty and "role" in users.columns else pd.DataFrame()
+    if teachers.empty:
+        st.info("لا توجد مدرسين مسجلين.")
+        return
+    
+    # Calculate statistics
+    if "teacher_id" in teacher_attendance.columns and not teacher_attendance.empty:
+        teacher_stats = teacher_attendance.groupby("teacher_id").agg({
+            "status": lambda x: (x == "present").sum(),
+            "date": "count"
+        }).reset_index()
+        teacher_stats.columns = ["teacher_id", "present_days", "total_days"]
+        teachers = teachers.merge(teacher_stats, on="teacher_id", how="left")
+        teachers["present_days"] = teachers["present_days"].fillna(0).astype(int)
+        teachers["total_days"] = teachers["total_days"].fillna(0).astype(int)
+    
+    display_cols = ["teacher_id", "full_name", "phone", "email", "present_days", "total_days"]
+    available = [c for c in display_cols if c in teachers.columns]
+    st.dataframe(teachers[available], use_container_width=True)
+    
+    # Export
+    csv_data = export_to_csv(teachers)
+    if csv_data:
+        st.download_button("📥 تصدير CSV", csv_data, "teachers_report.csv", "text/csv", use_container_width=True)
+
+def _show_quiz_reports(db: Database, quizzes: pd.DataFrame, results: pd.DataFrame, students: pd.DataFrame):
+    """Quiz reports with statistics and export."""
+    st.markdown("### 📝 تقارير الاختبارات")
+    
+    if quizzes.empty:
+        st.info("لا توجد اختبارات.")
+        return
+    
+    # Quiz selection
+    quiz_options = quizzes["quiz_id"].tolist() if "quiz_id" in quizzes.columns else []
+    selected_quiz = st.selectbox("اختر الاختبار", ["الكل"] + quiz_options, key="quiz_report_select")
+    
+    if selected_quiz == "الكل":
+        filtered_results = results.copy()
+        quiz_title = "كل الاختبارات"
+    else:
+        filtered_results = results[results.quiz_id == selected_quiz] if "quiz_id" in results.columns else pd.DataFrame()
+        quiz_title = quizzes[quizzes.quiz_id == selected_quiz]["title"].values[0] if not quizzes.empty else "الاختبار"
+    
+    if not filtered_results.empty and "status" in filtered_results.columns:
+        filtered_results = filtered_results[filtered_results["status"] == "submitted"]
+    
+    if not filtered_results.empty:
+        # Convert score to numeric
+        if "score" in filtered_results.columns:
+            filtered_results["score"] = pd.to_numeric(filtered_results["score"], errors="coerce")
+        
+        # Merge with student names
+        if not students.empty and "student_id" in students.columns:
+            filtered_results = filtered_results.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+        
+        st.subheader(f"📊 نتائج: {quiz_title}")
+        display_cols = ["full_name", "score", "submission_time", "status"]
+        available = [c for c in display_cols if c in filtered_results.columns]
+        st.dataframe(filtered_results[available], use_container_width=True)
+        
+        # Statistics
+        if "score" in filtered_results.columns:
+            col1, col2, col3 = st.columns(3)
+            col1.metric("متوسط الدرجات", f"{filtered_results['score'].mean():.1f}")
+            col2.metric("أعلى درجة", f"{filtered_results['score'].max():.1f}")
+            col3.metric("أقل درجة", f"{filtered_results['score'].min():.1f}")
+        
+        # Export
+        csv_data = export_to_csv(filtered_results)
+        if csv_data:
+            st.download_button("📥 تصدير CSV", csv_data, f"quiz_results_{selected_quiz}.csv", "text/csv", use_container_width=True)
+    else:
+        st.info("لا توجد نتائج لهذا الاختبار.")
+
+def _show_followup_reports(db: Database, followup: pd.DataFrame, students: pd.DataFrame):
+    """Follow-up reports with export."""
+    st.markdown("### 💬 تقارير الافتقاد")
+    
+    if followup.empty:
+        st.info("لا توجد سجلات متابعة.")
+        return
+    
+    # Merge with student names
+    if not students.empty and "student_id" in students.columns:
+        followup = followup.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+    
+    display_cols = ["full_name", "followup_date", "followup_type", "notes", "regularity_status"]
+    available = [c for c in display_cols if c in followup.columns]
+    st.dataframe(followup[available], use_container_width=True)
+    
+    # Export
+    csv_data = export_to_csv(followup)
+    if csv_data:
+        st.download_button("📥 تصدير CSV", csv_data, "followup_report.csv", "text/csv", use_container_width=True)
+
+def _show_dashboard_statistics(db: Database, attendance: pd.DataFrame, teacher_attendance: pd.DataFrame, 
+                              students: pd.DataFrame, users: pd.DataFrame, quizzes: pd.DataFrame, 
+                              results: pd.DataFrame, followup: pd.DataFrame, sections: pd.DataFrame, stages: pd.DataFrame):
+    """Comprehensive dashboard statistics."""
+    st.markdown("### 📊 إحصائيات لوحة التحكم الشاملة")
+    
+    # Calculate comprehensive statistics
+    today = get_cairo_now()
+    today_str = today.strftime("%Y-%m-%d")
+    
+    # Student statistics
+    total_students = len(students) if not students.empty else 0
+    active_students = len(students[students.status == "active"]) if not students.empty else 0
+    total_sections = len(sections) if not sections.empty else 0
+    total_stages = len(stages) if not stages.empty else 0
+    
+    # Teacher statistics
+    total_teachers = len(users[users.role == "Teacher"]) if not users.empty and "role" in users.columns else 0
+    
+    # Attendance statistics
+    present_today = len(attendance[(attendance.date == today_str) & (attendance.status == "حاضر")]) if not attendance.empty else 0
+    absent_today = len(attendance[(attendance.date == today_str) & (attendance.status == "غائب")]) if not attendance.empty else 0
+    late_today = len(attendance[(attendance.date == today_str) & (attendance.status == "متأخر")]) if not attendance.empty else 0
+    
+    # Teacher attendance
+    teacher_present = len(teacher_attendance[(teacher_attendance.date == today_str) & (teacher_attendance.status == "present")]) if not teacher_attendance.empty else 0
+    teacher_absent = len(teacher_attendance[(teacher_attendance.date == today_str) & (teacher_attendance.status == "absent")]) if not teacher_attendance.empty else 0
+    teacher_late = len(teacher_attendance[(teacher_attendance.date == today_str) & (teacher_attendance.status == "late")]) if not teacher_attendance.empty else 0
+    
+    # Quiz statistics
+    total_quizzes = len(quizzes) if not quizzes.empty else 0
+    total_results = len(results) if not results.empty else 0
+    avg_score = results["score"].mean() if not results.empty and "score" in results.columns else 0
+    
+    # Follow-up statistics
+    followup_pending = len(followup[followup.regularity_status.isin(["متقطع", "منقطع"])]) if not followup.empty else 0
+    followup_completed = len(followup[followup.regularity_status == "منتظم"]) if not followup.empty else 0
+    
+    # Display KPIs
+    st.markdown("#### 📈 الإحصائيات العامة")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("👥 إجمالي الطالبات", total_students, delta=f"نشطات: {active_students}")
+    col2.metric("👩‍🏫 إجمالي المدرسين", total_teachers)
+    col3.metric("🏫 عدد الفصول", total_sections)
+    col4.metric("📚 عدد المراحل", total_stages)
+    
     st.markdown("---")
-    st.subheader("🏆 أكثر 10 طالبات غياباً")
-    if not attendance.empty and "status" in attendance.columns and "student_id" in attendance.columns:
-        absent_counts = attendance[attendance.status == "غائب"].groupby("student_id").size().reset_index(name="أيام الغياب")
-        absent_counts = absent_counts.sort_values("أيام الغياب", ascending=False).head(10)
-        if not students.empty:
-            absent_counts = absent_counts.merge(students[["student_id", "full_name"]], on="student_id", how="left")
-        st.dataframe(absent_counts[["full_name", "أيام الغياب"]], use_container_width=True)
+    st.markdown("#### 📋 حضور اليوم")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("✅ حضور الطالبات", present_today)
+    col2.metric("❌ غياب الطالبات", absent_today)
+    col3.metric("☕ حضور المدرسين", teacher_present)
+    col4.metric("⏰ متأخرون المدرسين", teacher_late)
+    
+    st.markdown("---")
+    st.markdown("#### 📝 الاختبارات والافتقاد")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📚 إجمالي الاختبارات", total_quizzes)
+    col2.metric("📊 إجمالي النتائج", total_results)
+    col3.metric("✅ متوسط الدرجات", f"{avg_score:.1f}" if avg_score else "0")
+    col4.metric("⚠️ متابعات معلقة", followup_pending)
+    
+    # Export comprehensive statistics
+    st.markdown("---")
+    st.subheader("📥 تصدير الإحصائيات الشاملة")
+    
+    stats_data = {
+        "المؤشر": ["إجمالي الطالبات", "الطالبات النشطات", "إجمالي المدرسين", "عدد الفصول", "عدد المراحل",
+                   "حضور الطالبات اليوم", "غياب الطالبات اليوم", "حضور المدرسين اليوم", "غياب المدرسين اليوم",
+                   "إجمالي الاختبارات", "إجمالي النتائج", "متوسط الدرجات", "متابعات معلقة", "متابعات مكتملة"],
+        "القيمة": [total_students, active_students, total_teachers, total_sections, total_stages,
+                  present_today, absent_today, teacher_present, teacher_absent,
+                  total_quizzes, total_results, f"{avg_score:.1f}" if avg_score else "0", followup_pending, followup_completed]
+    }
+    stats_df = pd.DataFrame(stats_data)
+    st.dataframe(stats_df, use_container_width=True)
+    
+    csv_data = export_to_csv(stats_df)
+    if csv_data:
+        st.download_button("📥 تصدير الإحصائيات CSV", csv_data, "dashboard_statistics.csv", "text/csv", use_container_width=True)
+
+def _show_audit_logs(db: Database, logs: pd.DataFrame):
+    """Audit logs viewer with export."""
+    st.markdown("### 📜 سجل العمليات")
+    
+    if logs.empty:
+        st.info("لا توجد سجلات عمليات.")
+        return
+    
+    # Convert timestamp
+    if "timestamp" in logs.columns:
+        logs["timestamp"] = pd.to_datetime(logs["timestamp"], errors="coerce")
+    
+    # Sort by most recent
+    logs = logs.sort_values("timestamp", ascending=False)
+    
+    display_cols = ["timestamp", "user_id", "action", "details"]
+    available = [c for c in display_cols if c in logs.columns]
+    st.dataframe(logs[available], use_container_width=True)
+    
+    # Export
+    csv_data = export_to_csv(logs)
+    if csv_data:
+        st.download_button("📥 تصدير CSV", csv_data, "audit_logs.csv", "text/csv", use_container_width=True)
 
 def change_password(db: Database):
     """Allow user to change their password."""
@@ -3811,32 +4199,31 @@ def show_followup_dashboard(db: Database):
     total_students = len(students) if not students.empty else 0
     
     # Students needing follow-up
+    high_priority = 0
+    critical = 0
+    pending = 0
+    completed = 0
+    
     if not attendance.empty:
+        # Normalize dates to datetime
         if "date" in attendance.columns:
             attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
         
         today = get_cairo_now()
         month_ago = today - timedelta(days=30)
         
-        # High priority (absent 5+ times)
-        if "date" in attendance.columns:
-            recent_month = attendance[pd.to_datetime(attendance["date"], errors="coerce") >= month_ago]
-            high_priority = len(recent_month[recent_month["status"] == "غائب"].groupby("student_id").filter(lambda x: len(x) >= 5))
-        else:
-            high_priority = 0
-        
-        # Critical (absent 10+ times)
-        critical = len(recent_month[recent_month["status"] == "غائب"].groupby("student_id").filter(lambda x: len(x) >= 10))
+        # High priority (absent 5+ times in last 30 days)
+        if "date" in attendance.columns and not attendance.empty:
+            recent_month = attendance[attendance["date"] >= month_ago.replace(tzinfo=None)]
+            if not recent_month.empty:
+                absent_counts = recent_month[recent_month["status"] == "غائب"].groupby("student_id").size()
+                high_priority = len(absent_counts[absent_counts >= 5])
+                critical = len(absent_counts[absent_counts >= 10])
         
         # Pending follow-up
         if not followup.empty and "regularity_status" in followup.columns:
             pending = len(followup[followup.regularity_status.isin(["متقطع", "منقطع"])])
             completed = len(followup[followup.regularity_status == "منتظم"])
-        else:
-            pending = 0
-            completed = 0
-    else:
-        high_priority = critical = pending = completed = 0
     
     # KPI Cards
     col1, col2, col3, col4 = st.columns(4)
@@ -4188,6 +4575,8 @@ def show_student_qr_attendance(db: Database):
         st.session_state.qr_permission_denied = False
     if 'qr_camera_check_done' not in st.session_state:
         st.session_state.qr_camera_check_done = False
+    if 'qr_lib_loaded' not in st.session_state:
+        st.session_state.qr_lib_loaded = False
     
     # Camera permission denied dialog
     if st.session_state.get("qr_permission_denied"):
@@ -4296,12 +4685,14 @@ def show_student_qr_attendance(db: Database):
             </style>
         </head>
         <body>
-            <div id="qr-status">📱 جاري طلب إذن الكاميرا...</div>
+            <div id="qr-status">📱 جاري تحميل مكتبة المسح...</div>
             <div id="qr-reader-container">
                 <div id="{scanner_id}"></div>
                 <div class="scan-line"></div>
             </div>
-            <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js" 
+                    onload="window.qrLibLoaded = true; document.getElementById('qr-status').innerHTML = '📱 جاري طلب إذن الكاميرا...';"
+                    onerror="window.qrLibLoaded = false; document.getElementById('qr-status').innerHTML = '❌ فشل تحميل مكتبة المسح';"></script>
             <script>
                 let html5QrCode = null;
                 let scanningActive = false;
@@ -4310,6 +4701,16 @@ def show_student_qr_attendance(db: Database):
                 
                 function startScanner() {{
                     try {{
+                        // Verify Html5Qrcode is available
+                        if (typeof Html5Qrcode === 'undefined') {{
+                            statusEl.innerHTML = '❌ مكتبة المسح غير متاحة. يرجى تحديث الصفحة.';
+                            parent.postMessage({{
+                                type: 'CAMERA_ERROR',
+                                error: 'Html5Qrcode is not defined'
+                            }}, '*');
+                            return;
+                        }}
+                        
                         html5QrCode = new Html5Qrcode(scannerId);
                         
                         html5QrCode.start(
@@ -4401,11 +4802,21 @@ def show_student_qr_attendance(db: Database):
                     }});
                 }}
                 
-                // Request camera immediately when page loads
+                // Wait for library to load, then request camera
+                function initializeScanner() {{
+                    if (typeof Html5Qrcode !== 'undefined') {{
+                        requestCamera();
+                    }} else {{
+                        statusEl.innerHTML = '⏳ جاري تحميل مكتبة المسح...';
+                        setTimeout(initializeScanner, 500);
+                    }}
+                }}
+                
+                // Start initialization when page loads
                 if (document.readyState === 'loading') {{
-                    document.addEventListener('DOMContentLoaded', requestCamera);
+                    document.addEventListener('DOMContentLoaded', initializeScanner);
                 }} else {{
-                    requestCamera();
+                    initializeScanner();
                 }}
                 
                 // Listen for stop command
@@ -4437,6 +4848,13 @@ def show_student_qr_attendance(db: Database):
         elif result and result is True:
             st.session_state.qr_scan_success = True
         st.rerun()
+        
+        # Ensure scanner stops after successful scan
+        if st.session_state.qr_scan_success:
+            try:
+                st.components.v1.html("<script>parent.postMessage({type: 'STOP_SCANNER'}, '*');</script>", height=0)
+            except Exception:
+                pass
     
     # Manual QR input fallback (shown only when no success yet)
     if not st.session_state.qr_scan_success and not st.session_state.get("qr_scan_result_message"):
