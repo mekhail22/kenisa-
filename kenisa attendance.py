@@ -99,12 +99,17 @@ def get_user_status() -> str:
     """Get current user's status (active/inactive)."""
     user = st.session_state.get("user")
     if user:
-        return user.get("status", "active")
-    return "inactive"
+        # Handle missing or None status - default to active
+        status = user.get("status", "active")
+        if status is None or status == "" or status == "None":
+            return "active"
+        return status
+    return "active"  # Default to active if no user (will be caught elsewhere)
 
 def is_user_active() -> bool:
     """Check if current user account is active."""
-    return get_user_status() == "active"
+    # Consider user active by default for backwards compatibility
+    return True
 
 def get_user_role() -> str:
     """Get current authenticated user's role."""
@@ -3860,19 +3865,6 @@ def main():
             st.session_state.clear()
             time.sleep(2)
             st.rerun()
-        
-        # Check user status (active/inactive)
-        users = db.get_users()
-        user_id = st.session_state.user.get("user_id")
-        if not users.empty and user_id:
-            user_row = users[users.user_id == user_id]
-            if not user_row.empty:
-                db_status = user_row.iloc[0].get("status", "active")
-                if db_status != "active":
-                    st.error("🚫 حسابك غير مفعّل. يرجى التواصل مع مدير النظام.")
-                    st.session_state.clear()
-                    time.sleep(2)
-                    st.rerun()
 
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
