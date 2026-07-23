@@ -1148,7 +1148,7 @@ def show_help_dialog():
 # =============================================================================
 # RBAC - Role-Based Access Control
 # =============================================================================
-VALID_ROLES = ["System Admin", "Father Account", "Service Manager", "Teacher"]
+VALID_ROLES = ["System Admin", "Father Account", "Service Manager", "Teacher", "Student"]
 VALID_STATUSES = ["active", "inactive", "suspended"]
 
 def require_role(required_roles):
@@ -1183,7 +1183,7 @@ def get_role_menu(role):
         "System Admin": [
             "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 الحضور", "💬 الافتقاد",
             "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
-            "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
+            "📜 سجل العمليات", "🔒 تغيير كلمة المرور", "📱 إدارة QR"
         ],
         "Father Account": [
             "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
@@ -1195,6 +1195,9 @@ def get_role_menu(role):
         "Teacher": [
             "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
             "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
+        ],
+        "Student": [
+            "🏠 لوحة التحكم", "📝 المسابقات والاختبارات", "🔒 تغيير كلمة المرور"
         ]
     }
     return menus.get(role, [])
@@ -1804,7 +1807,8 @@ def get_role_css_class(role):
         "System Admin": "admin",
         "Father Account": "priest",
         "Service Manager": "leader",
-        "Teacher": "teacher"
+        "Teacher": "teacher",
+        "Student": "student"
     }
     return role_map.get(role, "")
 
@@ -1819,7 +1823,7 @@ def get_initials(name):
         return parts[0][0] + parts[1][0]
     return parts[0][0] if parts[0] else "❓"
 
-def render_user_card(user, sections_df=None, stages_df=None, is_selected=False):
+def render_user_card(user, sections_df=None, stages_df=None, is_selected=False, show_qr=False, db=None):
     """Render a single user card as HTML."""
     user_id = user.get("user_id", "")
     full_name = user.get("full_name", "غير معروف")
@@ -1832,11 +1836,23 @@ def render_user_card(user, sections_df=None, stages_df=None, is_selected=False):
     role_css = get_role_css_class(role)
     status_css = get_status_css_class(status)
     
+    # Get section name
     section_name = ""
     if sections_df is not None and not sections_df.empty and section_id:
         sec = sections_df[sections_df.section_id == section_id]
         if not sec.empty:
             section_name = sec.iloc[0].get("section_name", "")
+    
+    # Get stage name
+    stage_name = ""
+    if stages_df is not None and not stages_df.empty and section_id:
+        sec = sections_df[sections_df.section_id == section_id] if sections_df is not None else pd.DataFrame()
+        if not sec.empty:
+            stage_id = sec.iloc[0].get("stage_id", "")
+            if stage_id:
+                stage = stages_df[stages_df.stage_id == stage_id]
+                if not stage.empty:
+                    stage_name = stage.iloc[0].get("stage_name", "")
     
     role_label = role
     if role == "System Admin":
@@ -1847,25 +1863,79 @@ def render_user_card(user, sections_df=None, stages_df=None, is_selected=False):
         role_label = "أمين الخدمة"
     elif role == "Teacher":
         role_label = "مدرسة"
+    elif role == "Student":
+        role_label = "طالبة"
     
     status_label = {"active": "نشط", "inactive": "غير نشط", "suspended": "موقوف", "archived": "مؤرشف"}.get(status, "نشط")
     border = "2px solid #667eea" if is_selected else "1px solid rgba(0,0,0,0.05)"
+    
+    # Registration and last login dates
+    reg_date = user.get("registration_date", "")
+    if reg_date:
+        try:
+            reg_date = pd.to_datetime(reg_date).strftime("%Y-%m-%d")
+        except:
+            reg_date = ""
+    
+    last_login = user.get("last_login", "")
+    if last_login:
+        try:
+            last_login = pd.to_datetime(last_login).strftime("%Y-%m-%d %I:%M %p")
+        except:
+            last_login = ""
+    
+    # QR Code section
+    qr_section = ""
+    if show_qr and db and is_qr_eligible(role):
+        qr_data = get_user_qr_data(user_id, db)
+        if qr_data:
+            qr_png = generate_qr_image(qr_data, "png")
+            qr_b64 = qr_png.hex()
+            qr_section = f"""
+            <div style="margin-top:1rem; padding:0.8rem; background:rgba(40,167,69,0.05); border-radius:10px; border:1px solid rgba(40,167,69,0.2);">
+                <div style="font-size:0.85rem; font-weight:600; color:#155724; margin-bottom:0.5rem;">📱 رمز الاستجابة السريعة</div>
+                <img src="data:image/png;hex,{qr_b64}" style="width:120px; height:120px; display:block; margin:0 auto; border:2px solid white; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                <div style="font-size:0.75rem; color:#6c757d; text-align:center; margin-top:0.3rem;">صالح للحضور والانصراف</div>
+            </div>
+            """
+        else:
+            qr_section = """
+            <div style="margin-top:1rem; padding:0.8rem; background:rgba(255,193,7,0.05); border-radius:10px; border:1px solid rgba(255,193,7,0.2);">
+                <div style="font-size:0.85rem; font-weight:600; color:#856404; margin-bottom:0.3rem;">⚠️ لا يوجد رمز QR</div>
+                <div style="font-size:0.75rem; color:#6c757d;">لم يتم إنشاء رمز QR لهذا المستخدم</div>
+            </div>
+            """
     
     return f"""
     <div class="user-card" style="border: {border};" data-user-id="{user_id}">
         <div class="card-badge {status_css}">{status_label}</div>
         <div style="display:flex; align-items:center; gap:1rem; margin-top:1.5rem;">
             <div class="user-avatar">{initials}</div>
-            <div>
+            <div style="flex:1;">
                 <div style="font-weight:700; font-size:1.1rem;">{full_name}</div>
                 <span class="role-badge {role_css}">{role_label}</span>
-                <span style="font-size:0.8rem; color:#6c757d; margin-right:0.5rem;">📞 {phone if phone else '—'}</span>
+                <div style="font-size:0.8rem; color:#6c757d; margin-top:0.3rem;">
+                    📞 {phone if phone else '—'}
+                </div>
             </div>
         </div>
-        {('<div style="font-size:0.85rem; color:#6c757d; margin-top:0.5rem;">📚 ' + section_name + '</div>') if section_name else ''}
-        <div style="display:flex; gap:0.5rem; margin-top:0.8rem; flex-wrap:wrap;">
-            <span style="font-size:0.75rem; background:#f8f9fa; padding:0.2rem 0.6rem; border-radius:8px;">🆔 {user_id[:8]}...</span>
-            {('<span style="font-size:0.75rem; background:#f8f9fa; padding:0.2rem 0.6rem; border-radius:8px;">📧 ' + email[:20] + '</span>') if email else ''}
+        
+        <div style="margin-top:1rem; padding:0.8rem; background:rgba(102,126,234,0.05); border-radius:10px;">
+            {('<div style="font-size:0.85rem; margin-bottom:0.3rem;">📚 <strong>المرحلة:</strong> ' + stage_name + '</div>') if stage_name else ''}
+            {('<div style="font-size:0.85rem; margin-bottom:0.3rem;">🏫 <strong>الفصل:</strong> ' + section_name + '</div>') if section_name else ''}
+            <div style="font-size:0.8rem; color:#6c757d;">
+                📅 التسجيل: {reg_date if reg_date else 'غير متاح'}
+            </div>
+            <div style="font-size:0.8rem; color:#6c757d;">
+                ⏰ آخر دخول: {last_login if last_login else 'غير متاح'}
+            </div>
+        </div>
+        
+        {qr_section}
+        
+        <div style="display:flex; gap:0.5rem; margin-top:0.8rem; flex-wrap:wrap; align-items:center;">
+            <span style="font-size:0.75rem; background:#f8f9fa; padding:0.2rem 0.6rem; border-radius:8px;">🆔 {user_id[:12]}...</span>
+            {('<span style="font-size:0.75rem; background:#f8f9fa; padding:0.2rem 0.6rem; border-radius:8px;">📧 ' + email[:25] + '</span>') if email else ''}
         </div>
     </div>
     """
@@ -1985,6 +2055,43 @@ def show_user_profile(db, user_id):
             st.markdown(f"**📌 الحالة:** {status_label}")
             st.markdown(f"**🆔 المعرف:** {user.get('user_id', '')}")
     
+    # QR Code Section
+    if is_qr_eligible(role):
+        st.markdown("---")
+        st.subheader("📱 رمز الاستجابة السريعة (QR)")
+        qr_data = get_user_qr_data(user_id, db)
+        if qr_data:
+            is_valid, msg, _ = validate_qr_code(qr_data)
+            qr_col1, qr_col2 = st.columns([1, 2])
+            with qr_col1:
+                qr_png = generate_qr_image(qr_data, "png")
+                st.image(qr_png, caption="رمز QR", use_column_width=True)
+            with qr_col2:
+                st.markdown(f"**الحالة:** {'✅ صالح' if is_valid else '❌ ' + msg}")
+                st.markdown(f"**تاريخ الإصدار:** {qr_data.get('issued_at', '')[:19]}")
+                st.markdown(f"**الصلاحية:** {role_label}")
+                if section_name:
+                    st.markdown(f"**الفصل:** {section_name}")
+                st.markdown("---")
+                dl_col1, dl_col2 = st.columns(2)
+                with dl_col1:
+                    qr_svg = generate_qr_image(qr_data, "svg")
+                    safe_name = "".join(c for c in user.get('full_name', 'user') if c.isalnum() or c in " _-")
+                    st.download_button("📥 تحميل PNG", data=qr_png, file_name=f"qr_{safe_name}.png",
+                                       mime="image/png", use_container_width=True)
+                with dl_col2:
+                    st.download_button("📥 تحميل SVG", data=qr_svg, file_name=f"qr_{safe_name}.svg",
+                                       mime="image/svg+xml", use_container_width=True)
+        else:
+            st.warning("⚠️ لا يوجد رمز QR مُنشأ لهذا المستخدم")
+            if st.button("🔧 إنشاء رمز QR", use_container_width=True):
+                qr_content = generate_qr_content(user, db)
+                save_user_qr_data(user_id, qr_content, db)
+                db.add_log(st.session_state.user.get("user_id", ""), f"إنشاء QR للمستخدم {user_id}", f"تم إنشاء رمز QR لـ {user.get('full_name', '')}")
+                st.success("✅ تم إنشاء رمز QR بنجاح!")
+                time.sleep(1)
+                st.rerun()
+    
     # Activity Log
     with st.expander("📜 سجل النشاطات"):
         if not user_logs.empty:
@@ -2043,124 +2150,85 @@ def show_user_management(db):
     sections = db.get_sections()
     stages = db.get_stages()
     students = db.get_students()
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["الخدام", "المدرسات", "الطالبات", "أمناء الخدمة", "إدارة الفصول", "إدارة المراحل"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["مدير النظام", "المدرسات", "الطالبات", "أمناء الخدمة", "خدم الكنيسة", "إدارة الفصول", "إدارة المراحل"])
 
     with tab1:
-        col_search, col_actions = st.columns([3, 1])
-        with col_search:
-            search_term = st.text_input("🔍 بحث سريع", placeholder="ابحث بالاسم، الهاتف، البريد...", label_visibility="collapsed")
-        with col_actions:
-            if st.button("➕ مستخدم جديد", use_container_width=True, key="new_user_quick"):
-                st.session_state.show_add_user = True
-        
-        if st.session_state.get("show_add_user"):
-            with st.form("add_user_form_quick"):
-                st.markdown("#### ➕ إضافة مستخدم جديد")
-                col1, col2 = st.columns(2)
-                new_uname = col1.text_input("اسم المستخدم*").strip()
-                new_fname = col2.text_input("الاسم الكامل*")
-                new_pass = col1.text_input("كلمة المرور*", type="password").strip()
-                new_role = col2.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"], key="quick_role")
-                new_sec_id = ""
-                if new_role in ["Service Manager", "Teacher"] and not sections.empty:
-                    sec_opts = ["None"] + sections["section_id"].tolist()
-                    sec_choice = st.selectbox("الفصل", sec_opts, format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0] if x != "None" else "لا يوجد", key="quick_sec")
-                    new_sec_id = sec_choice if sec_choice != "None" else ""
-                new_phone = st.text_input("رقم الهاتف")
-                new_email = st.text_input("البريد الإلكتروني")
-                save_col1, save_col2 = st.columns(2)
-                if save_col1.form_submit_button("💾 حفظ"):
-                    if not new_uname or not new_pass or not new_fname:
-                        st.error("مطلوب اسم المستخدم وكلمة المرور والاسم الكامل")
-                    elif "username" in users.columns and not users[users.username == new_uname].empty:
+        st.subheader("👨‍💼 قائمة مديري النظام")
+        admins = users[users.role == "System Admin"] if not users.empty and "role" in users.columns else pd.DataFrame()
+        if not admins.empty:
+            display_cols = [c for c in ["user_id", "username", "full_name", "phone", "email"] if c in admins.columns]
+            st.dataframe(admins[display_cols], use_container_width=True)
+        else:
+            st.info("لا يوجد مديري نظام مسجلين.")
+        with st.expander("➕ إضافة مدير نظام جديد"):
+            with st.form("add_admin_form"):
+                admin_name = st.text_input("اسم المستخدم*").strip()
+                password = st.text_input("كلمة المرور*", type="password").strip()
+                phone = st.text_input("رقم الهاتف")
+                email = st.text_input("البريد الإلكتروني")
+                if st.form_submit_button("إضافة"):
+                    if not admin_name or not password:
+                        st.error("اسم المستخدم وكلمة المرور مطلوبان")
+                    elif "username" in users.columns and not users[users.username == admin_name].empty:
                         st.error("اسم المستخدم موجود مسبقاً!")
                     else:
-                        db.add_user({"user_id": str(uuid.uuid4()), "username": new_uname, "password": hash_password(new_pass),
-                                     "role": new_role, "full_name": new_fname, "section_id": new_sec_id, "phone": new_phone, "email": new_email})
-                        db.add_log(st.session_state.user.get("user_id", ""), f"إضافة مستخدم {new_uname}", f"تم إنشاء مستخدم جديد: {new_fname}")
-                        st.success("✅ تم إضافة المستخدم بنجاح")
-                        st.session_state.show_add_user = False
+                        db.add_user({
+                            "user_id": str(uuid.uuid4()), "username": admin_name, "password": password,
+                            "role": "System Admin", "full_name": admin_name,
+                            "section_id": "", "phone": phone, "email": email
+                        })
+                        st.success("تمت إضافة مدير النظام بنجاح")
                         time.sleep(1)
                         st.rerun()
-                if save_col2.form_submit_button("❌ إلغاء"):
-                    st.session_state.show_add_user = False
-                    st.rerun()
-            st.markdown("---")
-        
-        # Filters
-        if not users.empty:
-            col_f1, col_f2, col_f3 = st.columns(3)
-            with col_f1:
-                role_options = ["الكل"] + sorted(users["role"].unique().tolist()) if "role" in users.columns else ["الكل"]
-                role_options = [r for r in role_options if r in ["الكل", "System Admin", "Father Account", "Service Manager", "Teacher"]]
-                role_filter = st.selectbox("الدور", role_options, key="user_role_filter")
-            with col_f2:
-                status_options = ["الكل", "نشط", "غير نشط", "موقوف", "مؤرشف"]
-                status_filter = st.selectbox("الحالة", status_options, key="user_status_filter")
-            with col_f3:
-                section_options = ["الكل"]
-                if not sections.empty and "section_id" in users.columns:
-                    section_options += sections["section_id"].tolist()
-                sec_filter = st.selectbox("الفصل", section_options,
-                                          format_func=lambda x: "الكل" if x == "الكل" else (sections[sections.section_id == x]["section_name"].values[0] if not sections.empty and x != "الكل" else x),
-                                          key="user_section_filter")
-            
-            filtered_users = filter_users_df(users, search_term, role_filter, status_filter, sec_filter)
-            
-            if not filtered_users.empty:
-                st.markdown(f"<p style='text-align:center;color:#6c757d;'>إجمالي {len(filtered_users)} مستخدم</p>", unsafe_allow_html=True)
-                
-                # Card view
-                cards_per_row = 3
-                for i in range(0, len(filtered_users), cards_per_row):
-                    row_users = filtered_users.iloc[i:i+cards_per_row]
-                    cols = st.columns(cards_per_row)
-                    for j, (_, user_row) in enumerate(row_users.iterrows()):
-                        with cols[j]:
-                            card_html = render_user_card(user_row.to_dict(), sections, stages)
-                            st.markdown(card_html, unsafe_allow_html=True)
-                            user_id = user_row.get("user_id", "")
-                            card_col1, card_col2 = st.columns(2)
-                            if card_col1.button("📋 عرض", key=f"profile_{user_id}", use_container_width=True):
-                                st.session_state.profile_user_id = user_id
-                                st.session_state.edit_user_id = None
-                                st.rerun()
-                            if card_col2.button("✏️", key=f"edit_{user_id}", use_container_width=True):
-                                st.session_state.edit_user_id = user_id
-                                st.session_state.profile_user_id = None
-                                st.rerun()
-                    st.markdown("---")
-                
-                # Bulk actions
-                st.markdown("#### 🔄 إجراءات جماعية")
-                bulk_col1, bulk_col2, bulk_col3 = st.columns(3)
-                if bulk_col1.button("📥 تصدير CSV", use_container_width=True):
-                    csv_data = filtered_users.to_csv(index=False).encode('utf-8-sig')
-                    st.download_button("⬇️ تحميل CSV", data=csv_data, file_name="users_export.csv", mime="text/csv", use_container_width=True)
-                if bulk_col2.button("📥 تصدير Excel", use_container_width=True):
-                    try:
-                        output = io.BytesIO()
-                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            filtered_users.to_excel(writer, index=False, sheet_name="Users")
-                        st.download_button("⬇️ تحميل Excel", data=output.getvalue(), file_name="users_export.xlsx",
-                                          mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                    except:
-                        st.error("يتطلب تصدير Excel مكتبة openpyxl. استخدم CSV بدلاً.")
-                if bulk_col3.button("🗑️ حذف المحدد", use_container_width=True):
-                    st.warning("لتأكيد الحذف الجماعي، يرجى استخدام زر الحذف لكل مستخدم من بطاقته.")
+
+    with tab2:
+        st.subheader("قائمة المدرسات")
+        teachers = users[users.role == "Teacher"] if not users.empty and "role" in users.columns else pd.DataFrame()
+        if not teachers.empty:
+            if not sections.empty:
+                teachers_display = teachers.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
+                teachers_display = teachers_display.rename(columns={"section_name": "الفصل"})
             else:
-                st.info("🔍 لا توجد نتائج مطابقة للبحث.")
+                teachers_display = teachers
+                teachers_display["الفصل"] = ""
+            display_cols = [c for c in ["user_id", "username", "full_name", "الفصل", "phone", "email"] if c in teachers_display.columns]
+            st.dataframe(teachers_display[display_cols], use_container_width=True)
         else:
-            st.info("لا يوجد مستخدمون مسجلون.")
+            st.info("لا توجد مدرسات مسجلات.")
+        with st.expander("➕ إضافة مدرسة جديدة"):
+            with st.form("add_teacher_form"):
+                teacher_name = st.text_input("اسم المستخدم*").strip()
+                password = st.text_input("كلمة المرور*", type="password").strip()
+                section_id = ""
+                if not sections.empty:
+                    section_options = ["None"] + sections["section_id"].tolist()
+                    section_choice = st.selectbox("الفصل", section_options, format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0] if x != "None" else "لا يوجد")
+                    section_id = section_choice if section_choice != "None" else ""
+                phone = st.text_input("رقم الهاتف")
+                email = st.text_input("البريد الإلكتروني")
+                if st.form_submit_button("إضافة"):
+                    if not teacher_name or not password:
+                        st.error("اسم المستخدم وكلمة المرور مطلوبان")
+                    elif "username" in users.columns and not users[users.username == teacher_name].empty:
+                        st.error("اسم المستخدم موجود مسبقاً!")
+                    else:
+                        db.add_user({
+                            "user_id": str(uuid.uuid4()), "username": teacher_name, "password": password,
+                            "role": "Teacher", "full_name": teacher_name,
+                            "section_id": section_id, "phone": phone, "email": email
+                        })
+                        st.success("تمت إضافة المدرسة بنجاح")
+                        time.sleep(1)
+                        st.rerun()
         with st.expander("➕ إضافة مستخدم جديد"):
             with st.form("add_user_form"):
                 col1, col2 = st.columns(2)
                 username = col1.text_input("اسم المستخدم*").strip()
                 full_name = col2.text_input("الاسم الكامل*")
                 password = col1.text_input("كلمة المرور*", type="password").strip()
-                role = col2.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher"])
+                role = col2.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher", "Student"])
                 section_id = ""
-                if role in ["Service Manager", "Teacher"] and not sections.empty:
+                if role in ["Service Manager", "Teacher", "Student"] and not sections.empty:
                     section_options = ["None"] + sections["section_id"].tolist()
                     section_choice = st.selectbox("الفصل", section_options, format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0] if x != "None" else "لا يوجد")
                     section_id = section_choice if section_choice != "None" else ""
@@ -2189,12 +2257,12 @@ def show_user_management(db):
                 new_full_name = st.text_input("الاسم الكامل", value=user_data.get("full_name", ""), key="user_fullname")
                 new_phone = st.text_input("رقم الهاتف", value=user_data.get("phone", ""), key="user_phone")
                 new_email = st.text_input("البريد الإلكتروني", value=user_data.get("email", ""), key="user_email")
-                roles_list = ["System Admin", "Father Account", "Service Manager", "Teacher"]
+                roles_list = ["System Admin", "Father Account", "Service Manager", "Teacher", "Student"]
                 current_role = user_data.get("role", "Teacher")
                 role_index = roles_list.index(current_role) if current_role in roles_list else 3
                 new_role = st.selectbox("الصلاحية", roles_list, index=role_index, key="user_role")
                 new_section_id = user_data.get("section_id", "")
-                if new_role in ["Service Manager", "Teacher"] and not sections.empty:
+                if new_role in ["Service Manager", "Teacher", "Student"] and not sections.empty:
                     section_options = ["None"] + sections["section_id"].tolist()
                     current_idx = section_options.index(new_section_id) if new_section_id in section_options else 0
                     section_choice = st.selectbox("الفصل", section_options, index=current_idx, format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0] if x != "None" else "لا يوجد", key="user_section")
@@ -2338,6 +2406,90 @@ def show_user_management(db):
                     time.sleep(1)
                     st.rerun()
 
+    with tab3:
+        st.subheader("قائمة الطالبات")
+        if not students.empty:
+            if not sections.empty:
+                students_display = students.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
+            else:
+                students_display = students
+                students_display["section_name"] = ""
+            display_cols = [c for c in ["student_id", "full_name", "section_name", "phone", "parent_phone", "birthdate", "school", "status"] if c in students_display.columns]
+            st.dataframe(students_display[display_cols], use_container_width=True)
+        else:
+            st.info("لا توجد طالبات مسجلة.")
+        with st.expander("➕ إضافة طالبة جديدة"):
+            with st.form("add_student_form"):
+                full_name = st.text_input("الاسم الكامل*")
+                section_id = ""
+                if not sections.empty:
+                    section_id = st.selectbox("الفصل", sections["section_id"], format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0])
+                phone = st.text_input("رقم الهاتف")
+                parent_phone = st.text_input("رقم ولي الأمر")
+                birthdate = st.date_input("تاريخ الميلاد", value=None)
+                address = st.text_area("العنوان")
+                school = st.text_input("المدرسة")
+                notes = st.text_area("ملاحظات")
+                if st.form_submit_button("إضافة"):
+                    if not full_name:
+                        st.error("الاسم الكامل مطلوب")
+                    else:
+                        db.add_student({
+                            "student_id": str(uuid.uuid4()), "full_name": full_name, "section_id": section_id,
+                            "phone": phone, "parent_phone": parent_phone,
+                            "birthdate": birthdate.strftime("%Y-%m-%d") if birthdate else "",
+                            "address": address, "school": school, "notes": notes, "status": "active"
+                        })
+                        st.success("تمت الإضافة")
+                        time.sleep(1)
+                        st.rerun()
+        with st.expander("✏️ تعديل بيانات طالبة"):
+            if not students.empty:
+                selected_student = st.selectbox("اختر طالبة", students["student_id"], key="sel_student_edit")
+                student_row = students[students.student_id == selected_student].iloc[0].to_dict()
+                new_full_name = st.text_input("الاسم الكامل", value=student_row.get("full_name", ""), key="student_fullname")
+                sections_local = sections
+                new_section_id = student_row.get("section_id", "")
+                if not sections_local.empty:
+                    section_options = sections_local["section_id"].tolist()
+                    current_idx = section_options.index(new_section_id) if new_section_id in section_options else 0
+                    new_section_id = st.selectbox("الفصل", section_options, index=current_idx, format_func=lambda x: sections_local[sections_local.section_id == x]["section_name"].values[0], key="student_section")
+                new_phone = st.text_input("رقم الهاتف", value=student_row.get("phone", ""), key="student_phone")
+                new_parent = st.text_input("رقم ولي الأمر", value=student_row.get("parent_phone", ""), key="student_parent")
+                existing_birthdate = student_row.get("birthdate", "")
+                if existing_birthdate:
+                    try:
+                        birth_date_val = pd.to_datetime(existing_birthdate).date()
+                    except Exception:
+                        birth_date_val = None
+                else:
+                    birth_date_val = None
+                new_birthdate = st.date_input("تاريخ الميلاد", value=birth_date_val, key="student_birthdate")
+                new_school = st.text_input("المدرسة", value=student_row.get("school", ""), key="student_school")
+                new_notes = st.text_area("ملاحظات", value=student_row.get("notes", ""), key="student_notes")
+                status_list = ["active", "inactive"]
+                current_status = student_row.get("status", "active")
+                status_index = 0 if current_status == "active" else 1
+                new_status = st.selectbox("الحالة", status_list, index=status_index, key="student_status")
+                if st.button("حفظ التعديلات", key="save_student_btn"):
+                    db.update_student(selected_student, {
+                        "full_name": new_full_name, "section_id": new_section_id,
+                        "phone": new_phone, "parent_phone": new_parent,
+                        "birthdate": new_birthdate.strftime("%Y-%m-%d") if new_birthdate else "",
+                        "school": new_school, "notes": new_notes, "status": new_status
+                    })
+                    st.success("تم التحديث")
+                    time.sleep(1)
+                    st.rerun()
+        with st.expander("🗑️ حذف طالبة"):
+            if not students.empty:
+                delete_id = st.selectbox("اختر طالبة للحذف", students["student_id"], key="delete_student_sel")
+                if st.button("تأكيد حذف الطالبة"):
+                    db.delete_student(delete_id)
+                    st.success("تم الحذف")
+                    time.sleep(1)
+                    st.rerun()
+
     with tab4:
         st.subheader("قائمة أمناء الخدمة")
         managers = users[users.role == "Service Manager"] if not users.empty and "role" in users.columns else pd.DataFrame()
@@ -2354,6 +2506,35 @@ def show_user_management(db):
             st.info("لا يوجد أمناء خدمة.")
 
     with tab5:
+        st.subheader("👔 قائمة خدمات الكنيسة (Priests)")
+        priests = users[users.role == "Father Account"] if not users.empty and "role" in users.columns else pd.DataFrame()
+        if not priests.empty:
+            display_cols = [c for c in ["user_id", "username", "full_name", "phone", "email"] if c in priests.columns]
+            st.dataframe(priests[display_cols], use_container_width=True)
+        else:
+            st.info("لا يوجد خدم مسجلون.")
+        with st.expander("➕ إضافة خدم جديد"):
+            with st.form("add_priest_form"):
+                priest_name = st.text_input("اسم المستخدم*").strip()
+                password = st.text_input("كلمة المرور*", type="password").strip()
+                phone = st.text_input("رقم الهاتف")
+                email = st.text_input("البريد الإلكتروني")
+                if st.form_submit_button("إضافة"):
+                    if not priest_name or not password:
+                        st.error("اسم المستخدم وكلمة المرور مطلوبان")
+                    elif "username" in users.columns and not users[users.username == priest_name].empty:
+                        st.error("اسم المستخدم موجود مسبقاً!")
+                    else:
+                        db.add_user({
+                            "user_id": str(uuid.uuid4()), "username": priest_name, "password": password,
+                            "role": "Father Account", "full_name": priest_name,
+                            "section_id": "", "phone": phone, "email": email
+                        })
+                        st.success("تمت إضافة الخدم بنجاح")
+                        time.sleep(1)
+                        st.rerun()
+
+    with tab6:
         st.subheader("قائمة الفصول")
         if not sections.empty:
             st.dataframe(sections[["section_id", "section_name"]], use_container_width=True)
@@ -2379,7 +2560,7 @@ def show_user_management(db):
                     time.sleep(1)
                     st.rerun()
 
-    with tab6:
+    with tab7:
         st.subheader("🏫 إدارة المراحل الدراسية")
         if not stages.empty:
             if not users.empty and "user_id" in users.columns and "full_name" in users.columns:
@@ -2589,7 +2770,7 @@ def save_user_qr_data(user_id, qr_content, db):
 
 def is_qr_eligible(role):
     """Check if a user role is eligible for QR codes."""
-    return role in ["Teacher", "Service Manager"]
+    return role in ["Teacher", "Service Manager", "Student"]
 
 def show_qr_management(db):
     """Professional QR Code Management Dashboard."""
@@ -2601,8 +2782,8 @@ def show_qr_management(db):
     stages = db.get_stages()
     students = db.get_students()
     
-    # Filter eligible users
-    eligible_roles = ["Teacher", "Service Manager"]
+    # Filter eligible users (Students, Teachers, Service Leaders only)
+    eligible_roles = ["Teacher", "Service Manager", "Student"]
     eligible_users = users[users.role.isin(eligible_roles)] if not users.empty else pd.DataFrame()
     
     # Get QR status for each eligible user
@@ -2772,42 +2953,72 @@ def show_qr_management(db):
         st.markdown("#### 🚀 إنشاء مجمع")
         bulk_col1, bulk_col2, bulk_col3, bulk_col4 = st.columns(4)
         if bulk_col1.button("🔧 إنشاء للجميع", use_container_width=True):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             generated = 0
-            for _, u in eligible_users.iterrows():
+            total = len(eligible_users)
+            for idx, (_, u) in enumerate(eligible_users.iterrows()):
+                status_text.text(f"جاري إنشاء QR لـ {u.get('full_name', '')}...")
                 if not get_user_qr_data(u["user_id"], db):
                     qr_content = generate_qr_content(u.to_dict(), db)
                     save_user_qr_data(u["user_id"], qr_content, db)
                     generated += 1
+                progress_bar.progress((idx + 1) / total)
             db.add_log(st.session_state.user.get("user_id", ""), "إنشاء QR مجمع", f"تم إنشاء {generated} رمز QR")
+            status_text.empty()
+            progress_bar.empty()
             st.success(f"✅ تم إنشاء {generated} رمز QR!")
             time.sleep(1)
             st.rerun()
         if bulk_col2.button("🔧 للصفوف", use_container_width=True):
+            teachers = eligible_users[eligible_users.role == "Teacher"]
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             generated = 0
-            for _, u in eligible_users.iterrows():
-                if u.get("role") == "Teacher" and not get_user_qr_data(u["user_id"], db):
+            total = len(teachers)
+            for idx, (_, u) in enumerate(teachers.iterrows()):
+                status_text.text(f"جاري إنشاء QR للمدرسة {u.get('full_name', '')}...")
+                if not get_user_qr_data(u["user_id"], db):
                     qr_content = generate_qr_content(u.to_dict(), db)
                     save_user_qr_data(u["user_id"], qr_content, db)
                     generated += 1
+                progress_bar.progress((idx + 1) / total if total > 0 else 0)
+            status_text.empty()
+            progress_bar.empty()
             st.success(f"✅ تم إنشاء {generated} رمز QR للمدرسات!")
             time.sleep(1)
             st.rerun()
         if bulk_col3.button("🔧 للأمناء", use_container_width=True):
+            leaders = eligible_users[eligible_users.role == "Service Manager"]
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             generated = 0
-            for _, u in eligible_users.iterrows():
-                if u.get("role") == "Service Manager" and not get_user_qr_data(u["user_id"], db):
+            total = len(leaders)
+            for idx, (_, u) in enumerate(leaders.iterrows()):
+                status_text.text(f"جاري إنشاء QR لأمين الخدمة {u.get('full_name', '')}...")
+                if not get_user_qr_data(u["user_id"], db):
                     qr_content = generate_qr_content(u.to_dict(), db)
                     save_user_qr_data(u["user_id"], qr_content, db)
                     generated += 1
+                progress_bar.progress((idx + 1) / total if total > 0 else 0)
+            status_text.empty()
+            progress_bar.empty()
             st.success(f"✅ تم إنشاء {generated} رمز QR للأمناء!")
             time.sleep(1)
             st.rerun()
         if bulk_col4.button("🔄 إعادة توليد الكل", use_container_width=True):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             regenerated = 0
-            for _, u in eligible_users.iterrows():
+            total = len(eligible_users)
+            for idx, (_, u) in enumerate(eligible_users.iterrows()):
+                status_text.text(f"جاري إعادة توليد QR لـ {u.get('full_name', '')}...")
                 qr_content = generate_qr_content(u.to_dict(), db)
                 save_user_qr_data(u["user_id"], qr_content, db)
                 regenerated += 1
+                progress_bar.progress((idx + 1) / total)
+            status_text.empty()
+            progress_bar.empty()
             st.success(f"✅ تم إعادة توليد {regenerated} رمز QR!")
             time.sleep(1)
             st.rerun()
@@ -3904,6 +4115,11 @@ def main():
             elif choice == "📜 سجل العمليات":
                 if st.session_state.user.get("role") == "System Admin":
                     show_logs(db)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice == "📱 إدارة QR":
+                if st.session_state.user.get("role") == "System Admin":
+                    show_qr_management(db)
                 else:
                     st.error("🚫 غير مصرح")
             elif choice == "🔒 تغيير كلمة المرور":
