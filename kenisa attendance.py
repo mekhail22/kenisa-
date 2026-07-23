@@ -2206,7 +2206,7 @@ def show_user_management(db):
         else:
             st.info("لا توجد مدرسات مسجلات.")
         with st.expander("➕ إضافة مدرسة جديدة"):
-            with st.form("add_teacher_form"):
+            with st.form("add_teacher_form_2"):
                 teacher_name = st.text_input("اسم المستخدم*").strip()
                 password = st.text_input("كلمة المرور*", type="password").strip()
                 section_id = ""
@@ -2307,7 +2307,7 @@ def show_user_management(db):
         else:
             st.info("لا توجد مدرسات مسجلات.")
         with st.expander("➕ إضافة مدرسة جديدة"):
-            with st.form("add_teacher_form"):
+            with st.form("add_teacher_form_unique"):
                 teacher_name = st.text_input("اسم المستخدم*").strip()
                 password = st.text_input("كلمة المرور*", type="password").strip()
                 section_id = ""
@@ -2345,7 +2345,7 @@ def show_user_management(db):
         else:
             st.info("لا توجد طالبات مسجلة.")
         with st.expander("➕ إضافة طالبة جديدة"):
-            with st.form("add_student_form"):
+            with st.form("add_student_form_unique"):
                 full_name = st.text_input("الاسم الكامل*")
                 section_id = ""
                 if not sections.empty:
@@ -2782,11 +2782,15 @@ def is_qr_eligible(role):
     """Check if a user role is eligible for QR codes."""
     return role in ["Teacher", "Service Manager", "Student"]
 
+st.components.v1.html("<script>(()=>{const e=window.parent;window.addEventListener('message',(ev=>{const d=ev&&ev.data;if(d&&typeof d==='object'){try{if(window.Streamlit&&window.Streamlit.setComponentValue){window.Streamlit.setComponentValue(JSON.stringify(d));}}catch(e){}}}));})();</script>", height=0, scrolling=False)
+
 def show_qr_scanner(db):
     """QR Scanner page using HTML5 camera + jsQR for scanning."""
     user = st.session_state.user
     role = user.get("role", "")
     section_id = user.get("section_id", "")
+    
+    print(f"[QR] Scanner page opened by user={user.get('user_id')} role={role} section={section_id}")
     
     if role not in ["Teacher", "System Admin"]:
         st.error("🚫 هذه الصفحة متاحة للمدرسات ومديري النظام فقط.")
@@ -2914,6 +2918,7 @@ def show_qr_scanner(db):
     """
     
     components.html(scanner_html, height=500, scrolling=False)
+    st.components.v1.html("<script>(()=>{const e=window.parent;window.addEventListener('message',(ev=>{const d=ev&&ev.data;if(d&&typeof d==='object'){try{if(window.Streamlit&&window.Streamlit.setComponentValue){window.Streamlit.setComponentValue(JSON.stringify(d));}}catch(e){}}}));})();</script>", height=0, scrolling=False)
     
     qr_result = st.session_state.get("qr_scan_result")
     if qr_result:
@@ -2923,13 +2928,16 @@ def show_qr_scanner(db):
         with st.spinner("جاري معالجة رمز QR..."):
             try:
                 qr_data = json.loads(qr_result)
+                print(f"[QR] Decoded QR data: user_id={qr_data.get('user_id')} role={qr_data.get('role')} section={qr_data.get('section_id')}")
             except json.JSONDecodeError:
+                print("[QR] JSON decode error")
                 error_container.error("❌ رمز QR غير صالح - البيانات تالفة")
                 st.session_state.qr_scan_status = "error"
                 st.rerun()
                 return
             
             is_valid, msg, validated_data = validate_qr_code(qr_data)
+            print(f"[QR] Validation result: valid={is_valid} msg={msg}")
             if not is_valid:
                 error_container.error(f"❌ خطأ في الرمز: {msg}")
                 st.session_state.qr_scan_status = "error"
@@ -2942,6 +2950,7 @@ def show_qr_scanner(db):
             
             users = db.get_users()
             if users.empty or user_id not in users["user_id"].tolist():
+                print("[QR] User not found in users sheet")
                 error_container.error("❌ المستخدم غير موجود في النظام")
                 st.session_state.qr_scan_status = "error"
                 st.rerun()
@@ -2951,9 +2960,11 @@ def show_qr_scanner(db):
             full_name = user_row.get("full_name", "غير معروف")
             user_role = user_row.get("role", "")
             user_section_id = user_row.get("section_id", "")
+            print(f"[QR] Matched user: {full_name} role={user_role} section={user_section_id}")
             
             if role == "Teacher" and section_id:
                 if qr_section_id != section_id and user_section_id != section_id:
+                    print(f"[QR] Section mismatch: scanner section={section_id} qr_section={qr_section_id} user_section={user_section_id}")
                     error_container.error(f"🚫 لا يمكنك تسجيل حضور طالبة من فصل آخر.")
                     st.session_state.qr_scan_status = "error"
                     st.rerun()
@@ -2978,6 +2989,7 @@ def show_qr_scanner(db):
             today_str = get_cairo_now().strftime("%Y-%m-%d")
             existing = db.get_attendance_by_date_user(today_str, user_id)
             if not existing.empty:
+                print(f"[QR] Attendance already recorded today for user={user_id}")
                 error_container.warning(f"⚠️ {full_name} تم تسجيل حضورها مسبقاً اليوم ({today_str})")
                 st.session_state.qr_scan_status = "waiting"
                 time.sleep(3)
@@ -3001,9 +3013,11 @@ def show_qr_scanner(db):
                 "recorded_by": user.get("user_id", ""),
                 "attendance_method": "QR"
             }
+            print(f"[QR] Saving attendance record: record_id={record_id} user={full_name} date={today_str}")
             
             try:
                 db.batch_add_attendance([attendance_record])
+                print(f"[QR] Attendance saved successfully for user={full_name}")
                 db.add_log(user.get("user_id", ""), f"تسجيل حضور QR لـ {full_name}", f"تم تسجيل حضور {full_name} ({qr_role}) بتاريخ {today_str}")
                 
                 st.session_state.qr_scan_success = True
@@ -3021,6 +3035,7 @@ def show_qr_scanner(db):
                 time.sleep(2)
                 st.rerun()
             except Exception as e:
+                print(f"[QR] Failed to save attendance: {str(e)}")
                 error_container.error(f"❌ فشل حفظ الحضور: {str(e)}")
                 st.session_state.qr_scan_status = "error"
                 st.rerun()
