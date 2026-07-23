@@ -2229,46 +2229,6 @@ def show_user_management(db):
                         time.sleep(1)
                         st.rerun()
 
-    with tab2:
-        st.subheader("قائمة المدرسات")
-        teachers = users[users.role == "Teacher"] if not users.empty and "role" in users.columns else pd.DataFrame()
-        if not teachers.empty:
-            if not sections.empty:
-                teachers_display = teachers.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
-                teachers_display = teachers_display.rename(columns={"section_name": "الفصل"})
-            else:
-                teachers_display = teachers
-                teachers_display["الفصل"] = ""
-            display_cols = [c for c in ["user_id", "username", "full_name", "الفصل", "phone", "email"] if c in teachers_display.columns]
-            st.dataframe(teachers_display[display_cols], use_container_width=True)
-        else:
-            st.info("لا توجد مدرسات مسجلات.")
-        with st.expander("➕ إضافة مدرسة جديدة"):
-            with st.form("add_teacher_form_unique"):
-                teacher_name = st.text_input("اسم المستخدم*").strip()
-                password = st.text_input("كلمة المرور*", type="password").strip()
-                section_id = ""
-                if not sections.empty:
-                    section_options = ["None"] + sections["section_id"].tolist()
-                    section_choice = st.selectbox("الفصل", section_options, format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0] if x != "None" else "لا يوجد")
-                    section_id = section_choice if section_choice != "None" else ""
-                phone = st.text_input("رقم الهاتف")
-                email = st.text_input("البريد الإلكتروني")
-                if st.form_submit_button("إضافة"):
-                    if not teacher_name or not password:
-                        st.error("اسم المستخدم وكلمة المرور مطلوبان")
-                    elif "username" in users.columns and not users[users.username == teacher_name].empty:
-                        st.error("اسم المستخدم موجود مسبقاً!")
-                    else:
-                        db.add_user({
-                            "user_id": str(uuid.uuid4()), "username": teacher_name, "password": password,
-                            "role": "Teacher", "full_name": teacher_name,
-                            "section_id": section_id, "phone": phone, "email": email
-                        })
-                        st.success("تمت إضافة المدرسة بنجاح")
-                        time.sleep(1)
-                        st.rerun()
-
     with tab3:
         st.subheader("قائمة الطالبات")
         if not students.empty:
@@ -2283,90 +2243,6 @@ def show_user_management(db):
             st.info("لا توجد طالبات مسجلة.")
         with st.expander("➕ إضافة طالبة جديدة"):
             with st.form("add_student_form_unique"):
-                full_name = st.text_input("الاسم الكامل*")
-                section_id = ""
-                if not sections.empty:
-                    section_id = st.selectbox("الفصل", sections["section_id"], format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0])
-                phone = st.text_input("رقم الهاتف")
-                parent_phone = st.text_input("رقم ولي الأمر")
-                birthdate = st.date_input("تاريخ الميلاد", value=None)
-                address = st.text_area("العنوان")
-                school = st.text_input("المدرسة")
-                notes = st.text_area("ملاحظات")
-                if st.form_submit_button("إضافة"):
-                    if not full_name:
-                        st.error("الاسم الكامل مطلوب")
-                    else:
-                        db.add_student({
-                            "student_id": str(uuid.uuid4()), "full_name": full_name, "section_id": section_id,
-                            "phone": phone, "parent_phone": parent_phone,
-                            "birthdate": birthdate.strftime("%Y-%m-%d") if birthdate else "",
-                            "address": address, "school": school, "notes": notes, "status": "active"
-                        })
-                        st.success("تمت الإضافة")
-                        time.sleep(1)
-                        st.rerun()
-        with st.expander("✏️ تعديل بيانات طالبة"):
-            if not students.empty:
-                selected_student = st.selectbox("اختر طالبة", students["student_id"], key="sel_student_edit")
-                student_row = students[students.student_id == selected_student].iloc[0].to_dict()
-                new_full_name = st.text_input("الاسم الكامل", value=student_row.get("full_name", ""), key="student_fullname")
-                sections_local = sections
-                new_section_id = student_row.get("section_id", "")
-                if not sections_local.empty:
-                    section_options = sections_local["section_id"].tolist()
-                    current_idx = section_options.index(new_section_id) if new_section_id in section_options else 0
-                    new_section_id = st.selectbox("الفصل", section_options, index=current_idx, format_func=lambda x: sections_local[sections_local.section_id == x]["section_name"].values[0], key="student_section")
-                new_phone = st.text_input("رقم الهاتف", value=student_row.get("phone", ""), key="student_phone")
-                new_parent = st.text_input("رقم ولي الأمر", value=student_row.get("parent_phone", ""), key="student_parent")
-                existing_birthdate = student_row.get("birthdate", "")
-                if existing_birthdate:
-                    try:
-                        birth_date_val = pd.to_datetime(existing_birthdate).date()
-                    except Exception:
-                        birth_date_val = None
-                else:
-                    birth_date_val = None
-                new_birthdate = st.date_input("تاريخ الميلاد", value=birth_date_val, key="student_birthdate")
-                new_school = st.text_input("المدرسة", value=student_row.get("school", ""), key="student_school")
-                new_notes = st.text_area("ملاحظات", value=student_row.get("notes", ""), key="student_notes")
-                status_list = ["active", "inactive"]
-                current_status = student_row.get("status", "active")
-                status_index = 0 if current_status == "active" else 1
-                new_status = st.selectbox("الحالة", status_list, index=status_index, key="student_status")
-                if st.button("حفظ التعديلات", key="save_student_btn"):
-                    db.update_student(selected_student, {
-                        "full_name": new_full_name, "section_id": new_section_id,
-                        "phone": new_phone, "parent_phone": new_parent,
-                        "birthdate": new_birthdate.strftime("%Y-%m-%d") if new_birthdate else "",
-                        "school": new_school, "notes": new_notes, "status": new_status
-                    })
-                    st.success("تم التحديث")
-                    time.sleep(1)
-                    st.rerun()
-        with st.expander("🗑️ حذف طالبة"):
-            if not students.empty:
-                delete_id = st.selectbox("اختر طالبة للحذف", students["student_id"], key="delete_student_sel")
-                if st.button("تأكيد حذف الطالبة"):
-                    db.delete_student(delete_id)
-                    st.success("تم الحذف")
-                    time.sleep(1)
-                    st.rerun()
-
-    with tab3:
-        st.subheader("قائمة الطالبات")
-        if not students.empty:
-            if not sections.empty:
-                students_display = students.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
-            else:
-                students_display = students
-                students_display["section_name"] = ""
-            display_cols = [c for c in ["student_id", "full_name", "section_name", "phone", "parent_phone", "birthdate", "school", "status"] if c in students_display.columns]
-            st.dataframe(students_display[display_cols], use_container_width=True)
-        else:
-            st.info("لا توجد طالبات مسجلة.")
-        with st.expander("➕ إضافة طالبة جديدة"):
-            with st.form("add_student_form"):
                 full_name = st.text_input("الاسم الكامل*")
                 section_id = ""
                 if not sections.empty:
