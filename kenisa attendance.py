@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
@@ -772,6 +773,8 @@ class Database:
         self._df_to_sheet("Students", df, df.columns.tolist())
 
     # --- Attendance ---
+    ATTENDANCE_COLUMNS = ["record_id", "date", "time", "user_id", "name", "role", "section_id", "stage_id", "status", "notes", "recorded_by", "attendance_method"]
+
     def get_attendance(self):
         return self._sheet_to_df("Attendance")
 
@@ -780,20 +783,27 @@ class Database:
             return
         df = self.get_attendance()
         if df.empty:
-            df = pd.DataFrame(columns=["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+            df = pd.DataFrame(columns=self.ATTENDANCE_COLUMNS)
         existing_ids = set(df["record_id"].tolist()) if not df.empty else set()
         new_records = []
         for rec in records_list:
-            if rec["record_id"] in existing_ids:
+            if rec.get("record_id") in existing_ids:
                 idx = df[df.record_id == rec["record_id"]].index[0]
                 for k, v in rec.items():
-                    df.at[idx, k] = self._safe_str(v)
+                    if k in df.columns:
+                        df.at[idx, k] = self._safe_str(v)
             else:
                 new_records.append(rec)
         if new_records:
             new_df = pd.DataFrame(new_records)
             df = pd.concat([df, new_df], ignore_index=True)
-        self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+        self._df_to_sheet("Attendance", df, self.ATTENDANCE_COLUMNS)
+
+    def get_attendance_by_date_user(self, date_str, user_id):
+        df = self.get_attendance()
+        if df.empty:
+            return pd.DataFrame()
+        return df[(df.date == date_str) & (df.user_id == user_id)]
 
     def get_attendance_by_date_section(self, date_str, section_id):
         df = self.get_attendance()
@@ -804,7 +814,7 @@ class Database:
     def delete_attendance_record(self, record_id):
         df = self.get_attendance()
         df = df[df.record_id != record_id]
-        self._df_to_sheet("Attendance", df, ["record_id", "date", "student_id", "status", "notes", "recorded_by", "section_id"])
+        self._df_to_sheet("Attendance", df, self.ATTENDANCE_COLUMNS)
 
     # --- FollowUp ---
     def get_followup(self):
@@ -1183,7 +1193,7 @@ def get_role_menu(role):
         "System Admin": [
             "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل", "📋 الحضور", "💬 الافتقاد",
             "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
-            "📜 سجل العمليات", "🔒 تغيير كلمة المرور", "📱 إدارة QR"
+            "📜 سجل العمليات", "🔒 تغيير كلمة المرور", "📱 إدارة QR", "📷 مسح QR"
         ],
         "Father Account": [
             "🏠 لوحة التحكم", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
@@ -1194,7 +1204,7 @@ def get_role_menu(role):
         ],
         "Teacher": [
             "🏠 لوحة التحكم", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
-            "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
+            "🏆 درجات المسابقات", "📷 مسح QR", "🔒 تغيير كلمة المرور"
         ],
         "Student": [
             "🏠 لوحة التحكم", "📝 المسابقات والاختبارات", "🔒 تغيير كلمة المرور"
@@ -2772,6 +2782,258 @@ def is_qr_eligible(role):
     """Check if a user role is eligible for QR codes."""
     return role in ["Teacher", "Service Manager", "Student"]
 
+def show_qr_scanner(db):
+    """QR Scanner page using HTML5 camera + jsQR for scanning."""
+    user = st.session_state.user
+    role = user.get("role", "")
+    section_id = user.get("section_id", "")
+    
+    if role not in ["Teacher", "System Admin"]:
+        st.error("🚫 هذه الصفحة متاحة للمدرسات ومديري النظام فقط.")
+        if st.button("🔙 العودة"):
+            st.session_state.menu_choice = "🏠 لوحة التحكم"
+            st.rerun()
+        return
+    
+    if st.session_state.get("qr_scan_success"):
+        qr_user = st.session_state.get("qr_scanned_user", {})
+        st.markdown(f"""
+        <div style='text-align:center; padding:2rem; background:linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); 
+                    border-radius:20px; border:2px solid #28a745; margin-bottom:1rem;'>
+            <div style='font-size:4rem; margin-bottom:1rem;'>✅</div>
+            <h2 style='color:#155724; margin:0;'>تم تسجيل الحضور بنجاح</h2>
+            <p style='color:#155724; font-size:1.1rem; margin-top:0.5rem;'>
+                {qr_user.get('name', '')} - {qr_user.get('role_label', '')}
+            </p>
+            <p style='color:#155724;'>
+                الفصل: {qr_user.get('section_name', '')} | المرحلة: {qr_user.get('stage_name', '')}
+            </p>
+            <p style='color:#155724; font-size:0.9rem;'>
+                ⏰ {st.session_state.get('qr_scan_time', '')}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("📷 مسح رمز جديد", use_container_width=True):
+            for k in ["qr_scan_success", "qr_scanned_user", "qr_scan_time", "qr_scan_result",
+                      "qr_camera_status", "qr_permission_status", "qr_scan_status"]:
+                st.session_state.pop(k, None)
+            st.rerun()
+        return
+    
+    st.markdown("### 📷 منظف رمز QR")
+    st.info("📱 وجه كاميرا الجهاز نحو رمز QR الخاص بالطالبة/المدرسة للتسجيل التلقائي للحضور.")
+    
+    status_col1, status_col2, status_col3 = st.columns(3)
+    with status_col1:
+        camera_status = st.session_state.get("qr_camera_status", "loading")
+        status_icon = {"loading": "⏳", "active": "🟢", "denied": "🔴", "unavailable": "⚪"}.get(camera_status, "⚪")
+        st.metric("الكاميرا", f"{status_icon} {camera_status}")
+    with status_col2:
+        permission_status = st.session_state.get("qr_permission_status", "unknown")
+        perm_icon = {"granted": "✅", "denied": "❌", "prompt": "❓"}.get(permission_status, "❓")
+        st.metric("الإذن", f"{perm_icon} {permission_status}")
+    with status_col3:
+        scan_status = st.session_state.get("qr_scan_status", "waiting")
+        scan_icon = {"waiting": "⏳", "scanning": "🔍", "success": "✅", "error": "❌"}.get(scan_status, "⏳")
+        st.metric("المسح", f"{scan_icon} {scan_status}")
+    
+    error_container = st.empty()
+    
+    scanner_html = """
+    <div id="qr-scanner-container" style="position:relative; width:100%; max-width:640px; margin:0 auto; 
+                border-radius:16px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.15);">
+        <video id="qr-video" playsinline autoplay muted style="width:100%; display:block; background:#000;"></video>
+        <canvas id="qr-canvas" style="display:none;"></canvas>
+        <div id="qr-overlay" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); 
+                    width:200px; height:200px; border:3px solid rgba(102,126,234,0.8); border-radius:16px; 
+                    box-shadow:0 0 0 9999px rgba(0,0,0,0.5); pointer-events:none;">
+            <div style="position:absolute; top:-40px; left:50%; transform:translateX(-50%); 
+                        background:rgba(102,126,234,0.9); color:white; padding:6px 16px; 
+                        border-radius:20px; font-size:0.85rem; font-weight:600; white-space:nowrap;">
+                📷 وجه الرمز هنا
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script>
+    (function() {
+        const video = document.getElementById('qr-video');
+        const canvas = document.getElementById('qr-canvas');
+        const ctx = canvas.getContext('2d');
+        let scanning = true;
+        let lastScanTime = 0;
+        const SCAN_COOLDOWN = 3000;
+        
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+                });
+                video.srcObject = stream;
+                video.setAttribute('playsinline', true);
+                video.play();
+                window.parent.postMessage({ type: 'QR_CAMERA_STATUS', status: 'active' }, '*');
+                requestAnimationFrame(tick);
+            } catch(err) {
+                console.error('Camera error:', err);
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    window.parent.postMessage({ type: 'QR_PERMISSION_STATUS', status: 'denied' }, '*');
+                    window.parent.postMessage({ type: 'QR_CAMERA_STATUS', status: 'denied' }, '*');
+                } else {
+                    window.parent.postMessage({ type: 'QR_CAMERA_STATUS', status: 'unavailable' }, '*');
+                }
+            }
+        }
+        
+        function tick() {
+            if (!scanning) return;
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+                if (code && code.data) {
+                    const now = Date.now();
+                    if (now - lastScanTime > SCAN_COOLDOWN) {
+                        lastScanTime = now;
+                        window.parent.postMessage({ type: 'QR_DECODED', data: code.data }, '*');
+                    }
+                }
+            }
+            requestAnimationFrame(tick);
+        }
+        
+        window.parent.postMessage({ type: 'QR_CAMERA_STATUS', status: 'loading' }, '*');
+        window.parent.postMessage({ type: 'QR_PERMISSION_STATUS', status: 'prompt' }, '*');
+        window.parent.postMessage({ type: 'QR_SCAN_STATUS', status: 'waiting' }, '*');
+        
+        startCamera();
+    })();
+    </script>
+    """
+    
+    components.html(scanner_html, height=500, scrolling=False)
+    
+    qr_result = st.session_state.get("qr_scan_result")
+    if qr_result:
+        st.session_state.qr_scan_result = None
+        st.session_state.qr_scan_status = "scanning"
+        
+        with st.spinner("جاري معالجة رمز QR..."):
+            try:
+                qr_data = json.loads(qr_result)
+            except json.JSONDecodeError:
+                error_container.error("❌ رمز QR غير صالح - البيانات تالفة")
+                st.session_state.qr_scan_status = "error"
+                st.rerun()
+                return
+            
+            is_valid, msg, validated_data = validate_qr_code(qr_data)
+            if not is_valid:
+                error_container.error(f"❌ خطأ في الرمز: {msg}")
+                st.session_state.qr_scan_status = "error"
+                st.rerun()
+                return
+            
+            user_id = validated_data.get("user_id", "")
+            qr_role = validated_data.get("role", "")
+            qr_section_id = validated_data.get("section_id", "")
+            
+            users = db.get_users()
+            if users.empty or user_id not in users["user_id"].tolist():
+                error_container.error("❌ المستخدم غير موجود في النظام")
+                st.session_state.qr_scan_status = "error"
+                st.rerun()
+                return
+            
+            user_row = users[users.user_id == user_id].iloc[0]
+            full_name = user_row.get("full_name", "غير معروف")
+            user_role = user_row.get("role", "")
+            user_section_id = user_row.get("section_id", "")
+            
+            if role == "Teacher" and section_id:
+                if qr_section_id != section_id and user_section_id != section_id:
+                    error_container.error(f"🚫 لا يمكنك تسجيل حضور طالبة من فصل آخر.")
+                    st.session_state.qr_scan_status = "error"
+                    st.rerun()
+                    return
+            
+            sections = db.get_sections()
+            stages = db.get_stages()
+            section_name = ""
+            stage_name = ""
+            if not sections.empty and user_section_id:
+                sec = sections[sections.section_id == user_section_id]
+                if not sec.empty:
+                    section_name = sec.iloc[0].get("section_name", "")
+                    stage_id = sec.iloc[0].get("stage_id", "")
+                    if stage_id and not stages.empty:
+                        stage = stages[stages.stage_id == stage_id]
+                        if not stage.empty:
+                            stage_name = stage.iloc[0].get("stage_name", "")
+            
+            role_label = {"student": "طالبة", "teacher": "مدرسة", "service_leader": "أمين خدمة", "admin": "مدير"}.get(qr_role, qr_role)
+            
+            today_str = get_cairo_now().strftime("%Y-%m-%d")
+            existing = db.get_attendance_by_date_user(today_str, user_id)
+            if not existing.empty:
+                error_container.warning(f"⚠️ {full_name} تم تسجيل حضورها مسبقاً اليوم ({today_str})")
+                st.session_state.qr_scan_status = "waiting"
+                time.sleep(3)
+                st.rerun()
+                return
+            
+            record_id = str(uuid.uuid4())
+            now = get_cairo_now()
+            time_str = now.strftime("%I:%M:%S %p")
+            attendance_record = {
+                "record_id": record_id,
+                "date": today_str,
+                "time": time_str,
+                "user_id": user_id,
+                "name": full_name,
+                "role": qr_role,
+                "section_id": user_section_id or qr_section_id,
+                "stage_id": validated_data.get("stage_id", ""),
+                "status": "حاضر",
+                "notes": "تم التسجيل بواسطة QR",
+                "recorded_by": user.get("user_id", ""),
+                "attendance_method": "QR"
+            }
+            
+            try:
+                db.batch_add_attendance([attendance_record])
+                db.add_log(user.get("user_id", ""), f"تسجيل حضور QR لـ {full_name}", f"تم تسجيل حضور {full_name} ({qr_role}) بتاريخ {today_str}")
+                
+                st.session_state.qr_scan_success = True
+                st.session_state.qr_scanned_user = {
+                    "name": full_name,
+                    "role_label": role_label,
+                    "section_name": section_name or qr_section_id,
+                    "stage_name": stage_name or validated_data.get("stage_id", "")
+                }
+                st.session_state.qr_scan_time = now.strftime("%Y-%m-%d %I:%M:%S %p")
+                st.session_state.qr_scan_status = "success"
+                st.session_state.qr_camera_status = "active"
+                st.session_state.qr_permission_status = "granted"
+                
+                time.sleep(2)
+                st.rerun()
+            except Exception as e:
+                error_container.error(f"❌ فشل حفظ الحضور: {str(e)}")
+                st.session_state.qr_scan_status = "error"
+                st.rerun()
+    
+    st.markdown("---")
+    if st.button("🔙 إغلاق.Scanner والعودة", use_container_width=True):
+        for k in ["qr_scan_success", "qr_scanned_user", "qr_scan_time", "qr_scan_result",
+                  "qr_camera_status", "qr_permission_status", "qr_scan_status"]:
+            st.session_state.pop(k, None)
+        st.session_state.menu_choice = "🏠 لوحة التحكم"
+        st.rerun()
+
+
 def show_qr_management(db):
     """Professional QR Code Management Dashboard."""
     inject_user_cards_css()
@@ -4122,6 +4384,8 @@ def main():
                     show_qr_management(db)
                 else:
                     st.error("🚫 غير مصرح")
+            elif choice == "📷 مسح QR":
+                show_qr_scanner(db)
             elif choice == "🔒 تغيير كلمة المرور":
                 change_password(db)
             st.markdown("</div>", unsafe_allow_html=True)
