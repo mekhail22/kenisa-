@@ -2782,8 +2782,6 @@ def is_qr_eligible(role):
     """Check if a user role is eligible for QR codes."""
     return role in ["Teacher", "Service Manager", "Student"]
 
-st.components.v1.html("<script>(()=>{const e=window.parent;window.addEventListener('message',(ev=>{const d=ev&&ev.data;if(d&&typeof d==='object'){try{if(window.Streamlit&&window.Streamlit.setComponentValue){window.Streamlit.setComponentValue(JSON.stringify(d));}}catch(e){}}}));})();</script>", height=0, scrolling=False)
-
 def show_qr_scanner(db):
     """QR Scanner page using HTML5 camera + jsQR for scanning."""
     user = st.session_state.user
@@ -2876,16 +2874,25 @@ def show_qr_scanner(db):
                 video.srcObject = stream;
                 video.setAttribute('playsinline', true);
                 video.play();
-                window.parent.postMessage({ type: 'QR_CAMERA_STATUS', status: 'active' }, '*');
+                try {
+                    if (window.Streamlit && window.Streamlit.setComponentValue) {
+                        window.Streamlit.setComponentValue(JSON.stringify({ type: 'QR_CAMERA_STATUS', status: 'active' }));
+                        window.Streamlit.setComponentValue(JSON.stringify({ type: 'QR_PERMISSION_STATUS', status: 'granted' }));
+                    }
+                } catch(e) {}
                 requestAnimationFrame(tick);
             } catch(err) {
                 console.error('Camera error:', err);
-                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                    window.parent.postMessage({ type: 'QR_PERMISSION_STATUS', status: 'denied' }, '*');
-                    window.parent.postMessage({ type: 'QR_CAMERA_STATUS', status: 'denied' }, '*');
-                } else {
-                    window.parent.postMessage({ type: 'QR_CAMERA_STATUS', status: 'unavailable' }, '*');
-                }
+                try {
+                    if (window.Streamlit && window.Streamlit.setComponentValue) {
+                        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                            window.Streamlit.setComponentValue(JSON.stringify({ type: 'QR_PERMISSION_STATUS', status: 'denied' }));
+                            window.Streamlit.setComponentValue(JSON.stringify({ type: 'QR_CAMERA_STATUS', status: 'denied' }));
+                        } else {
+                            window.Streamlit.setComponentValue(JSON.stringify({ type: 'QR_CAMERA_STATUS', status: 'unavailable' }));
+                        }
+                    }
+                } catch(e) {}
             }
         }
         
@@ -2901,24 +2908,47 @@ def show_qr_scanner(db):
                     const now = Date.now();
                     if (now - lastScanTime > SCAN_COOLDOWN) {
                         lastScanTime = now;
-                        window.parent.postMessage({ type: 'QR_DECODED', data: code.data }, '*');
+                        try {
+                            if (window.Streamlit && window.Streamlit.setComponentValue) {
+                                window.Streamlit.setComponentValue(JSON.stringify({ type: 'QR_DECODED', data: code.data }));
+                            }
+                        } catch(e) {}
                     }
                 }
             }
             requestAnimationFrame(tick);
         }
         
-        window.parent.postMessage({ type: 'QR_CAMERA_STATUS', status: 'loading' }, '*');
-        window.parent.postMessage({ type: 'QR_PERMISSION_STATUS', status: 'prompt' }, '*');
-        window.parent.postMessage({ type: 'QR_SCAN_STATUS', status: 'waiting' }, '*');
-        
-        startCamera();
+        startCamera().catch(err => {
+            console.error('Start camera failed:', err);
+            try {
+                if (window.Streamlit && window.Streamlit.setComponentValue) {
+                    window.Streamlit.setComponentValue(JSON.stringify({ type: 'QR_CAMERA_STATUS', status: 'unavailable' }));
+                }
+            } catch(e) {}
+        });
     })();
     </script>
     """
     
-    components.html(scanner_html, height=500, scrolling=False)
-    st.components.v1.html("<script>(()=>{const e=window.parent;window.addEventListener('message',(ev=>{const d=ev&&ev.data;if(d&&typeof d==='object'){try{if(window.Streamlit&&window.Streamlit.setComponentValue){window.Streamlit.setComponentValue(JSON.stringify(d));}}catch(e){}}}));})();</script>", height=0, scrolling=False)
+    qr_event = components.html(scanner_html, height=520, scrolling=False)
+    
+    if qr_event:
+        try:
+            event_data = json.loads(qr_event)
+            event_type = event_data.get('type')
+            if event_type == 'QR_CAMERA_STATUS':
+                st.session_state.qr_camera_status = event_data.get('status', 'loading')
+            elif event_type == 'QR_PERMISSION_STATUS':
+                st.session_state.qr_permission_status = event_data.get('status', 'unknown')
+            elif event_type == 'QR_SCAN_STATUS':
+                st.session_state.qr_scan_status = event_data.get('status', 'waiting')
+            elif event_type == 'QR_DECODED':
+                st.session_state.qr_scan_result = event_data.get('data')
+                st.session_state.qr_scan_status = "scanning"
+                st.rerun()
+        except:
+            pass
     
     qr_result = st.session_state.get("qr_scan_result")
     if qr_result:
