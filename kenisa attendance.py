@@ -119,6 +119,38 @@ def get_jwt_secret():
 
 
 # =============================================================================
+# helpers: age and colors
+# =============================================================================
+def get_student_age(birthdate):
+    if not birthdate:
+        return None
+    try:
+        bd = pd.to_datetime(birthdate)
+        now = datetime.now()
+        return now.year - bd.year - ((now.month, now.day) < (bd.month, bd.day))
+    except Exception:
+        return None
+
+
+STAGE_COLORS = {
+    "إعدادي": "#28a745",
+    "ثانوي": "#007bff",
+    "جامعي": "#6f42c1",
+    "KG1": "#fd7e14",
+    "KG2": "#e83e8c",
+    "الصف الأول": "#20c997",
+    "default": "#667eea"
+}
+
+
+def get_stage_color(stage_name):
+    for key, color in STAGE_COLORS.items():
+        if key in str(stage_name):
+            return color
+    return STAGE_COLORS["default"]
+
+
+# =============================================================================
 # CSS
 # =============================================================================
 def inject_css():
@@ -245,6 +277,53 @@ def inject_user_cards_css():
             display: flex; align-items: center; justify-content: center;
             color: white; font-size: 1.8rem; font-weight: 700; margin-bottom: 0.5rem;
         }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def inject_students_cards_css():
+    st.markdown("""
+    <style>
+        .student-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);
+            position: relative; overflow: hidden; transition: all 0.3s ease;
+        }
+        .student-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.12); }
+        .student-avatar-large {
+            width: 60px; height: 60px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 1.5rem; font-weight: 700;
+        }
+        .student-info-row {
+            display: flex; align-items: center; gap: 0.5rem;
+            margin: 0.4rem 0; font-size: 0.9rem; color: #333;
+        }
+        .student-badge {
+            display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px;
+            font-size: 0.75rem; font-weight: 600;
+        }
+        .student-badge.active { background: #d4edda; color: #155724; }
+        .student-badge.inactive { background: #e2e3e5; color: #383d41; }
+        .dark-mode-toggle {
+            position: fixed !important; top: 20px !important; left: 20px !important;
+            z-index: 99999 !important; background: #ffffff !important; color: #333 !important;
+            border: 2px solid #ddd !important; border-radius: 50% !important;
+            width: 50px !important; height: 50px !important; font-size: 24px !important;
+            display: flex !important; align-items: center !important; justify-content: center !important;
+            cursor: pointer !important; box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+        }
+        /* Dark mode styles */
+        .dark-mode-active { background: #1a1a2e !important; color: #e0e0e0 !important; }
+        .dark-mode-active .stApp { background: #1a1a2e !important; }
+        .dark-mode-active body { background: #1a1a2e !important; color: #e0e0e0 !important; }
+        .dark-mode-active .user-card { background: #16213e !important; border-color: #0f3460 !important; }
+        .dark-mode-active .student-card { background: #16213e !important; border-color: #0f3460 !important; color: #e0e0e0 !important; }
+        .dark-mode-active .profile-header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important; }
+        .dark-mode-active .main-header { background: rgba(22,33,62,0.9) !important; color: #e0e0e0 !important; }
+        .dark-mode-active section[data-testid="stSidebar"] { background: #16213e !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -547,6 +626,67 @@ class Database:
         if assignments.empty:
             return []
         return assignments["stage_id"].tolist()
+
+    # --- SectionTeachers (Many-to-Many) ---
+    SECTION_TEACHER_COLUMNS = ["assignment_id", "section_id", "teacher_id", "assigned_date"]
+
+    def get_section_teachers(self):
+        return self._sheet_to_df("SectionTeachers")
+
+    def get_teachers_for_section(self, section_id):
+        df = self.get_section_teachers()
+        if df.empty:
+            return []
+        assignments = df[df["section_id"] == section_id]
+        if assignments.empty:
+            return []
+        return assignments["teacher_id"].tolist()
+
+    def get_teacher_names_for_section(self, section_id, users_df=None):
+        t_ids = self.get_teachers_for_section(section_id)
+        if not t_ids:
+            return []
+        if users_df is None or users_df.empty:
+            return t_ids
+        names = []
+        for tid in t_ids:
+            match = users_df[users_df["user_id"] == tid]
+            if not match.empty:
+                names.append(match.iloc[0].get("full_name", tid))
+            else:
+                names.append(tid)
+        return names
+
+    def add_section_teacher(self, section_id, teacher_id):
+        df = self.get_section_teachers()
+        if df.empty:
+            df = pd.DataFrame(columns=self.SECTION_TEACHER_COLUMNS)
+        duplicate = df[(df["section_id"] == section_id) & (df["teacher_id"] == teacher_id)]
+        if not duplicate.empty:
+            return False
+        new_row = {
+            "assignment_id": str(uuid.uuid4()),
+            "section_id": section_id,
+            "teacher_id": teacher_id,
+            "assigned_date": get_cairo_now().strftime("%Y-%m-%d")
+        }
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        self._df_to_sheet("SectionTeachers", df, self.SECTION_TEACHER_COLUMNS)
+        return True
+
+    def remove_section_teacher(self, section_id, teacher_id):
+        df = self.get_section_teachers()
+        if df.empty:
+            return
+        df = df[~((df["section_id"] == section_id) & (df["teacher_id"] == teacher_id))]
+        self._df_to_sheet("SectionTeachers", df, self.SECTION_TEACHER_COLUMNS)
+
+    def clear_section_teachers(self, section_id):
+        df = self.get_section_teachers()
+        if df.empty:
+            return
+        df = df[df["section_id"] != section_id]
+        self._df_to_sheet("SectionTeachers", df, self.SECTION_TEACHER_COLUMNS)
 
     # --- Sections ---
     SECTION_COLUMNS = ["section_id", "section_name", "stage_id", "teacher_id", "leader_id",
@@ -901,7 +1041,7 @@ def init_session():
         "last_score": 0, "menu_choice": "🏠 لوحة التحكم", "show_sidebar": True,
         "open_help_dialog": False, "current_attempt_id": None, "last_saved_answers_str": "",
         "quiz_questions": None, "show_review": False, "data_errors": [], "data_validated": False,
-        "quiz_load_failures": 0
+        "quiz_load_failures": 0, "dark_mode": False
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1027,7 +1167,7 @@ def get_role_menu(role):
     menus = {
         "System Admin": [
             "🏠 لوحة التحكم", "👥 إدارة المستخدمين", "🏫 إدارة المراحل الدراسية", "📚 إدارة الفصول",
-            "📋 الحضور", "💬 الافتقاد",
+            "👩‍🎓 إدارة الطالبات", "📋 الحضور", "💬 الافتقاد",
             "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات",
             "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
         ],
@@ -1310,7 +1450,7 @@ def show_student_quiz(db):
             st.session_state.student_name = selected_student["full_name"]
             st.session_state.student_id = selected_id
             st.session_state.quiz_start_time = get_cairo_now()
-            time_limit_seconds = int(quiz.get("time_limit_minutes", 15)) * 60
+            time_limit_seconds = int(quiz.get('time_limit_minutes', 15)) * 60
             st.session_state.quiz_end_time = st.session_state.quiz_start_time + timedelta(seconds=time_limit_seconds)
             attempt_id = db.start_quiz_attempt(quiz["quiz_id"], selected_id, st.session_state.student_name)
             st.session_state.current_attempt_id = attempt_id
@@ -1360,13 +1500,10 @@ def show_student_quiz(db):
         <div id="timer">⏳ الوقت المتبقي: <span id="time"></span></div>
         <script>
         var endTime = new Date("{end_time_iso}").getTime();
-        function update() {{
-            var now = new Date().getTime(); var dist = endTime - now;
+        function update() {{ var now = new Date().getTime(); var dist = endTime - now;
             if (dist <= 0) {{ document.getElementById('time').innerHTML = "00:00"; parent.postMessage({{type: "QUIZ_TIME_UP"}}, "*"); clearInterval(intervalId); return; }}
-            var mins = Math.floor((dist % (1000*60*60)) / (1000*60));
-            var secs = Math.floor((dist % (1000*60)) / 1000);
-            document.getElementById('time').innerHTML = (mins<10?'0'+mins:mins) + ":" + (secs<10?'0'+secs:secs);
-        }}
+            var mins = Math.floor((dist % (1000*60*60)) / (1000*60)); var secs = Math.floor((dist % (1000*60)) / 1000);
+            document.getElementById('time').innerHTML = (mins<10?'0'+mins:mins) + ":" + (secs<10?'0'+secs:secs); }}
         update(); var intervalId = setInterval(update, 1000);
         </script></body></html>
         """
@@ -1587,6 +1724,135 @@ def show_dashboard(db):
                         top_section = section_scores.sort_values("score", ascending=False).iloc[0]
                         st.metric(f"أفضل فصل: {top_section.get('section_name', '')}", f"{top_section.get('score', 0):.1f} / 20 متوسط")
                         st.dataframe(section_scores.rename(columns={"section_name": "الفصل", "score": "متوسط الدرجات"}).set_index("الفصل"), use_container_width=True)
+
+
+# =============================================================================
+# Students Management (Cards)
+# =============================================================================
+def show_students_cards_page(db):
+    inject_students_cards_css()
+    st.markdown("<h2 class='main-header'>👩‍🎓 إدارة الطالبات</h2>", unsafe_allow_html=True)
+    user = st.session_state.user
+    role = user.get("role", "")
+    section_id = user.get("section_id", "")
+    students = db.get_students()
+    sections = db.get_sections()
+    stages = db.get_stages()
+    users = db.get_users()
+
+    my_students = filter_students_by_role(students, role, section_id)
+    if my_students.empty:
+        st.info("لا توجد طالبات.")
+        return
+
+    if not sections.empty:
+        my_students = my_students.merge(sections[["section_id", "section_name", "stage_id"]], on="section_id", how="left")
+    if not stages.empty and "stage_id" in my_students.columns:
+        my_students = my_students.merge(stages[["stage_id", "stage_name"]], on="stage_id", how="left")
+
+    search_term = st.text_input("🔍 بحث ذكي", placeholder="ابحثي باسم الطالبة...", label_visibility="collapsed")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        stage_options = ["الكل"] + stages["stage_id"].tolist() if not stages.empty else ["الكل"]
+        stage_filter = st.selectbox("المرحلة", stage_options, format_func=lambda x: "الكل" if x == "الكل" else stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x)
+    with c2:
+        section_options = ["الكل"] + sections["section_id"].tolist() if not sections.empty else ["الكل"]
+        section_filter = st.selectbox("الفصل", section_options, format_func=lambda x: "الكل" if x == "الكل" else sections[sections.section_id == x]["section_name"].values[0] if not sections.empty else x)
+    with c3:
+        status_filter = st.selectbox("الحالة", ["الكل", "active", "inactive"])
+    with c4:
+        age_filter = st.selectbox("العمر", ["الكل", "أقل من 10", "10-15", "16-20", "أكثر من 20"])
+
+    filtered = my_students.copy()
+    if search_term and not filtered.empty:
+        mask = pd.Series(False, index=filtered.index)
+        if "full_name" in filtered.columns:
+            mask |= filtered["full_name"].astype(str).str.contains(search_term, na=False, case=False)
+        filtered = filtered[mask]
+    if stage_filter != "الكل" and not filtered.empty and "stage_id" in filtered.columns:
+        filtered = filtered[filtered["stage_id"] == stage_filter]
+    if section_filter != "الكل" and not filtered.empty:
+        filtered = filtered[filtered["section_id"] == section_filter]
+    if status_filter != "الكل" and not filtered.empty:
+        filtered = filtered[filtered["status"] == status_filter]
+    if age_filter != "الكل" and not filtered.empty and "birthdate" in filtered.columns:
+        filtered["age"] = filtered["birthdate"].apply(get_student_age)
+        if age_filter == "أقل من 10":
+            filtered = filtered[(filtered["age"] >= 0) & (filtered["age"] < 10)]
+        elif age_filter == "10-15":
+            filtered = filtered[(filtered["age"] >= 10) & (filtered["age"] <= 15)]
+        elif age_filter == "16-20":
+            filtered = filtered[(filtered["age"] >= 16) & (filtered["age"] <= 20)]
+        elif age_filter == "أكثر من 20":
+            filtered = filtered[filtered["age"] > 20]
+
+    st.markdown(f"<h4>عدد الطالبات: {len(filtered)}</h4>", unsafe_allow_html=True)
+    if not filtered.empty:
+        cols = st.columns(3)
+        for idx, (_, row) in enumerate(filtered.iterrows()):
+            col = cols[idx % 3]
+            with col:
+                student_id = row.get("student_id", "")
+                name = row.get("full_name", "غير معروف")
+                sec_name = row.get("section_name", "—")
+                stage_name = row.get("stage_name", "—")
+                status = row.get("status", "active")
+                birthdate = row.get("birthdate", "")
+                age = get_student_age(birthdate)
+                initials = get_initials(name)
+                status_label = {"active": "نشطة", "inactive": "غير نشطة"}.get(status, "نشطة")
+                status_class = "active" if status == "active" else "inactive"
+                stage_color = get_stage_color(stage_name)
+                age_str = f"{age} سنة" if age is not None else "—"
+                st.markdown(f"""
+                <div class="student-card">
+                    <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1rem;">
+                        <div class="student-avatar-large">{initials}</div>
+                        <div style="flex:1;">
+                            <div style="font-weight:700; font-size:1.1rem; margin-bottom:0.3rem;">{name}</div>
+                            <span class="student-badge {status_class}">{status_label}</span>
+                        </div>
+                    </div>
+                    <div class="student-info-row">
+                        <span style="color:#667eea;">🏫</span>
+                        <strong>الفصل:</strong> {sec_name}
+                    </div>
+                    <div class="student-info-row">
+                        <span style="color:#667eea;">📚</span>
+                        <strong>المرحلة:</strong> <span style="color:{stage_color};">{stage_name}</span>
+                    </div>
+                    <div class="student-info-row">
+                        <span style="color:#667eea;">🎂</span>
+                        <strong>العمر:</strong> {age_str}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.info("لا توجد طالبات مطابقة للبحث.")
+
+
+# =============================================================================
+# Dark Mode
+# =============================================================================
+def show_dark_mode_toggle():
+    with st.sidebar:
+        st.markdown("---")
+        dark_mode = st.toggle("🌙 الوضع الليلي", value=st.session_state.get("dark_mode", False), key="dark_mode_toggle")
+        if dark_mode != st.session_state.get("dark_mode", False):
+            st.session_state.dark_mode = dark_mode
+            st.rerun()
+        if st.session_state.get("dark_mode", False):
+            st.markdown("""<style>
+                html, body, .stApp { background: #1a1a2e !important; color: #e0e0e0 !important; }
+                .stApp { background: #1a1a2e !important; }
+                .main-header { background: rgba(22,33,62,0.9) !important; color: #e0e0e0 !important; }
+                .user-card { background: #16213e !important; border-color: #0f3460 !important; color: #e0e0e0 !important; }
+                .student-card { background: #16213e !important; border-color: #0f3460 !important; color: #e0e0e0 !important; }
+                section[data-testid="stSidebar"] { background: #16213e !important; }
+                .stTextInput input, .stSelectbox select, .stTextArea textarea {
+                    background: #16213e !important; color: #e0e0e0 !important;
+                }
+            </style>""", unsafe_allow_html=True)
 
 
 # =============================================================================
@@ -2267,11 +2533,15 @@ def show_stages_page(db):
                 time.sleep(1)
                 st.rerun()
             if col2.button("حذف المرحلة"):
-                db.delete_stage(stage_sel)
-                db.clear_stage_supervisors(stage_sel)
-                st.success("تم حذف المرحلة")
-                time.sleep(1)
-                st.rerun()
+                sections_in_stage = sections[sections["stage_id"] == stage_sel] if not sections.empty and "stage_id" in sections.columns else pd.DataFrame()
+                if not sections_in_stage.empty:
+                    st.error("❌ لا يمكن حذف المرحلة لأنها تحتوي على فصول. قم بحذف الفصول أولاً.")
+                else:
+                    db.delete_stage(stage_sel)
+                    db.clear_stage_supervisors(stage_sel)
+                    st.success("تم حذف المرحلة")
+                    time.sleep(1)
+                    st.rerun()
 
 
 # =============================================================================
@@ -2370,7 +2640,7 @@ def show_sections_page(db):
                     t_opts = ["None"] + eligible_teachers["user_id"].tolist() if not eligible_teachers.empty else ["None"]
                     l_opts = ["None"] + eligible_leaders["user_id"].tolist() if not eligible_leaders.empty else ["None"]
                     t_idx = t_opts.index(sec_teacher) if sec_teacher in t_opts else 0
-                    l_idx = t_opts.index(sec_leader) if sec_leader in l_opts else 0
+                    l_idx = l_opts.index(sec_leader) if sec_leader in l_opts else 0
                     new_teacher = st.selectbox("المدرس", t_opts, index=t_idx,
                                                 format_func=lambda x: "بدون" if x == "None" else eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0],
                                                 key=f"teacher_{sec_id}")
@@ -2399,10 +2669,14 @@ def show_sections_page(db):
                         time.sleep(1)
                         st.rerun()
                     if c2.button("حذف الفصل", key=f"delete_sec_{sec_id}"):
-                        db.delete_section(sec_id)
-                        st.success("✅ تم الحذف")
-                        time.sleep(1)
-                        st.rerun()
+                        section_students = students[students["section_id"] == sec_id] if not students.empty and "section_id" in students.columns else pd.DataFrame()
+                        if not section_students.empty:
+                            st.error("❌ لا يمكن حذف الفصل لأنه يحتوي على طالبات. قم بنقل الطالبات أولاً.")
+                        else:
+                            db.delete_section(sec_id)
+                            st.success("✅ تم الحذف")
+                            time.sleep(1)
+                            st.rerun()
     else:
         st.info("🔍 لا توجد فصول مطابقة.")
 
@@ -3093,6 +3367,11 @@ def main():
                     show_sections_page(db)
                 else:
                     st.error("🚫 غير مصرح")
+            elif choice == "👩‍🎓 إدارة الطالبات":
+                if st.session_state.user.get("role") in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
+                    show_students_cards_page(db)
+                else:
+                    st.error("🚫 غير مصرح")
             elif choice == "👩‍🎓 طالباتي":
                 show_my_students(db)
             elif choice == "📋 الحضور":
@@ -3116,6 +3395,7 @@ def main():
     if st.session_state.get("open_help_dialog"):
         show_help_dialog()
         st.session_state.open_help_dialog = False
+    show_dark_mode_toggle()
 
 
 if __name__ == "__main__":
