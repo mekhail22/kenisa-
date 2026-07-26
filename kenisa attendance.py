@@ -3268,6 +3268,202 @@ def change_password(db):
 
 
 # =============================================================================
+# Members Cards Page
+# =============================================================================
+def show_members_cards_page(db):
+    inject_user_cards_css()
+    st.markdown("<h2 class='main-header'>👥 إدارة الأعضاء</h2>", unsafe_allow_html=True)
+    user = st.session_state.user
+    role = user.get("role", "")
+    section_id = user.get("section_id", "")
+
+    if role not in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
+        st.error("🚫 غير مصرح")
+        return
+
+    users = db.get_users()
+    sections = db.get_sections()
+
+    # RBAC: Teacher sees only members in their assigned section
+    if role == "Teacher" and section_id:
+        if not users.empty and "section_id" in users.columns:
+            users = users[users["section_id"] == section_id]
+
+    # Search
+    search_term = st.text_input("🔍 بحث", placeholder="ابحث بالاسم، اسم المستخدم، الهاتف، أو البريد الإلكتروني...", label_visibility="collapsed")
+
+    # Filters
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        role_options = ["الكل"] + sorted(users["role"].dropna().unique().tolist()) if not users.empty and "role" in users.columns else ["الكل"]
+        role_filter = st.selectbox("الصلاحية", role_options)
+    with col2:
+        status_options = ["الكل", "active", "inactive"]
+        status_filter = st.selectbox("الحالة", status_options)
+    with col3:
+        section_options = ["الكل"] + sections["section_id"].tolist() if not sections.empty else ["الكل"]
+        section_filter = st.selectbox("الفصل", section_options, format_func=lambda x: "الكل" if x == "الكل" else sections[sections.section_id == x]["section_name"].values[0] if not sections.empty else x)
+
+    filtered = users.copy() if not users.empty else pd.DataFrame()
+    if search_term and not filtered.empty:
+        mask = pd.Series(False, index=filtered.index)
+        for col in ["full_name", "username", "phone", "email"]:
+            if col in filtered.columns:
+                mask |= filtered[col].astype(str).str.contains(search_term, na=False, case=False)
+        filtered = filtered[mask]
+    if role_filter != "الكل" and not filtered.empty and "role" in filtered.columns:
+        filtered = filtered[filtered["role"] == role_filter]
+    if status_filter != "الكل" and not filtered.empty and "status" in filtered.columns:
+        filtered = filtered[filtered["status"] == status_filter]
+    if section_filter != "الكل" and not filtered.empty and "section_id" in filtered.columns:
+        filtered = filtered[filtered["section_id"] == section_filter]
+
+    st.markdown(f"<p style='text-align:left; color:#666;'>عدد الأعضاء: {len(filtered)}</p>", unsafe_allow_html=True)
+
+    if not filtered.empty:
+        for _, u in filtered.iterrows():
+            uid = u.get("user_id", "")
+            uname = u.get("username", "")
+            full_name = u.get("full_name", "")
+            phone = u.get("phone", "")
+            email = u.get("email", "")
+            role_name = u.get("role", "")
+            sec = u.get("section_id", "")
+            status = u.get("status", "active")
+            initials = get_initials(full_name)
+            role_class = get_role_css_class(role_name)
+            status_class = get_status_css_class(status)
+
+            section_name = sections[sections["section_id"] == sec]["section_name"].values[0] if not sections.empty and sec else "غير محدد"
+
+            with st.container():
+                col_card, col_actions = st.columns([4, 1])
+                with col_card:
+                    st.markdown(f"""
+                    <div class='user-card' onclick='window.location.reload()' id='card-{uid}'>
+                        <div class='card-badge {status_class}'>{'نشط' if status == 'active' else 'متوقف'}</div>
+                        <div style='display:flex; gap:1rem; align-items:center;'>
+                            <div class='user-avatar'>{initials}</div>
+                            <div>
+                                <h3 style='margin:0;'>{full_name}</h3>
+                                <span class='role-badge {role_class}'>{role_name}</span>
+                                <span class='status-badge {status_class}'>{'نشط' if status == 'active' else 'متوقف'}</span>
+                            </div>
+                        </div>
+                        <div class='student-info-row' style='margin-top:0.8rem;'>
+                            <span>👤 {uname}</span>
+                        </div>
+                        <div class='student-info-row'>
+                            <span>📱 {phone if phone else '—'}</span>
+                        </div>
+                        <div class='student-info-row'>
+                            <span>✉️ {email if email else '—'}</span>
+                        </div>
+                        <div class='student-info-row'>
+                            <span>🏫 {section_name}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_actions:
+                    if st.button("📋", key=f"view_{uid}"):
+                        st.session_state.profile_user_id = uid
+                        st.rerun()
+                    if role == "System Admin":
+                        if status == "active":
+                            if st.button("⏸️", key=f"deact_{uid}"):
+                                db.update_user(uid, {"status": "inactive"})
+                                db.add_log(user.get("user_id", ""), "تعطيل عضو", f"تم تعطيل العضو {full_name}")
+                                st.success("✅ تم تعطيل العضو")
+                                time.sleep(1)
+                                st.rerun()
+                        else:
+                            if st.button("▶️", key=f"act_{uid}"):
+                                db.update_user(uid, {"status": "active"})
+                                db.add_log(user.get("user_id", ""), "تفعيل عضو", f"تم تفعيل العضو {full_name}")
+                                st.success("✅ تم تفعيل العضو")
+                                time.sleep(1)
+                                st.rerun()
+                        if st.button("✏️", key=f"edit_{uid}"):
+                            st.session_state[f"edit_mode_{uid}"] = True
+                        if st.button("🗑️", key=f"del_{uid}"):
+                            if uid == user.get("user_id"):
+                                st.error("لا يمكنك حذف حسابك الحالي!")
+                            else:
+                                db.delete_user(uid)
+                                db.add_log(user.get("user_id", ""), "حذف عضو", f"تم حذف العضو {full_name}")
+                                st.success("✅ تم حذف العضو")
+                                time.sleep(1)
+                                st.rerun()
+
+                if st.session_state.get(f"edit_mode_{uid}", False):
+                    with st.expander("✏️ تعديل بيانات العضو", expanded=True):
+                        with st.form(f"edit_user_form_{uid}"):
+                            edit_name = st.text_input("الاسم الكامل*", value=full_name)
+                            edit_username = st.text_input("اسم المستخدم*", value=uname)
+                            edit_phone = st.text_input("الهاتف", value=phone)
+                            edit_email = st.text_input("البريد الإلكتروني", value=email)
+                            roles_list = ["System Admin", "Father Account", "Service Manager", "Teacher", "Student"]
+                            role_index = roles_list.index(role_name) if role_name in roles_list else 0
+                            edit_role = st.selectbox("الصلاحية", roles_list, index=role_index)
+                            edit_section_id = sec
+                            if edit_role in ["Service Manager", "Teacher", "Student"] and not sections.empty:
+                                sec_options = sections["section_id"].tolist()
+                                sec_idx = sec_options.index(edit_section_id) if edit_section_id in sec_options else 0
+                                edit_section_id = st.selectbox("الفصل", sec_options, index=sec_idx, format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0])
+                            new_password = st.text_input("كلمة المرور الجديدة (اتركه فارغاً لعدم التغيير)", type="password")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.form_submit_button("💾 حفظ التعديلات"):
+                                    updates = {"full_name": edit_name, "username": edit_username, "phone": edit_phone, "email": edit_email, "role": edit_role, "section_id": edit_section_id}
+                                    if new_password:
+                                        updates["password"] = hash_password(new_password)
+                                    db.update_user(uid, updates)
+                                    db.add_log(user.get("user_id", ""), "تعديل عضو", f"تم تعديل بيانات العضو {edit_name}")
+                                    st.session_state[f"edit_mode_{uid}"] = False
+                                    st.success("✅ تم تحديث البيانات")
+                                    time.sleep(1)
+                                    st.rerun()
+                            with col2:
+                                if st.form_submit_button("إلغاء"):
+                                    st.session_state[f"edit_mode_{uid}"] = False
+                                    st.rerun()
+                st.markdown("---")
+
+    # Add new member
+    with st.expander("➕ إضافة عضو جديد"):
+        with st.form("add_member_form"):
+            new_name = st.text_input("الاسم الكامل*")
+            new_username = st.text_input("اسم المستخدم*")
+            new_password = st.text_input("كلمة المرور*", type="password")
+            new_phone = st.text_input("الهاتف")
+            new_email = st.text_input("البريد الإلكتروني")
+            new_role = st.selectbox("الصلاحية", ["System Admin", "Father Account", "Service Manager", "Teacher", "Student"])
+            new_section_id = ""
+            if new_role in ["Service Manager", "Teacher", "Student"] and not sections.empty:
+                new_section_id = st.selectbox("الفصل", sections["section_id"], format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0])
+            if st.form_submit_button("إضافة عضو"):
+                if not new_name or not new_username or not new_password:
+                    st.error("الاسم الكامل واسم المستخدم وكلمة المرور مطلوبة")
+                elif not users.empty and "username" in users.columns and not users[users.username == new_username.strip()].empty:
+                    st.error("⛔ اسم المستخدم موجود مسبقاً!")
+                else:
+                    db.add_user({
+                        "user_id": str(uuid.uuid4()),
+                        "username": new_username.strip(),
+                        "password": hash_password(new_password),
+                        "role": new_role,
+                        "full_name": new_name.strip(),
+                        "section_id": new_section_id,
+                        "phone": new_phone,
+                        "email": new_email,
+                    })
+                    db.add_log(user.get("user_id", ""), "إضافة عضو", f"تمت إضافة عضو جديد {new_name}")
+                    st.success("✅ تمت إضافة العضو بنجاح")
+                    time.sleep(1)
+                    st.rerun()
+
+
+# =============================================================================
 # Main App
 # =============================================================================
 def main():
@@ -3349,7 +3545,6 @@ def main():
                     st.error("🚫 غير مصرح")
             elif choice == "👥 إدارة الأعضاء":
                 if st.session_state.user.get("role") in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
-                    from members_cards_page import show_members_cards_page
                     show_members_cards_page(db)
                 else:
                     st.error("🚫 غير مصرح")
