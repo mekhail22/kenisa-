@@ -1174,10 +1174,10 @@ def get_role_menu(role):
             "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
         ],
         "Father Account": ["🏠 لوحة التحكم", "👥 إدارة الأعضاء", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
-        "Service Manager": [
-            "🏠 لوحة التحكم", "👥 إدارة الأعضاء", "👩‍🎓 طالباتي", "💬 الافتقاد",
-            "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
-        ],
+    "Service Manager": [
+        "🏠 لوحة التحكم", "👥 إدارة الأعضاء", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
+        "🏆 درجات المسابقات", "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+    ],
         "Teacher": [
             "🏠 لوحة التحكم", "👥 إدارة الأعضاء", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
             "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
@@ -1187,18 +1187,39 @@ def get_role_menu(role):
     return menus.get(role, [])
 
 
-def filter_students_by_role(students, role, section_id):
+def get_sections_for_supervisor(db, user_id):
+    stage_ids = db.get_stages_for_supervisor(user_id)
+    if not stage_ids:
+        return []
+    sections = db.get_sections()
+    if sections.empty:
+        return []
+    section_ids = sections[sections.stage_id.isin(stage_ids)]["section_id"].tolist()
+    return section_ids
+
+
+def filter_students_by_role(students, role, section_id, db=None, user_id=None):
     if role == "Teacher" and section_id:
         return students[students.section_id == section_id] if not students.empty and "section_id" in students.columns else pd.DataFrame()
-    elif role == "Service Manager" and section_id:
-        return students[students.section_id == section_id] if not students.empty and "section_id" in students.columns else students
+    elif role == "Service Manager":
+        if db and user_id:
+            section_ids = get_sections_for_supervisor(db, user_id)
+            if section_ids and not students.empty and "section_id" in students.columns:
+                return students[students.section_id.isin(section_ids)]
+        return students
     else:
         return students
 
 
-def filter_attendance_by_role(attendance, role, section_id):
+def filter_attendance_by_role(attendance, role, section_id, db=None, user_id=None):
     if role == "Teacher" and section_id:
         return attendance[attendance.section_id == section_id] if not attendance.empty and "section_id" in attendance.columns else pd.DataFrame()
+    elif role == "Service Manager":
+        if db and user_id:
+            section_ids = get_sections_for_supervisor(db, user_id)
+            if section_ids and not attendance.empty and "section_id" in attendance.columns:
+                return attendance[attendance.section_id.isin(section_ids)]
+        return attendance
     return attendance
 
 
@@ -1736,7 +1757,7 @@ def show_members_cards_page(db):
     st.markdown("<h2 class='main-header'>👥 إدارة الأعضاء</h2>", unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
-    section_id = user.get("section_id", "")
+    user_id = user.get("user_id", "")
 
     if role not in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
         st.error("🚫 غير مصرح")
@@ -1783,13 +1804,14 @@ def show_members_cards_page(db):
 
     members_df = pd.DataFrame(members) if members else pd.DataFrame(columns=["member_id", "full_name", "role", "section_id", "phone", "email", "status", "type"])
 
-    # RBAC filtering
-    if role == "Teacher" and section_id:
+    # RBAC filtering based on stages for Service Manager
+    if role == "Teacher" and user.get("section_id"):
         if not members_df.empty:
-            members_df = members_df[members_df["section_id"] == section_id]
-    elif role == "Service Manager" and section_id:
-        if not members_df.empty:
-            members_df = members_df[members_df["section_id"] == section_id]
+            members_df = members_df[members_df["section_id"] == user.get("section_id")]
+    elif role == "Service Manager":
+        section_ids = get_sections_for_supervisor(db, user_id)
+        if section_ids and not members_df.empty:
+            members_df = members_df[members_df["section_id"].isin(section_ids)]
 
     # Search
     search_term = st.text_input("🔍 بحث", placeholder="ابحث في الاسم والتليفون...", label_visibility="collapsed")
@@ -2359,13 +2381,44 @@ def show_sections_page(db):
 def show_attendance(db):
     user = st.session_state.user
     role = user.get("role", "")
-    if role == "Service Manager":
-        st.error("🚫 أمناء الخدمة لا يمكنهم تسجيل الحضور، هذه المهمة خاصة بالمدرسات فقط.")
-        if st.button("🔙 العودة إلى لوحة التحكم"):
-            st.session_state.menu_choice = "🏠 لوحة التحكم"
-            st.rerun()
-        return
+    user_id = user.get("user_id", "")
     st.markdown("<h2 class='main-header'>📋 تسجيل الحضور</h2>", unsafe_allow_html=True)
+    
+    # Service Manager can view attendance for their sections but not edit
+    if role == "Service Manager":
+        section_ids = get_sections_for_supervisor(db, user_id)
+        if not section_ids:
+            st.info("لا توجد فصول معينة لك.")
+            return
+        sections = db.get_sections()
+        if sections.empty:
+            st.warning("لا توجد فصول.")
+            return
+        supervised_sections = sections[sections.section_id.isin(section_ids)]
+        if supervised_sections.empty:
+            st.info("لا توجد فصول معينة لك.")
+            return
+        
+        st.subheader("📊 عرض الحضور (للقراءة فقط)")
+        selected_section = st.selectbox("اختر الفصل", supervised_sections["section_id"],
+                                        format_func=lambda x: supervised_sections[supervised_sections.section_id == x]["section_name"].values[0])
+        date = st.date_input("التاريخ", get_cairo_now().date())
+        date_str = date.strftime("%Y-%m-%d")
+        students = db.get_students()
+        section_students = students[students.section_id == selected_section] if not students.empty and "section_id" in students.columns else pd.DataFrame()
+        if section_students.empty:
+            st.info("لا توجد طالبات في هذا الفصل.")
+            return
+        existing = db.get_attendance_by_date_section(date_str, selected_section)
+        if existing.empty:
+            st.info("لا يوجد سجل حضور لهذا اليوم.")
+            return
+        # Merge student names
+        display = existing.merge(section_students[["student_id", "full_name"]], on="student_id", how="left")
+        st.dataframe(display[["full_name", "status", "notes"]], use_container_width=True)
+        return
+    
+    # Teacher and System Admin flow continues below
     sections = db.get_sections()
     if sections.empty:
         st.warning("لا توجد فصول.")
@@ -2448,10 +2501,20 @@ def show_followup(db):
     st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
-    section_id = user.get("section_id", "")
+    user_id = user.get("user_id", "")
     students = db.get_students()
     followup = db.get_followup()
-    responsible = filter_students_by_role(students, role, section_id)
+    
+    # Service Manager filtering by stages
+    if role == "Service Manager" and db and user_id:
+        section_ids = get_sections_for_supervisor(db, user_id)
+        if section_ids:
+            responsible = students[students.section_id.isin(section_ids)] if not students.empty and "section_id" in students.columns else pd.DataFrame()
+        else:
+            responsible = pd.DataFrame()
+    else:
+        section_id = user.get("section_id", "")
+        responsible = filter_students_by_role(students, role, section_id)
     if responsible.empty:
         st.info("لا توجد طالبات مسؤولات عنك.")
         return
@@ -2508,10 +2571,21 @@ def show_my_students(db):
     st.markdown("<h2 class='main-header'>👩‍🎓 طالباتي</h2>", unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
-    section_id = user.get("section_id", "")
+    user_id = user.get("user_id", "")
     students = db.get_students()
     followup = db.get_followup()
-    my_students = filter_students_by_role(students, role, section_id)
+    
+    # Service Manager filtering by stages
+    if role == "Service Manager" and db and user_id:
+        section_ids = get_sections_for_supervisor(db, user_id)
+        if section_ids:
+            my_students = students[students.section_id.isin(section_ids)] if not students.empty and "section_id" in students.columns else pd.DataFrame()
+        else:
+            my_students = pd.DataFrame()
+    else:
+        section_id = user.get("section_id", "")
+        my_students = filter_students_by_role(students, role, section_id)
+    
     if my_students.empty:
         st.info("لا توجد طالبات مسجلات في فصلك.")
         return
@@ -2554,14 +2628,30 @@ def show_class_competition_scores(db):
     st.markdown("<h2 class='main-header'>🏆 درجات مسابقات الفصل</h2>", unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
-    section_id = user.get("section_id", "")
-    if role != "Teacher" or not section_id:
-        st.error("🚫 هذه الصفحة متاحة للمدرسات فقط.")
+    user_id = user.get("user_id", "")
+    
+    # Service Manager can view competition scores for their stages
+    if role == "Service Manager":
+        section_ids = get_sections_for_supervisor(db, user_id)
+        if not section_ids:
+            st.info("لا توجد فصول معينة لك.")
+            return
+        students = db.get_students()
+        quizzes = db.get_quizzes()
+        results = db.get_quiz_results()
+        section_students = students[students.section_id.isin(section_ids)] if not students.empty and "section_id" in students.columns else pd.DataFrame()
+    elif role == "Teacher":
+        section_id = user.get("section_id", "")
+        if not section_id:
+            st.error("🚫 لم يتم تعيين فصل لك.")
+            return
+        students = db.get_students()
+        quizzes = db.get_quizzes()
+        results = db.get_quiz_results()
+        section_students = students[students.section_id == section_id] if not students.empty and "section_id" in students.columns else pd.DataFrame()
+    else:
+        st.error("🚫 هذه الصفحة متاحة للمدرسات وأمناء الخدمة فقط.")
         return
-    students = db.get_students()
-    quizzes = db.get_quizzes()
-    results = db.get_quiz_results()
-    section_students = students[students.section_id == section_id] if not students.empty and "section_id" in students.columns else pd.DataFrame()
     if section_students.empty:
         st.info("لا توجد طالبات مسجلات في فصلك.")
         return
@@ -2659,6 +2749,7 @@ def show_quizzes(db):
     st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
+    user_id = user.get("user_id", "")
     section_id = user.get("section_id", "")
     quizzes = db.get_quizzes()
     if role in ["System Admin", "Service Manager"]:
@@ -2780,6 +2871,11 @@ def show_quizzes(db):
         if role == "Teacher" and section_id and not students.empty and "student_id" in results.columns and "section_id" in students.columns:
             section_student_ids = students[students.section_id == section_id]["student_id"].tolist()
             results = results[results.student_id.isin(section_student_ids)]
+        elif role == "Service Manager" and not students.empty and "student_id" in results.columns and "section_id" in students.columns:
+            section_ids = get_sections_for_supervisor(db, user_id)
+            if section_ids:
+                section_student_ids = students[students.section_id.isin(section_ids)]["student_id"].tolist()
+                results = results[results.student_id.isin(section_student_ids)]
         if not students.empty:
             if "student_id" in results.columns:
                 results = results.merge(students[["student_id", "full_name", "section_id"]], on="student_id", how="left")
@@ -2849,13 +2945,28 @@ def show_reports(db):
     st.markdown("<h2 class='main-header'>📊 التقارير والإحصائيات</h2>", unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
+    user_id = user.get("user_id", "")
     section_id = user.get("section_id", "")
     attendance = db.get_attendance()
     students = db.get_students()
-    attendance = filter_attendance_by_role(attendance, role, section_id)
-    if role == "Teacher" and section_id:
-        if not students.empty and "section_id" in students.columns:
-            students = students[students.section_id == section_id]
+    
+    # Service Manager filtering by stages
+    if role == "Service Manager" and db and user_id:
+        section_ids = get_sections_for_supervisor(db, user_id)
+        if section_ids:
+            if not students.empty and "section_id" in students.columns:
+                students = students[students.section_id.isin(section_ids)]
+            if not attendance.empty and "section_id" in attendance.columns:
+                attendance = attendance[attendance.section_id.isin(section_ids)]
+        else:
+            st.info("لا توجد فصول معينة لك.")
+            return
+    elif role == "Teacher":
+        section_id = user.get("section_id", "")
+        attendance = filter_attendance_by_role(attendance, role, section_id)
+        if section_id:
+            if not students.empty and "section_id" in students.columns:
+                students = students[students.section_id == section_id]
     if attendance.empty:
         st.info("لا توجد بيانات حضور.")
         return
