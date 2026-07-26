@@ -1045,7 +1045,7 @@ def init_session():
         "last_score": 0, "menu_choice": "🏠 لوحة التحكم", "show_sidebar": True,
         "open_help_dialog": False, "current_attempt_id": None, "last_saved_answers_str": "",
         "quiz_questions": None, "show_review": False, "data_errors": [], "data_validated": False,
-        "quiz_load_failures": 0, "exam_mode": False
+        "quiz_load_failures": 0
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1276,12 +1276,6 @@ def show_login_page(db, jwt_secret):
     st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة</h1>", unsafe_allow_html=True)
     show_initialization(db)
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
-    exam_toggle_col, _ = st.columns([1, 3])
-    with exam_toggle_col:
-        exam_mode = st.toggle("🎓 وضع الامتحان", value=st.session_state.get("exam_mode", False), key="exam_mode_toggle")
-        if exam_mode != st.session_state.get("exam_mode", False):
-            st.session_state.exam_mode = exam_mode
-            st.rerun()
     with tab1:
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم").strip()
