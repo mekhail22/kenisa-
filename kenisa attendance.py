@@ -1175,11 +1175,11 @@ def get_role_menu(role):
         ],
         "Father Account": ["🏠 لوحة التحكم", "👥 إدارة الأعضاء", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
     "Service Manager": [
-        "🏠 لوحة التحكم", "👥 إدارة الأعضاء", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
+        "🏠 لوحة التحكم", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد",
         "🏆 درجات المسابقات", "📝 المسابقات والاختبارات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
     ],
         "Teacher": [
-            "🏠 لوحة التحكم", "👥 إدارة الأعضاء", "👩‍🎓 طالباتي", "📋 الحضور", "💬 الافتقاد",
+            "🏠 لوحة التحكم", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد",
             "🏆 درجات المسابقات", "🔒 تغيير كلمة المرور"
         ],
         "Student": ["🏠 لوحة التحكم", "📝 المسابقات والاختبارات", "🔒 تغيير كلمة المرور"]
@@ -2297,46 +2297,49 @@ def show_sections_page(db):
                     st.markdown("#### 🔗 التعيينات")
                     eligible_teachers = users[users.role == "Teacher"] if not users.empty else pd.DataFrame()
                     eligible_leaders = users[users.role == "Service Manager"] if not users.empty else pd.DataFrame()
-                    t_opts = ["None"] + eligible_teachers["user_id"].tolist() if not eligible_teachers.empty else ["None"]
-                    l_opts = ["None"] + eligible_leaders["user_id"].tolist() if not eligible_leaders.empty else ["None"]
-                    t_idx = t_opts.index(sec_teacher) if sec_teacher in t_opts else 0
-                    l_idx = l_opts.index(sec_leader) if sec_leader in l_opts else 0
-                    new_teacher = st.selectbox("المدرس", t_opts, index=t_idx,
-                                                format_func=lambda x: "بدون" if x == "None" else eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0],
-                                                key=f"teacher_{sec_id}")
-                    new_leader = st.selectbox("أمين الخدمة", l_opts, index=l_idx,
-                                                format_func=lambda x: "بدون" if x == "None" else eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0],
-                                                key=f"leader_{sec_id}")
+                    current_teachers = [t.strip() for t in str(sec_teacher).split(",") if t.strip()] if sec_teacher else []
+                    current_leaders = [l.strip() for l in str(sec_leader).split(",") if l.strip()] if sec_leader else []
+                    selected_teachers = st.multiselect("المدرسات", eligible_teachers["user_id"].tolist() if not eligible_teachers.empty else [],
+                                                       default=current_teachers,
+                                                       format_func=lambda x: eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0] if not eligible_teachers.empty else x,
+                                                       key=f"teacher_{sec_id}")
+                    selected_leaders = st.multiselect("أمناء الخدمة", eligible_leaders["user_id"].tolist() if not eligible_leaders.empty else [],
+                                                      default=current_leaders,
+                                                      format_func=lambda x: eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0] if not eligible_leaders.empty else x,
+                                                      key=f"leader_{sec_id}")
                     if st.button("💾 حفظ التعيينات", key=f"save_assign_{sec_id}"):
-                        db.update_section(sec_id, {"teacher_id": new_teacher if new_teacher != "None" else "", "leader_id": new_leader if new_leader != "None" else ""})
+                        db.update_section(sec_id, {"teacher_id": ",".join(selected_teachers), "leader_id": ",".join(selected_leaders)})
                         st.success("✅ تم تحديث التعيينات")
                         time.sleep(1)
                         st.rerun()
 
-                    st.markdown("#### ✏️ تعديل / حذف الفصل")
-                    new_name = st.text_input("اسم الفصل", value=sec_name, key=f"edit_name_{sec_id}")
-                    new_max = st.number_input("الحد الأقصى للطلاب", 0, 500, int(sec_max) if sec_max else 0, key=f"edit_max_{sec_id}")
-                    new_room = st.text_input("الغرفة", value=sec_room, key=f"edit_room_{sec_id}")
-                    new_day = st.text_input("يوم الاجتماع", value=sec_day, key=f"edit_day_{sec_id}")
-                    new_time = st.text_input("وقت الاجتماع", value=sec_time, key=f"edit_time_{sec_id}")
-                    new_notes = st.text_area("ملاحظات", value=sec_notes, key=f"edit_notes_{sec_id}")
-                    new_status = st.selectbox("الحالة", ["active", "inactive"], index=0 if sec_status == "active" else 1, key=f"edit_status_{sec_id}")
-                    c1, c2 = st.columns(2)
-                    if c1.button("تحديث الفصل", key=f"update_sec_{sec_id}"):
-                        db.update_section(sec_id, {"section_name": new_name, "max_students": new_max, "room": new_room,
-                                                   "meeting_day": new_day, "meeting_time": new_time, "notes": new_notes, "status": new_status})
-                        st.success("✅ تم التحديث")
-                        time.sleep(1)
-                        st.rerun()
-                    if c2.button("حذف الفصل", key=f"delete_sec_{sec_id}"):
-                        section_students = students[students["section_id"] == sec_id] if not students.empty and "section_id" in students.columns else pd.DataFrame()
-                        if not section_students.empty:
-                            st.error("❌ لا يمكن حذف الفصل لأنه يحتوي على طالبات. قم بنقل الطالبات أولاً.")
-                        else:
-                            db.delete_section(sec_id)
-                            st.success("✅ تم الحذف")
+                    if role == "System Admin":
+                        st.markdown("#### ✏️ تعديل / حذف الفصل")
+                        new_max = st.number_input("الحد الأقصى للطلاب", 0, 500, int(sec_max) if sec_max else 0, key=f"edit_max_{sec_id}")
+                        new_room = st.text_input("الغرفة", value=sec_room, key=f"edit_room_{sec_id}")
+                        new_day = st.text_input("يوم الاجتماع", value=sec_day, key=f"edit_day_{sec_id}")
+                        new_time = st.text_input("وقت الاجتماع", value=sec_time, key=f"edit_time_{sec_id}")
+                        new_name = st.text_input("اسم الفصل", value=sec_name, key=f"edit_name_{sec_id}")
+                        new_status = st.selectbox("الحالة", ["active", "inactive"], index=0 if sec_status == "active" else 1, key=f"edit_status_{sec_id}")
+                        new_notes = st.text_area("ملاحظات", value=sec_notes, key=f"edit_notes_{sec_id}")
+                        c1, c2 = st.columns(2)
+                        if c1.button("تحديث الفصل", key=f"update_sec_{sec_id}"):
+                            db.update_section(sec_id, {"section_name": new_name, "max_students": new_max, "room": new_room,
+                                                       "meeting_day": new_day, "meeting_time": new_time, "notes": new_notes, "status": new_status})
+                            st.success("✅ تم التحديث")
                             time.sleep(1)
                             st.rerun()
+                        if c2.button("حذف الفصل", key=f"delete_sec_{sec_id}"):
+                            section_students = students[students["section_id"] == sec_id] if not students.empty and "section_id" in students.columns else pd.DataFrame()
+                            if not section_students.empty:
+                                st.error("❌ لا يمكن حذف الفصل لأنه يحتوي على طالبات. قم بنقل الطالبات أولاً.")
+                            else:
+                                db.delete_section(sec_id)
+                                st.success("✅ تم الحذف")
+                                time.sleep(1)
+                                st.rerun()
+                    else:
+                        st.info("👁️ يمكنك فقط مشاهدة بيانات الفصل - لا يمكنك تعديلها أو حذفها")
     else:
         st.info("🔍 لا توجد فصول مطابقة.")
 
@@ -2346,12 +2349,12 @@ def show_sections_page(db):
                 sec_name = st.text_input("اسم الفصل*")
                 sec_stage = st.selectbox("المرحلة", stages["stage_id"],
                                          format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0]) if not stages.empty else ""
-                sec_teacher = st.selectbox("المدرس", ["None"] + users[users.role == "Teacher"]["user_id"].tolist(),
-                                           format_func=lambda x: "بدون" if x == "None" else users[users.user_id == x]["full_name"].values[0]) if not users.empty else "None"
-                sec_teacher = sec_teacher if sec_teacher != "None" else ""
-                sec_leader = st.selectbox("أمين الخدمة", ["None"] + users[users.role == "Service Manager"]["user_id"].tolist(),
-                                          format_func=lambda x: "بدون" if x == "None" else users[users.user_id == x]["full_name"].values[0]) if not users.empty else "None"
-                sec_leader = sec_leader if sec_leader != "None" else ""
+                eligible_teachers = users[users.role == "Teacher"] if not users.empty else pd.DataFrame()
+                eligible_leaders = users[users.role == "Service Manager"] if not users.empty else pd.DataFrame()
+                selected_teachers = st.multiselect("المدرسات", eligible_teachers["user_id"].tolist(),
+                                                   format_func=lambda x: eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0]) if not eligible_teachers.empty else []
+                selected_leaders = st.multiselect("أمناء الخدمة", eligible_leaders["user_id"].tolist(),
+                                                  format_func=lambda x: eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0]) if not eligible_leaders.empty else []
                 sec_max = st.number_input("الحد الأقصى للطلاب", 0, 500, 0)
                 sec_room = st.text_input("الغرفة")
                 sec_day = st.text_input("يوم الاجتماع")
@@ -2365,7 +2368,7 @@ def show_sections_page(db):
                     else:
                         db.add_section({
                             "section_id": str(uuid.uuid4()), "section_name": sec_name.strip(),
-                            "stage_id": sec_stage, "teacher_id": sec_teacher, "leader_id": sec_leader,
+                            "stage_id": sec_stage, "teacher_id": ",".join(selected_teachers), "leader_id": ",".join(selected_leaders),
                             "max_students": sec_max, "room": sec_room, "meeting_day": sec_day,
                             "meeting_time": sec_time, "status": "active", "notes": sec_notes,
                             "manager_user_id": user.get("user_id", "")
@@ -2562,63 +2565,6 @@ def show_followup(db):
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e))
-
-
-# =============================================================================
-# My Students
-# =============================================================================
-def show_my_students(db):
-    st.markdown("<h2 class='main-header'>👩‍🎓 طالباتي</h2>", unsafe_allow_html=True)
-    user = st.session_state.user
-    role = user.get("role", "")
-    user_id = user.get("user_id", "")
-    students = db.get_students()
-    followup = db.get_followup()
-    
-    # Service Manager filtering by stages
-    if role == "Service Manager" and db and user_id:
-        section_ids = get_sections_for_supervisor(db, user_id)
-        if section_ids:
-            my_students = students[students.section_id.isin(section_ids)] if not students.empty and "section_id" in students.columns else pd.DataFrame()
-        else:
-            my_students = pd.DataFrame()
-    else:
-        section_id = user.get("section_id", "")
-        my_students = filter_students_by_role(students, role, section_id)
-    
-    if my_students.empty:
-        st.info("لا توجد طالبات مسجلات في فصلك.")
-        return
-    if not followup.empty and "student_id" in followup.columns and "regularity_status" in followup.columns:
-        latest_fup = followup.sort_values("followup_date").groupby("student_id").last().reset_index()
-        my_students = my_students.merge(latest_fup[["student_id", "regularity_status"]], on="student_id", how="left")
-        my_students["regularity_status"] = my_students["regularity_status"].fillna("غير معروف")
-    else:
-        my_students["regularity_status"] = "غير معروف"
-    display_cols = [c for c in ["full_name", "phone", "regularity_status"] if c in my_students.columns]
-    st.dataframe(my_students[display_cols], use_container_width=True)
-    st.markdown("---")
-    st.subheader("➕ إضافة متابعة سريعة")
-    if "student_id" in my_students.columns:
-        selected = st.selectbox("اختر طالبة", my_students["student_id"],
-                                format_func=lambda x: my_students[my_students.student_id == x]["full_name"].values[0], key="my_students_fup")
-        with st.expander("فتح نموذج المتابعة"):
-            with st.form("quick_followup_form"):
-                ftype = st.selectbox("نوع الافتقاد", ["زيارة", "اتصال هاتفي", "رسالة", "لقاء شخصي"])
-                notes = st.text_area("ملاحظات")
-                regularity = st.selectbox("حالة الانتظام", ["منتظم", "متقطع", "منقطع"])
-                if st.form_submit_button("حفظ المتابعة"):
-                    try:
-                        db.add_followup_record({
-                            "record_id": str(uuid.uuid4()), "student_id": selected,
-                            "teacher_id": user.get("user_id", ""), "followup_date": get_cairo_now().strftime("%Y-%m-%d"),
-                            "followup_type": ftype, "notes": notes, "regularity_status": regularity
-                        })
-                        st.success("✅ تمت المتابعة بنجاح")
-                        time.sleep(1)
-                        st.rerun()
-                    except ValueError as e:
-                        st.error(str(e))
 
 
 # =============================================================================
@@ -3349,14 +3295,10 @@ def main():
                     show_members_cards_page(db)
                 else:
                     st.error("🚫 غير مصرح")
-            elif choice == "👩‍🎓 طالباتي":
-                show_my_students(db)
             elif choice == "📋 الحضور":
                 show_attendance(db)
             elif choice == "💬 الافتقاد":
                 show_followup(db)
-            elif choice == "🏆 درجات المسابقات":
-                show_class_competition_scores(db)
             elif choice == "📝 المسابقات والاختبارات":
                 show_quizzes(db)
             elif choice == "📊 التقارير والإحصائيات":
