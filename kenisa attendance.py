@@ -1758,6 +1758,7 @@ def show_members_cards_page(db):
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
+    section_id = user.get("section_id", "")
 
     if role not in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
         st.error("🚫 غير مصرح")
@@ -1774,6 +1775,9 @@ def show_members_cards_page(db):
             u_role = u.get("role", "")
             if u_role in ["System Admin", "Father Account"]:
                 continue
+            # Teacher cannot see other teachers
+            if role == "Teacher" and u_role == "Teacher" and u.get("user_id", "") != user_id:
+                continue
             members.append({
                 "member_id": u.get("user_id", ""),
                 "full_name": u.get("full_name", ""),
@@ -1782,10 +1786,15 @@ def show_members_cards_page(db):
                 "phone": u.get("phone", ""),
                 "email": u.get("email", ""),
                 "status": u.get("status", "active"),
-                "type": "user"
+                "type": "user",
+                "created_by": u.get("created_by", "")
             })
     if not students.empty:
         for _, s in students.iterrows():
+            # Teacher can only see students in their section
+            if role == "Teacher" and section_id:
+                if s.get("section_id", "") != section_id:
+                    continue
             members.append({
                 "member_id": s.get("student_id", ""),
                 "full_name": s.get("full_name", ""),
@@ -1799,7 +1808,8 @@ def show_members_cards_page(db):
                 "birthdate": s.get("birthdate", ""),
                 "address": s.get("address", ""),
                 "school": s.get("school", ""),
-                "notes": s.get("notes", "")
+                "notes": s.get("notes", ""),
+                "created_by": s.get("created_by", "")
             })
 
     members_df = pd.DataFrame(members) if members else pd.DataFrame(columns=["member_id", "full_name", "role", "section_id", "phone", "email", "status", "type"])
@@ -1925,7 +1935,21 @@ def show_members_cards_page(db):
                     if st.button("📋", key=f"view_{mid}"):
                         st.session_state.profile_user_id = mid
                         st.rerun()
-                if role == "System Admin":
+                
+                # Check if teacher can edit/delete
+                can_edit_delete = True
+                is_own_data = True
+                if role == "Teacher":
+                    if member_type == "student":
+                        created_by = m.get("created_by", "")
+                        is_own_data = (created_by == user_id)
+                        can_edit_delete = is_own_data
+                    else:
+                        # Teacher cannot edit other teachers
+                        can_edit_delete = False
+                        st.warning("⛔ لا يمكنك التعديل على بيانات شخص آخر. هذه البيانات تخص مستخدم آخر.")
+                
+                if role == "System Admin" and can_edit_delete:
                     with action_cols[1]:
                         if status == "active":
                             if st.button("⏸️", key=f"deact_{mid}"):
@@ -1959,6 +1983,19 @@ def show_members_cards_page(db):
                                 else:
                                     db.delete_user(mid)
                                 db.add_log(user.get("user_id", ""), "حذف عضو", f"تم حذف {full_name}")
+                                st.success("✅ تم الحذف")
+                                time.sleep(1)
+                                st.rerun()
+                elif role == "Teacher" and can_edit_delete and member_type == "student":
+                    with action_cols[2]:
+                        if st.button("✏️", key=f"edit_{mid}"):
+                            st.session_state[f"edit_mode_{mid}"] = True
+                    with action_cols[3]:
+                        if st.button("🗑️", key=f"del_{mid}"):
+                            confirm = st.checkbox(f"تأكيد الحذف؟", key=f"confirm_del_{mid}")
+                            if confirm:
+                                db.delete_student(mid)
+                                db.add_log(user.get("user_id", ""), "حذف طالبة", f"تم حذف {full_name}")
                                 st.success("✅ تم الحذف")
                                 time.sleep(1)
                                 st.rerun()
@@ -2043,7 +2080,7 @@ def show_members_cards_page(db):
                     st.error("الاسم الكامل مطلوب")
                 else:
                     if member_type == "طالبة":
-                        db.add_student({
+                        student_data = {
                             "student_id": str(uuid.uuid4()),
                             "full_name": new_name.strip(),
                             "section_id": new_section_id,
@@ -2053,8 +2090,10 @@ def show_members_cards_page(db):
                             "address": new_address,
                             "school": new_school,
                             "notes": new_notes,
-                            "status": "active" if new_status == "نشطة" else "inactive"
-                        })
+                            "status": "active" if new_status == "نشطة" else "inactive",
+                            "created_by": user_id
+                        }
+                        db.add_student(student_data)
                     else:
                         role_map = {"أمين خدمة": "Service Manager", "مدرسة": "Teacher"}
                         db.add_user({
@@ -2489,12 +2528,20 @@ def show_attendance(db):
         )
         rec = rec[["record_id", "student_name", "status", "notes"]]
         st.dataframe(rec, use_container_width=True)
-        del_id = st.selectbox("اختر سجل حضور لحذفه", rec["record_id"], key="del_att_sel")
-        if st.button("حذف سجل الحضور"):
-            db.delete_attendance_record(del_id)
-            st.success("تم الحذف")
-            time.sleep(1)
-            st.rerun()
+        
+        # Teacher can only delete attendance records they created
+        can_delete_attendance = True
+        if role == "Teacher":
+            can_delete_attendance = False
+            st.warning("⛔ لا يمكنك حذف سجل حضور سجلته مدرسة أخرى.")
+        
+        if role == "System Admin" and can_delete_attendance:
+            del_id = st.selectbox("اختر سجل حضور لحذفه", rec["record_id"], key="del_att_sel")
+            if st.button("حذف سجل الحضور"):
+                db.delete_attendance_record(del_id)
+                st.success("تم الحذف")
+                time.sleep(1)
+                st.rerun()
 
 
 # =============================================================================
@@ -2565,6 +2612,24 @@ def show_followup(db):
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e))
+    
+    # Show existing followup records with delete option for admin
+    if not followup.empty and role == "System Admin":
+        st.markdown("---")
+        st.subheader("🗑️ إدارة سجلات الافتقاد")
+        followup_display = followup.merge(
+            students[["student_id", "full_name"]] if not students.empty else pd.DataFrame(),
+            on="student_id", how="left"
+        )
+        if not followup_display.empty:
+            followup_display = followup_display[["record_id", "full_name", "followup_type", "regularity_status"]]
+            st.dataframe(followup_display, use_container_width=True)
+            del_followup_id = st.selectbox("اختر سجل افتقاد لحذفه", followup_display["record_id"], key="del_followup_sel")
+            if st.button("حذف سجل الافتقاد"):
+                db.delete_followup_record(del_followup_id)
+                st.success("تم الحذف")
+                time.sleep(1)
+                st.rerun()
 
 
 # =============================================================================
@@ -2783,29 +2848,42 @@ def show_quizzes(db):
                 active = q.get("is_active", "True") == "True"
                 code = q.get("quiz_code", "")
                 expiry = q.get("expiry_date", "")
+                created_by = q.get("created_by", "")
                 col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
                 col1.write(f"**{title}**")
                 col2.write(f"الكود: {code}")
                 col3.write("حالة: " + ("🟢 نشط" if active else "🔴 مغلق"))
                 col4.write(f"ينتهي: {expiry}")
+                
+                # Check if teacher can modify this quiz
+                can_manage_quiz = True
+                if role == "Teacher" and created_by != user_id:
+                    can_manage_quiz = False
+                
                 col_actions = st.columns(4)
-                if active:
-                    if col_actions[0].button("إغلاق", key=f"deact_{qid}"):
-                        db.update_quiz(qid, {"is_active": "False"})
-                        st.success(f"تم إغلاق الاختبار: {title}")
+                if can_manage_quiz:
+                    if active:
+                        if col_actions[0].button("إغلاق", key=f"deact_{qid}"):
+                            db.update_quiz(qid, {"is_active": "False"})
+                            st.success(f"تم إغلاق الاختبار: {title}")
+                            time.sleep(1)
+                            st.rerun()
+                    else:
+                        if col_actions[0].button("تفعيل", key=f"act_{qid}"):
+                            db.update_quiz(qid, {"is_active": "True"})
+                            st.success(f"تم تفعيل الاختبار: {title}")
+                            time.sleep(1)
+                            st.rerun()
+                if role == "System Admin" and can_manage_quiz:
+                    if col_actions[1].button("حذف (النتائج تبقى)", key=f"del_keep_{qid}"):
+                        db.delete_quiz_keep_results(qid)
+                        st.success(f"تم حذف الاختبار '{title}' مع الاحتفاظ بالنتائج.")
                         time.sleep(1)
                         st.rerun()
-                else:
-                    if col_actions[0].button("تفعيل", key=f"act_{qid}"):
-                        db.update_quiz(qid, {"is_active": "True"})
-                        st.success(f"تم تفعيل الاختبار: {title}")
-                        time.sleep(1)
-                        st.rerun()
-                if col_actions[1].button("حذف (النتائج تبقى)", key=f"del_keep_{qid}"):
-                    db.delete_quiz_keep_results(qid)
-                    st.success(f"تم حذف الاختبار '{title}' مع الاحتفاظ بالنتائج.")
-                    time.sleep(1)
-                    st.rerun()
+                
+                if role == "Teacher" and not can_manage_quiz:
+                    st.warning("⛔ لا يمكنك التعديل على مسابقة أنشأها شخص آخر.")
+                
                 st.markdown("---")
     st.markdown("### 📊 نتائج الاختبارات")
     results = db.get_quiz_results()
