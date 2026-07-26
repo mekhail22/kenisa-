@@ -1773,7 +1773,12 @@ def show_members_cards_page(db):
                 "phone": s.get("phone", ""),
                 "email": "",
                 "status": s.get("status", "active"),
-                "type": "student"
+                "type": "student",
+                "parent_phone": s.get("parent_phone", ""),
+                "birthdate": s.get("birthdate", ""),
+                "address": s.get("address", ""),
+                "school": s.get("school", ""),
+                "notes": s.get("notes", "")
             })
 
     members_df = pd.DataFrame(members) if members else pd.DataFrame(columns=["member_id", "full_name", "role", "section_id", "phone", "email", "status", "type"])
@@ -1842,25 +1847,55 @@ def show_members_cards_page(db):
                 role_label = {"Service Manager": "أمين خدمة", "Teacher": "مدرسة", "Student": "طالبة"}.get(member_role, member_role)
                 status_label = {"active": "نشط", "inactive": "غير نشط"}.get(status, "نشط")
 
-                st.markdown(f"""
-                <div class='user-card' id='card-{mid}'>
-                    <div class='card-badge {status_class}'>{status_label}</div>
-                    <div style='display:flex; gap:1rem; align-items:center;'>
-                        <div class='user-avatar'>{initials}</div>
-                        <div>
-                            <h3 style='margin:0;'>{full_name}</h3>
-                            <span class='role-badge {role_class}'>{role_label}</span>
-                            <span class='status-badge {status_class}'>{status_label}</span>
+                if member_type == "student":
+                    # Student card - show only name, phone, status, section
+                    parent_phone = m.get("parent_phone", "")
+                    birthdate = m.get("birthdate", "")
+                    address = m.get("address", "")
+                    school = m.get("school", "")
+                    student_notes = m.get("notes", "")
+                    
+                    st.markdown(f"""
+                    <div class='user-card' id='card-{mid}'>
+                        <div class='card-badge {status_class}'>{status_label}</div>
+                        <div style='display:flex; gap:1rem; align-items:center;'>
+                            <div class='user-avatar'>{initials}</div>
+                            <div>
+                                <h3 style='margin:0;'>{full_name}</h3>
+                                <span class='role-badge {role_class}'>{role_label}</span>
+                                <span class='status-badge {status_class}'>{status_label}</span>
+                            </div>
+                        </div>
+                        <div class='student-info-row' style='margin-top:0.8rem;'>
+                            <span>📱 {phone if phone else '—'}</span>
+                        </div>
+                        <div class='student-info-row'>
+                            <span>🏫 {section_name if section_name else '—'}</span>
                         </div>
                     </div>
-                    <div class='student-info-row' style='margin-top:0.8rem;'>
-                        <span>📱 {phone if phone else '—'}</span>
+                    """, unsafe_allow_html=True)
+                else:
+                    # User card - show name, phone, section
+                    email = m.get("email", "")
+                    st.markdown(f"""
+                    <div class='user-card' id='card-{mid}'>
+                        <div class='card-badge {status_class}'>{status_label}</div>
+                        <div style='display:flex; gap:1rem; align-items:center;'>
+                            <div class='user-avatar'>{initials}</div>
+                            <div>
+                                <h3 style='margin:0;'>{full_name}</h3>
+                                <span class='role-badge {role_class}'>{role_label}</span>
+                                <span class='status-badge {status_class}'>{status_label}</span>
+                            </div>
+                        </div>
+                        <div class='student-info-row' style='margin-top:0.8rem;'>
+                            <span>📱 {phone if phone else '—'}</span>
+                        </div>
+                        <div class='student-info-row'>
+                            <span>🏫 {section_name if section_name else '—'}</span>
+                        </div>
                     </div>
-                    <div class='student-info-row'>
-                        <span>🏫 {section_name if section_name else '—'}</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
 
                 # Action buttons
                 action_cols = st.columns(5)
@@ -1912,15 +1947,42 @@ def show_members_cards_page(db):
                         with st.form(f"edit_member_form_{mid}"):
                             edit_name = st.text_input("الاسم الكامل*", value=full_name)
                             edit_phone = st.text_input("الهاتف", value=phone)
-                            edit_email = st.text_input("البريد الإلكتروني", value=phone if member_type == "user" else "")
+                            edit_email = st.text_input("البريد الإلكتروني", value=phone if member_role in ["Service Manager", "Teacher"] else "")
                             sec_options = sections["section_id"].tolist() if not sections.empty else []
                             current_sec = sec_id if sec_id in sec_options else (sec_options[0] if sec_options else "")
                             edit_section = st.selectbox("الفصل", sec_options, index=sec_options.index(current_sec) if current_sec in sec_options else 0, format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0]) if sec_options else ""
+                            
+                            # Student specific fields
+                            edit_parent_phone = ""
+                            edit_birthdate = None
+                            edit_address = ""
+                            edit_school = ""
+                            edit_notes = ""
+                            edit_status = "active"
+                            if member_type == "student":
+                                edit_parent_phone = st.text_input("رقم ولي الأمر", value=m.get("parent_phone", ""))
+                                bd_value = pd.to_datetime(m.get("birthdate", "")).date() if m.get("birthdate") else None
+                                edit_birthdate = st.date_input("تاريخ الميلاد", value=bd_value)
+                                edit_address = st.text_input("العنوان", value=m.get("address", ""))
+                                edit_school = st.text_input("المدرسة", value=m.get("school", ""))
+                                edit_notes = st.text_area("ملاحظات", value=m.get("notes", ""))
+                                edit_status = st.selectbox("الحالة", ["نشطة", "غير نشطة"], index=0 if m.get("status", "active") == "active" else 1)
+                            
                             if st.form_submit_button("💾 حفظ"):
-                                if member_type == "user":
-                                    db.update_user(mid, {"full_name": edit_name, "phone": edit_phone, "email": edit_email, "section_id": edit_section})
+                                if member_type == "student":
+                                    db.update_student(mid, {
+                                        "full_name": edit_name,
+                                        "phone": edit_phone,
+                                        "section_id": edit_section,
+                                        "parent_phone": edit_parent_phone,
+                                        "birthdate": edit_birthdate.strftime("%Y-%m-%d") if edit_birthdate else "",
+                                        "address": edit_address,
+                                        "school": edit_school,
+                                        "notes": edit_notes,
+                                        "status": "active" if edit_status == "نشطة" else "inactive"
+                                    })
                                 else:
-                                    db.update_student(mid, {"full_name": edit_name, "phone": edit_phone, "section_id": edit_section})
+                                    db.update_user(mid, {"full_name": edit_name, "phone": edit_phone, "email": edit_email, "section_id": edit_section})
                                 db.add_log(user.get("user_id", ""), "تعديل عضو", f"تم تعديل {edit_name}")
                                 st.session_state[f"edit_mode_{mid}"] = False
                                 st.success("✅ تم التحديث")
@@ -1937,6 +1999,21 @@ def show_members_cards_page(db):
             new_section_id = ""
             if not sections.empty:
                 new_section_id = st.selectbox("الفصل", sections["section_id"], format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0])
+            
+            # Student specific fields
+            new_parent_phone = ""
+            new_birthdate = None
+            new_address = ""
+            new_school = ""
+            new_notes = ""
+            new_status = "نشطة"
+            if member_type == "طالبة":
+                new_parent_phone = st.text_input("رقم ولي الأمر")
+                new_birthdate = st.date_input("تاريخ الميلاد", value=None)
+                new_address = st.text_input("العنوان")
+                new_school = st.text_input("المدرسة")
+                new_notes = st.text_area("ملاحظات")
+                new_status = st.selectbox("الحالة", ["نشطة", "غير نشطة"], index=0)
 
             submitted = st.form_submit_button("إضافة عضو")
             if submitted:
@@ -1949,12 +2026,12 @@ def show_members_cards_page(db):
                             "full_name": new_name.strip(),
                             "section_id": new_section_id,
                             "phone": new_phone,
-                            "parent_phone": "",
-                            "birthdate": "",
-                            "address": "",
-                            "school": "",
-                            "notes": "",
-                            "status": "active"
+                            "parent_phone": new_parent_phone,
+                            "birthdate": new_birthdate.strftime("%Y-%m-%d") if new_birthdate else "",
+                            "address": new_address,
+                            "school": new_school,
+                            "notes": new_notes,
+                            "status": "active" if new_status == "نشطة" else "inactive"
                         })
                     else:
                         role_map = {"أمين خدمة": "Service Manager", "مدرسة": "Teacher"}
@@ -2547,7 +2624,14 @@ def show_class_competition_scores(db):
     if not filtered_df.empty:
         filtered_df = filtered_df.reset_index(drop=True)
         filtered_df.index = filtered_df.index + 1
-        st.dataframe(filtered_df, use_container_width=True)
+        # Rename English columns to Arabic
+        display_final = filtered_df.rename(columns={
+            "score": "الدرجة",
+            "total_marks": "الدرجة الكلية",
+            "submission_time": "وقت التسليم"
+        })
+        available_cols = [c for c in display_final.columns if c in ["اسم المسابقة", "اسم الطالبة", "الدرجة", "الدرجة الكلية", "وقت التسليم"]]
+        st.dataframe(display_final[available_cols], use_container_width=True)
         if "score" in filtered_df.columns and "total_marks" in filtered_df.columns:
             st.markdown("---")
             st.subheader("📊 إحصائيات الفصل")
@@ -2563,7 +2647,7 @@ def show_class_competition_scores(db):
                 st.subheader("🏆 ترتيب الطالبات")
                 ranking = filtered_df.groupby("اسم الطالبة")["score"].sum().reset_index().sort_values("score", ascending=False)
                 ranking.index = range(1, len(ranking) + 1)
-                st.dataframe(ranking, use_container_width=True)
+                st.dataframe(ranking.rename(columns={"score": "المجموع"}), use_container_width=True)
     else:
         st.info("لا توجد نتائج مطابقة للبحث.")
 
