@@ -181,10 +181,6 @@ def get_stage_color(stage_name):
 def inject_css():
     st.markdown("""
     <style>
-        html, body, .stApp { color-scheme: light !important; }
-        @media (prefers-color-scheme: dark) {
-            html, body, .stApp { background-color: #f0f2f6 !important; color: #1a1a2e !important; }
-        }
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
         * { font-family: 'Cairo', sans-serif; }
         body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; }
@@ -332,23 +328,6 @@ def inject_students_cards_css():
         }
         .student-badge.active { background: #d4edda; color: #155724; }
         .student-badge.inactive { background: #e2e3e5; color: #383d41; }
-        .dark-mode-toggle {
-            position: fixed !important; top: 20px !important; left: 20px !important;
-            z-index: 99999 !important; background: #ffffff !important; color: #333 !important;
-            border: 2px solid #ddd !important; border-radius: 50% !important;
-            width: 50px !important; height: 50px !important; font-size: 24px !important;
-            display: flex !important; align-items: center !important; justify-content: center !important;
-            cursor: pointer !important; box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
-        }
-        /* Dark mode styles */
-        .dark-mode-active { background: #1a1a2e !important; color: #e0e0e0 !important; }
-        .dark-mode-active .stApp { background: #1a1a2e !important; }
-        .dark-mode-active body { background: #1a1a2e !important; color: #e0e0e0 !important; }
-        .dark-mode-active .user-card { background: #16213e !important; border-color: #0f3460 !important; }
-        .dark-mode-active .student-card { background: #16213e !important; border-color: #0f3460 !important; color: #e0e0e0 !important; }
-        .dark-mode-active .profile-header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important; }
-        .dark-mode-active .main-header { background: rgba(22,33,62,0.9) !important; color: #e0e0e0 !important; }
-        .dark-mode-active section[data-testid="stSidebar"] { background: #16213e !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1066,7 +1045,7 @@ def init_session():
         "last_score": 0, "menu_choice": "🏠 لوحة التحكم", "show_sidebar": True,
         "open_help_dialog": False, "current_attempt_id": None, "last_saved_answers_str": "",
         "quiz_questions": None, "show_review": False, "data_errors": [], "data_validated": False,
-        "quiz_load_failures": 0, "dark_mode": False, "exam_mode": False
+        "quiz_load_failures": 0, "exam_mode": False
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1863,34 +1842,8 @@ def show_students_cards_page(db):
 
 
 # =============================================================================
-# Dark Mode
-# =============================================================================
-def show_dark_mode_toggle():
-    if st.session_state.get("exam_mode", False):
-        return
-    with st.sidebar:
-        st.markdown("---")
-        dark_mode = st.toggle("🌙 الوضع الليلي", value=st.session_state.get("dark_mode", False), key="dark_mode_toggle")
-        if dark_mode != st.session_state.get("dark_mode", False):
-            st.session_state.dark_mode = dark_mode
-            st.rerun()
-        if st.session_state.get("dark_mode", False):
-            st.markdown("""<style>
-                html, body, .stApp { background: #1a1a2e !important; color: #e0e0e0 !important; }
-                .stApp { background: #1a1a2e !important; }
-                .main-header { background: rgba(22,33,62,0.9) !important; color: #e0e0e0 !important; }
-                .user-card { background: #16213e !important; border-color: #0f3460 !important; color: #e0e0e0 !important; }
-                .student-card { background: #16213e !important; border-color: #0f3460 !important; color: #e0e0e0 !important; }
-                section[data-testid="stSidebar"] { background: #16213e !important; }
-                .stTextInput input, .stSelectbox select, .stTextArea textarea {
-                    background: #16213e !important; color: #e0e0e0 !important;
-                }
-            </style>""", unsafe_allow_html=True)
-
-
-# =============================================================================
 # User Card Helpers
-# =============================================================================
+# ==============================================================================
 def get_role_css_class(role):
     role_map = {"System Admin": "admin", "Father Account": "priest", "Service Manager": "leader", "Teacher": "teacher", "Student": "student"}
     return role_map.get(role, "")
@@ -3428,7 +3381,6 @@ def main():
     if st.session_state.get("open_help_dialog"):
         show_help_dialog()
         st.session_state.open_help_dialog = False
-    show_dark_mode_toggle()
 
 
 if __name__ == "__main__":
