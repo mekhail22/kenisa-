@@ -1,7 +1,7 @@
-streamlit>=1.46.0
-pandas>=2.2.3
-gspread>=6.1.2
-google-auth>=2.35.0
-requests>=2.32.3
-PyJWT>=2.9.0
-plotly>=5.24.1
+streamlit
+gspread
+google-auth
+pandas
+plotly
+PyJWT
+requests
