@@ -2213,9 +2213,11 @@ def show_stages_page(db):
             eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
             if not eligible_users.empty:
                 supervisor_options = eligible_users["user_id"].tolist()
+                # Filter default to only include IDs that exist in options
+                valid_supervisors = [s for s in current_supervisors if s in supervisor_options]
                 selected_supervisors = st.multiselect("اختر المشرفين", supervisor_options,
-                                                      default=current_supervisors,
-                                                      format_func=lambda x: eligible_users[eligible_users.user_id == x]["full_name"].values[0] if x in eligible_users["user_id"].values else x,
+                                                      default=valid_supervisors,
+                                                      format_func=lambda x: eligible_users[eligible_users.user_id == x]["full_name"].values[0] if not eligible_users.empty and x in eligible_users["user_id"].values else str(x),
                                                       key="page_stage_supervisors")
             else:
                 selected_supervisors = []
@@ -2348,15 +2350,21 @@ def show_sections_page(db):
                     st.markdown("#### 🔗 التعيينات")
                     eligible_teachers = users[users.role == "Teacher"] if not users.empty else pd.DataFrame()
                     eligible_leaders = users[users.role == "Service Manager"] if not users.empty else pd.DataFrame()
-                    current_teachers = [t.strip() for t in str(sec_teacher).split(",") if t.strip()] if sec_teacher else []
-                    current_leaders = [l.strip() for l in str(sec_leader).split(",") if l.strip()] if sec_leader else []
-                    selected_teachers = st.multiselect("المدرسات", eligible_teachers["user_id"].tolist() if not eligible_teachers.empty else [],
+                    current_teachers_raw = [t.strip() for t in str(sec_teacher).split(",") if t.strip()] if sec_teacher else []
+                    current_leaders_raw = [l.strip() for l in str(sec_leader).split(",") if l.strip()] if sec_leader else []
+                    # Filter to only include IDs that actually exist in eligible_teachers/leaders
+                    valid_teacher_ids = eligible_teachers["user_id"].tolist() if not eligible_teachers.empty else []
+                    current_teachers = [t for t in current_teachers_raw if t in valid_teacher_ids]
+                    valid_leader_ids = eligible_leaders["user_id"].tolist() if not eligible_leaders.empty else []
+                    current_leaders = [l for l in current_leaders_raw if l in valid_leader_ids]
+
+                    selected_teachers = st.multiselect("المدرسات", valid_teacher_ids,
                                                        default=current_teachers,
-                                                       format_func=lambda x: x if eligible_teachers.empty or x not in eligible_teachers["user_id"].values else eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0],
+                                                       format_func=lambda x: eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0] if not eligible_teachers.empty and x in eligible_teachers["user_id"].values else str(x),
                                                        key=f"teacher_{sec_id}")
-                    selected_leaders = st.multiselect("أمناء الخدمة", eligible_leaders["user_id"].tolist() if not eligible_leaders.empty else [],
+                    selected_leaders = st.multiselect("أمناء الخدمة", valid_leader_ids,
                                                       default=current_leaders,
-                                                      format_func=lambda x: x if eligible_leaders.empty or x not in eligible_leaders["user_id"].values else eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0],
+                                                      format_func=lambda x: eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0] if not eligible_leaders.empty and x in eligible_leaders["user_id"].values else str(x),
                                                       key=f"leader_{sec_id}")
                     if st.button("💾 حفظ التعيينات", key=f"save_assign_{sec_id}"):
                         db.update_section(sec_id, {"teacher_id": ",".join(selected_teachers), "leader_id": ",".join(selected_leaders)})
