@@ -2270,7 +2270,7 @@ def show_sections_page(db):
         return
 
     def get_names_from_ids(id_string, users_df, role_name):
-        if not id_string or not users_df.empty:
+        if not id_string or users_df.empty:
             return f"غير محدد{role_name}"
         ids = [x.strip() for x in str(id_string).split(",") if x.strip()]
         names = []
@@ -2348,11 +2348,12 @@ def show_sections_page(db):
                     eligible_teachers = users[users.role == "Teacher"] if not users.empty else pd.DataFrame()
                     eligible_leaders = users[users.role == "Service Manager"] if not users.empty else pd.DataFrame()
                     current_teachers_raw = str(sec_teacher).split(",") if sec_teacher else []
-                    current_teachers = [t.strip() for t in current_teachers_raw if t.strip()]
                     current_leaders_raw = str(sec_leader).split(",") if sec_leader else []
-                    current_leaders = [l.strip() for l in current_leaders_raw if l.strip()]
                     valid_teacher_ids = eligible_teachers["user_id"].tolist() if not eligible_teachers.empty else []
                     valid_leader_ids = eligible_leaders["user_id"].tolist() if not eligible_leaders.empty else []
+                    # Filter defaults to only include IDs that still exist in the options
+                    current_teachers = [t.strip() for t in current_teachers_raw if t.strip() and t.strip() in valid_teacher_ids]
+                    current_leaders = [l.strip() for l in current_leaders_raw if l.strip() and l.strip() in valid_leader_ids]
 
                     selected_teachers = st.multiselect("المدرسات", valid_teacher_ids,
                                                        default=current_teachers,
@@ -2401,10 +2402,12 @@ def show_sections_page(db):
                                          format_func=lambda x: "—" if not stages.empty and x not in stages["stage_id"].values else stages[stages.stage_id == x]["stage_name"].values[0]) if not stages.empty else ""
                 eligible_teachers = users[users.role == "Teacher"] if not users.empty else pd.DataFrame()
                 eligible_leaders = users[users.role == "Service Manager"] if not users.empty else pd.DataFrame()
-                selected_teachers = st.multiselect("المدرسات", eligible_teachers["user_id"].tolist(),
-                                                   format_func=lambda x: x if eligible_teachers.empty or x not in eligible_teachers["user_id"].values else eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0]) if not eligible_teachers.empty else []
-                selected_leaders = st.multiselect("أمناء الخدمة", eligible_leaders["user_id"].tolist(),
-                                                  format_func=lambda x: x if eligible_leaders.empty or x not in eligible_leaders["user_id"].values else eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0]) if not eligible_leaders.empty else []
+                teacher_opts = eligible_teachers["user_id"].tolist() if not eligible_teachers.empty else []
+                selected_teachers = st.multiselect("المدرسات", teacher_opts,
+                                                   format_func=lambda x: eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0] if not eligible_teachers.empty and x in eligible_teachers["user_id"].values and not eligible_teachers[eligible_teachers.user_id == x].empty else str(x)) if teacher_opts else []
+                leader_opts = eligible_leaders["user_id"].tolist() if not eligible_leaders.empty else []
+                selected_leaders = st.multiselect("أمناء الخدمة", leader_opts,
+                                                  format_func=lambda x: eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0] if not eligible_leaders.empty and x in eligible_leaders["user_id"].values and not eligible_leaders[eligible_leaders.user_id == x].empty else str(x)) if leader_opts else []
                 sec_notes = st.text_area("ملاحظات")
                 if st.form_submit_button("إضافة الفصل"):
                     if not sec_name:
@@ -3577,4 +3580,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
