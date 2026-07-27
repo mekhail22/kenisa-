@@ -2308,9 +2308,21 @@ def show_sections_page(db):
             sec_status = sec.get("status", "active")
             sec_notes = sec.get("notes", "")
 
-            stage_name = stages[stages["stage_id"] == sec_stage]["stage_name"].values[0] if not stages.empty and sec_stage else "—"
-            teacher_name = users[users["user_id"] == sec_teacher]["full_name"].values[0] if not users.empty and sec_teacher else "غير محدد"
-            leader_name = users[users["user_id"] == sec_leader]["full_name"].values[0] if not users.empty and sec_leader else "غير محددة"
+            if not stages.empty and sec_stage:
+                matched_stage = stages[stages["stage_id"] == sec_stage]["stage_name"]
+                stage_name = matched_stage.values[0] if not matched_stage.empty else "—"
+            else:
+                stage_name = "—"
+            if not users.empty and sec_teacher:
+                matched_teacher = users[users["user_id"] == sec_teacher]["full_name"]
+                teacher_name = matched_teacher.values[0] if not matched_teacher.empty else "غير محدد"
+            else:
+                teacher_name = "غير محدد"
+            if not users.empty and sec_leader:
+                matched_leader = users[users["user_id"] == sec_leader]["full_name"]
+                leader_name = matched_leader.values[0] if not matched_leader.empty else "غير محددة"
+            else:
+                leader_name = "غير محددة"
             student_count = db.get_section_student_count(sec_id)
 
             with st.expander(f"🏫 {sec_name} ({stage_name}) - {student_count} طالبة"):
@@ -2325,7 +2337,7 @@ def show_sections_page(db):
                     st.markdown("#### 🏫 نقل الفصل بين المراحل")
                     if not stages.empty:
                         new_stage = st.selectbox("نقل إلى مرحلة", stages["stage_id"],
-                                                 format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0],
+                                                 format_func=lambda x: "—" if x not in stages["stage_id"].values else stages[stages.stage_id == x]["stage_name"].values[0],
                                                  key=f"move_stage_{sec_id}")
                         if st.button("نقل الفصل", key=f"move_sec_{sec_id}"):
                             db.update_section(sec_id, {"stage_id": new_stage})
@@ -2340,11 +2352,11 @@ def show_sections_page(db):
                     current_leaders = [l.strip() for l in str(sec_leader).split(",") if l.strip()] if sec_leader else []
                     selected_teachers = st.multiselect("المدرسات", eligible_teachers["user_id"].tolist() if not eligible_teachers.empty else [],
                                                        default=current_teachers,
-                                                       format_func=lambda x: eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0] if not eligible_teachers.empty else x,
+                                                       format_func=lambda x: x if eligible_teachers.empty or x not in eligible_teachers["user_id"].values else eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0],
                                                        key=f"teacher_{sec_id}")
                     selected_leaders = st.multiselect("أمناء الخدمة", eligible_leaders["user_id"].tolist() if not eligible_leaders.empty else [],
                                                       default=current_leaders,
-                                                      format_func=lambda x: eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0] if not eligible_leaders.empty else x,
+                                                      format_func=lambda x: x if eligible_leaders.empty or x not in eligible_leaders["user_id"].values else eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0],
                                                       key=f"leader_{sec_id}")
                     if st.button("💾 حفظ التعيينات", key=f"save_assign_{sec_id}"):
                         db.update_section(sec_id, {"teacher_id": ",".join(selected_teachers), "leader_id": ",".join(selected_leaders)})
@@ -2387,13 +2399,13 @@ def show_sections_page(db):
             with st.form("add_section_page_form"):
                 sec_name = st.text_input("اسم الفصل*")
                 sec_stage = st.selectbox("المرحلة", stages["stage_id"],
-                                         format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0]) if not stages.empty else ""
+                                         format_func=lambda x: "—" if not stages.empty and x not in stages["stage_id"].values else stages[stages.stage_id == x]["stage_name"].values[0]) if not stages.empty else ""
                 eligible_teachers = users[users.role == "Teacher"] if not users.empty else pd.DataFrame()
                 eligible_leaders = users[users.role == "Service Manager"] if not users.empty else pd.DataFrame()
                 selected_teachers = st.multiselect("المدرسات", eligible_teachers["user_id"].tolist(),
-                                                   format_func=lambda x: eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0]) if not eligible_teachers.empty else []
+                                                   format_func=lambda x: x if eligible_teachers.empty or x not in eligible_teachers["user_id"].values else eligible_teachers[eligible_teachers.user_id == x]["full_name"].values[0]) if not eligible_teachers.empty else []
                 selected_leaders = st.multiselect("أمناء الخدمة", eligible_leaders["user_id"].tolist(),
-                                                  format_func=lambda x: eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0]) if not eligible_leaders.empty else []
+                                                  format_func=lambda x: x if eligible_leaders.empty or x not in eligible_leaders["user_id"].values else eligible_leaders[eligible_leaders.user_id == x]["full_name"].values[0]) if not eligible_leaders.empty else []
                 sec_max = st.number_input("الحد الأقصى للطلاب", 0, 500, 0)
                 sec_room = st.text_input("الغرفة")
                 sec_day = st.text_input("يوم الاجتماع")
@@ -2443,7 +2455,7 @@ def show_attendance(db):
         
         st.subheader("📊 عرض الحضور (للقراءة فقط)")
         selected_section = st.selectbox("اختر الفصل", supervised_sections["section_id"],
-                                        format_func=lambda x: supervised_sections[supervised_sections.section_id == x]["section_name"].values[0])
+                                        format_func=lambda x: "—" if x not in supervised_sections["section_id"].values else supervised_sections[supervised_sections.section_id == x]["section_name"].values[0])
         date = st.date_input("التاريخ", get_cairo_now().date())
         date_str = date.strftime("%Y-%m-%d")
         students = db.get_students()
