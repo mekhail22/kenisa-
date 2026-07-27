@@ -1135,7 +1135,7 @@ def show_help_dialog():
                     st.success("✅ تم إرسال طلبك بنجاح! سنتواصل معك قريباً.")
                     st.balloons()
                 else:
-                    st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة عبر الواتساب.")
+                    st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة via الواتساب.")
 
 
 # =============================================================================
@@ -3128,6 +3128,167 @@ def filter_users_df(df, search_term="", role_filter="الكل", status_filter="�
 
 
 # =============================================================================
+# Student Profile Page
+# ==============================================================================
+def show_student_profile(db, student_id):
+    students_df = db.get_students()
+    student_row = students_df[students_df.student_id == student_id]
+    if student_row.empty:
+        st.error("لم يتم العثور على الطالبة")
+        if st.button("🔙 العودة"):
+            st.session_state.profile_user_id = None
+            st.rerun()
+        return
+    
+    student = student_row.iloc[0].to_dict()
+    sections = db.get_sections()
+    user = st.session_state.user
+    role = user.get("role", "")
+    
+    # Get section name
+    section_name = ""
+    sec_id = student.get("section_id", "")
+    if not sections.empty and sec_id:
+        sec_match = sections[sections["section_id"] == sec_id]
+        if not sec_match.empty:
+            section_name = sec_match.iloc[0].get("section_name", "")
+    
+    full_name = student.get("full_name", "غير معروف")
+    initials = get_initials(full_name)
+    status = student.get("status", "active")
+    status_label = {"active": "نشطة", "inactive": "غير نشطة"}.get(status, "نشطة")
+    
+    st.markdown(f"""
+    <div class="profile-header">
+        <div style="display:flex; align-items:center; gap:2rem;">
+            <div style="width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.2); display:flex;align-items:center;justify-content:center;font-size:2.5rem;font-weight:700;">{initials}</div>
+            <div>
+                <h1 style="margin:0;font-size:1.8rem;">{full_name}</h1>
+                <p style="margin:0.3rem 0;opacity:0.9;">طالبة</p>
+                <p style="margin:0;opacity:0.8;font-size:0.85rem;">🆔 {student_id[:12]}...</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        st.markdown('<div class="profile-stat-card">', unsafe_allow_html=True)
+        st.markdown(f"<h3>{status_label}</h3>", unsafe_allow_html=True)
+        st.markdown("<p>📌 الحالة</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col2:
+        st.markdown('<div class="profile-stat-card">', unsafe_allow_html=True)
+        birthdate = student.get("birthdate", "")
+        age = get_student_age(birthdate)
+        st.markdown(f"<h3>{age if age else '—'}</h3>", unsafe_allow_html=True)
+        st.markdown("<p>🎂 العمر</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown('<div class="profile-stat-card">', unsafe_allow_html=True)
+        st.markdown(f"<h3>{section_name or '—'}</h3>", unsafe_allow_html=True)
+        st.markdown("<p>🏫 الفصل</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with st.expander("📋 المعلومات الشخصية", expanded=True):
+        info_cols = st.columns(2)
+        with info_cols[0]:
+            st.markdown(f"**👤 الاسم الكامل:** {full_name}")
+            st.markdown(f"**📱 الهاتف:** {student.get('phone', '—') or '—'}")
+            st.markdown(f"**📱 رقم ولي الأمر:** {student.get('parent_phone', '—') or '—'}")
+            st.markdown(f"**🎂 تاريخ الميلاد:** {birthdate or '—'}")
+        with info_cols[1]:
+            st.markdown(f"**🏫 الفصل:** {section_name or '—'}")
+            st.markdown(f"**🏫 المدرسة:** {student.get('school', '—') or '—'}")
+            st.markdown(f"**📍 العنوان:** {student.get('address', '—') or '—'}")
+            st.markdown(f"**📌 الحالة:** {status_label}")
+    
+    if student.get("notes"):
+        with st.expander("📝 ملاحظات"):
+            st.write(student.get("notes", ""))
+    
+    st.markdown("---")
+    
+    # Action buttons based on role
+    if role in ["System Admin", "Service Manager"]:
+        act_col1, act_col2, act_col3 = st.columns(3)
+        with act_col1:
+            if st.button("✏️ تعديل", use_container_width=True):
+                st.session_state.edit_student_id = student_id
+                st.session_state.profile_user_id = None
+                st.rerun()
+        with act_col2:
+            if status == "active":
+                if st.button("⏸️ تعطيل", use_container_width=True):
+                    db.update_student(student_id, {"status": "inactive"})
+                    db.add_log(user.get("user_id", ""), f"تعطيل طالبة {student_id}", f"تم تعطيل {full_name}")
+                    st.success("✅ تم التعطيل")
+                    time.sleep(1)
+                    st.rerun()
+            else:
+                if st.button("▶️ تفعيل", use_container_width=True):
+                    db.update_student(student_id, {"status": "active"})
+                    db.add_log(user.get("user_id", ""), f"تفعيل طالبة {student_id}", f"تم تفعيل {full_name}")
+                    st.success("✅ تم التفعيل")
+                    time.sleep(1)
+                    st.rerun()
+        with act_col3:
+            if st.button("🗑️ حذف", use_container_width=True):
+                db.delete_student(student_id)
+                db.add_log(user.get("user_id", ""), f"حذف طالبة {student_id}", f"تم حذف {full_name}")
+                st.success("✅ تم الحذف")
+                st.session_state.profile_user_id = None
+                time.sleep(1)
+                st.rerun()
+    elif role == "Teacher":
+        st.info("👁️ وضع العرض فقط - لا يمكنك التعديل على بيانات الطالبات")
+    
+    if st.button("🔙 العودة", use_container_width=True):
+        st.session_state.profile_user_id = None
+        st.rerun()
+    
+    # Edit form for System Admin and Service Manager
+    if role in ["System Admin", "Service Manager"] and st.session_state.get("edit_student_id") == student_id:
+        st.markdown("---")
+        with st.expander("✏️ تعديل بيانات الطالبة", expanded=True):
+            with st.form("edit_student_profile_form"):
+                edit_name = st.text_input("الاسم الكامل*", value=full_name)
+                edit_phone = st.text_input("الهاتف", value=student.get("phone", ""))
+                edit_parent_phone = st.text_input("رقم ولي الأمر", value=student.get("parent_phone", ""))
+                bd_value = pd.to_datetime(birthdate).date() if birthdate else None
+                edit_birthdate = st.date_input("تاريخ الميلاد", value=bd_value)
+                edit_address = st.text_input("العنوان", value=student.get("address", ""))
+                edit_school = st.text_input("المدرسة", value=student.get("school", ""))
+                edit_notes = st.text_area("ملاحظات", value=student.get("notes", ""))
+                
+                sec_options = sections["section_id"].tolist() if not sections.empty else []
+                current_sec = sec_id if sec_id in sec_options else (sec_options[0] if sec_options else "")
+                edit_section = st.selectbox("الفصل", sec_options, 
+                                           index=sec_options.index(current_sec) if current_sec in sec_options else 0,
+                                           format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0]) if sec_options else ""
+                
+                edit_status = st.selectbox("الحالة", ["نشطة", "غير نشطة"], index=0 if status == "active" else 1)
+                
+                if st.form_submit_button("💾 حفظ التعديلات"):
+                    db.update_student(student_id, {
+                        "full_name": edit_name,
+                        "phone": edit_phone,
+                        "section_id": edit_section,
+                        "parent_phone": edit_parent_phone,
+                        "birthdate": edit_birthdate.strftime("%Y-%m-%d") if edit_birthdate else "",
+                        "address": edit_address,
+                        "school": edit_school,
+                        "notes": edit_notes,
+                        "status": "active" if edit_status == "نشطة" else "inactive"
+                    })
+                    db.add_log(user.get("user_id", ""), "تعديل طالبة", f"تم تعديل {edit_name}")
+                    st.session_state.edit_student_id = None
+                    st.success("✅ تم التحديث")
+                    time.sleep(1)
+                    st.rerun()
+
+
+# =============================================================================
 # User Profile Page
 # =============================================================================
 def show_user_profile(db, user_id):
@@ -3355,7 +3516,17 @@ def main():
                     st.session_state.menu_choice = choice
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if st.session_state.get("profile_user_id"):
-                show_user_profile(db, st.session_state.profile_user_id)
+                profile_id = st.session_state.profile_user_id
+                # Check if this ID exists in Students sheet first
+                students_df = db.get_students()
+                if not students_df.empty and "student_id" in students_df.columns:
+                    student_match = students_df[students_df["student_id"] == profile_id]
+                    if not student_match.empty:
+                        show_student_profile(db, profile_id)
+                    else:
+                        show_user_profile(db, profile_id)
+                else:
+                    show_user_profile(db, profile_id)
             elif choice == "🏠 لوحة التحكم":
                 show_dashboard(db)
             elif choice == "🏫 إدارة المراحل الدراسية":
