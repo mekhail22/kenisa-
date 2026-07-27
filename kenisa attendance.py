@@ -19,13 +19,6 @@ import io
 import zipfile
 from functools import wraps
 import threading
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
-import base64
-from io import BytesIO
-import plotly.graph_objects as go
-import plotly.io as pio
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -3054,89 +3047,18 @@ def show_quizzes(db):
 
 
 # =============================================================================
-# Reports - Advanced Reports & Statistics Page
+# Reports
 # =============================================================================
-def _export_to_csv_bytes(df):
-    """Convert DataFrame to CSV bytes for download."""
-    buf = io.BytesIO()
-    df.to_csv(buf, index=False, encoding='utf-8-sig')
-    buf.seek(0)
-    return buf.getvalue()
-
-
-def _export_to_excel_with_charts(report_title, df, charts_list=None):
-    """
-    إنشاء ملف Excel (.xlsx) يحتوي على التقرير + الرسوم البيانية كصور داخل الملف.
-    charts_list: list of (plotly_figure, sheet_name) tuples
-    """
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # Write data sheet
-        df.to_excel(writer, sheet_name='التقرير', index=False)
-        workbook = writer.book
-        ws = writer.sheets['التقرير']
-        
-        # Style header
-        header_font = Font(name='Cairo', bold=True, color='FFFFFF', size=12)
-        header_fill = PatternFill(start_color='667EEA', end_color='764BA2', fill_type='solid')
-        header_alignment = Alignment(horizontal='center', vertical='center')
-        thin_border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
-        
-        for col_idx, col in enumerate(df.columns, 1):
-            cell = ws.cell(row=1, column=col_idx)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = header_alignment
-            cell.border = thin_border
-        
-        # Auto-adjust column widths
-        for col_idx, col in enumerate(df.columns, 1):
-            max_len = max(
-                df[col].astype(str).map(len).max() if not df.empty else 0,
-                len(str(col))
-            )
-            ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 4, 50)
-        
-        # Add charts as images if provided
-        if charts_list:
-            for fig, sheet_name in charts_list:
-                img_bytes = pio.to_image(fig, format='png', width=1200, height=500, scale=2)
-                img_stream = io.BytesIO(img_bytes)
-                from openpyxl.drawing.image import Image as XLImage
-                img = XLImage(img_stream)
-                img.width = 800
-                img.height = 350
-                
-                # Create new sheet for chart
-                ws_chart = workbook.create_sheet(title=sheet_name)
-                ws_chart.add_image(img, 'A1')
-    
-    output.seek(0)
-    return output.getvalue()
-
-
-def show_reports_page(db):
-    """صفحة التقارير والإحصائيات المتقدمة"""
+def show_reports(db):
     st.markdown("<h2 class='main-header'>📊 التقارير والإحصائيات</h2>", unsafe_allow_html=True)
-    
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
-    user_section_id = user.get("section_id", "")
-    
-    # Load data
+    section_id = user.get("section_id", "")
     attendance = db.get_attendance()
     students = db.get_students()
-    sections = db.get_sections()
-    stages = db.get_stages()
-    events = db.get_events()
     
-    # RBAC filtering
+    # Service Manager filtering by stages
     if role == "Service Manager" and db and user_id:
         section_ids = get_sections_for_supervisor(db, user_id)
         if section_ids:
@@ -3148,464 +3070,40 @@ def show_reports_page(db):
             st.info("لا توجد فصول معينة لك.")
             return
     elif role == "Teacher":
-        if user_section_id:
+        section_id = user.get("section_id", "")
+        attendance = filter_attendance_by_role(attendance, role, section_id)
+        if section_id:
             if not students.empty and "section_id" in students.columns:
-                students = students[students.section_id == user_section_id]
-            if not attendance.empty and "section_id" in attendance.columns:
-                attendance = attendance[attendance.section_id == user_section_id]
-    
+                students = students[students.section_id == section_id]
     if attendance.empty:
-        st.info("لا توجد بيانات حضور كافية لإنشاء التقارير.")
+        st.info("لا توجد بيانات حضور.")
         return
-    
-    # Parse dates
     if "date" in attendance.columns:
         attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
-    if "student_id" in attendance.columns and not students.empty and "student_id" in students.columns:
-        attendance = attendance.merge(students[["student_id", "full_name", "section_id"]], on="student_id", how="left")
-    
-    # =========================================================================
-    # FILTERS
-    # =========================================================================
-    st.markdown("### 🔍 الفلاتر")
-    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-    
-    with col_f1:
-        # Date range filter
-        min_date = attendance["date"].min().date() if not attendance.empty and "date" in attendance.columns else get_cairo_now().date() - timedelta(days=30)
-        max_date = attendance["date"].max().date() if not attendance.empty and "date" in attendance.columns else get_cairo_now().date()
-        date_from = st.date_input("من تاريخ", min_date)
-        date_to = st.date_input("إلى تاريخ", max_date)
-    
-    with col_f2:
-        # Section filter
-        section_options = ["الكل"]
-        if not sections.empty and "section_id" in sections.columns:
-            section_options += sections["section_id"].tolist()
-        section_filter = st.selectbox(
-            "الفصل", section_options,
-            format_func=lambda x: "الكل" if x == "الكل" else (
-                sections[sections.section_id == x]["section_name"].values[0] if not sections.empty and x in sections["section_id"].values else x
-            )
-        )
-    
-    with col_f3:
-        # Event type filter (for event reports)
-        event_type_filter = st.selectbox("نوع الحدث", ["الكل"] + EVENT_TYPES)
-    
-    with col_f4:
-        # Report type selector
-        report_type = st.selectbox(
-            "نوع التقرير",
-            [
-                "تقرير الحضور الأسبوعي (آخر 7 أيام)",
-                "تقرير الحضور الشهري (شهر محدد)",
-                "تقرير الأعضاء الجدد (آخر 30 يوم)",
-                "تقرير الأعضاء الغائبين (أكثر من 3 أيام)"
-            ]
-        )
-    
-    # Apply date filter
-    filtered_attendance = attendance.copy()
-    if "date" in filtered_attendance.columns:
-        filtered_attendance = filtered_attendance[
-            (filtered_attendance["date"].dt.date >= date_from) &
-            (filtered_attendance["date"].dt.date <= date_to)
-        ]
-    
-    # Apply section filter
-    if section_filter != "الكل" and "section_id" in filtered_attendance.columns:
-        filtered_attendance = filtered_attendance[filtered_attendance["section_id"] == section_filter]
-    
-    # Apply event type filter (for events)
-    filtered_events = events.copy() if not events.empty else pd.DataFrame()
-    if event_type_filter != "الكل" and not filtered_events.empty and "event_type" in filtered_events.columns:
-        filtered_events = filtered_events[filtered_events["event_type"] == event_type_filter]
-    
-    # =========================================================================
-    # REPORT GENERATION
-    # =========================================================================
-    st.markdown("---")
-    st.markdown("### 📋 التقرير")
-    
-    report_df = pd.DataFrame()
-    report_title = ""
-    charts_to_export = []
-    
-    if report_type == "تقرير الحضور الأسبوعي (آخر 7 أيام)":
-        report_title = "تقرير الحضور الأسبوعي"
-        week_ago = get_cairo_now().date() - timedelta(days=7)
-        weekly = filtered_attendance[filtered_attendance["date"].dt.date >= week_ago].copy()
-        
-        if not weekly.empty:
-            # Summary by day
-            daily_summary = weekly.groupby([weekly["date"].dt.date, "status"]).size().reset_index(name="العدد")
-            daily_pivot = daily_summary.pivot(index="date", columns="status", values="العدد").fillna(0).reset_index()
-            daily_pivot.columns.name = None
-            daily_pivot["date"] = pd.to_datetime(daily_pivot["date"]).dt.strftime("%Y-%m-%d")
-            daily_pivot = daily_pivot.rename(columns={"date": "التاريخ"})
-            
-            # Add total
-            status_cols = [c for c in daily_pivot.columns if c != "التاريخ"]
-            if status_cols:
-                daily_pivot["الإجمالي"] = daily_pivot[status_cols].sum(axis=1)
-            
-            report_df = daily_pivot
-            
-            # Line chart for weekly attendance
-            fig_line = px.line(
-                weekly.groupby([weekly["date"].dt.date, "status"]).size().reset_index(name="العدد"),
-                x="date", y="العدد", color="status",
-                title="الحضور اليومي - آخر 7 أيام",
-                color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"}
-            )
-            fig_line.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="التاريخ", yaxis_title="العدد",
-                font=dict(family="Cairo")
-            )
-            st.plotly_chart(fig_line, use_container_width=True)
-            charts_to_export.append((fig_line, "الحضور اليومي"))
-            
-            # Pie chart for status distribution
-            status_counts = weekly["status"].value_counts().reset_index()
-            status_counts.columns = ["الحالة", "العدد"]
-            fig_pie = px.pie(
-                status_counts, names="الحالة", values="العدد",
-                title="توزيع الحالات - آخر 7 أيام",
-                color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"}
-            )
-            fig_pie.update_layout(font=dict(family="Cairo"))
-            st.plotly_chart(fig_pie, use_container_width=True)
-            charts_to_export.append((fig_pie, "توزيع الحالات"))
-        else:
-            st.info("لا توجد بيانات للأيام السبعة الماضية.")
-    
-    elif report_type == "تقرير الحضور الشهري (شهر محدد)":
-        report_title = "تقرير الحضور الشهري"
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            month = st.selectbox("الشهر", range(1, 13), index=get_cairo_now().month - 1)
-        with col_m2:
-            year = st.number_input("السنة", value=get_cairo_now().year, min_value=2020, max_value=2100)
-        
-        monthly = filtered_attendance[
-            (filtered_attendance["date"].dt.month == month) &
-            (filtered_attendance["date"].dt.year == year)
-        ].copy()
-        
+    st.subheader("📅 تقرير الغياب الشهري")
+    col1, col2 = st.columns(2)
+    month = col1.selectbox("الشهر", range(1, 13), index=get_cairo_now().month - 1)
+    year = col2.number_input("السنة", value=get_cairo_now().year, min_value=2020)
+    if "date" in attendance.columns:
+        monthly = attendance[(attendance.date.dt.month == month) & (attendance.date.dt.year == year)]
         if not monthly.empty:
-            # Student-level summary
-            student_summary = monthly.groupby(["student_id", "full_name", "status"]).size().reset_index(name="عدد الأيام")
-            student_pivot = student_summary.pivot(index=["student_id", "full_name"], columns="status", values="عدد الأيام").fillna(0).reset_index()
-            student_pivot.columns.name = None
-            
-            # Rename columns
-            student_pivot = student_pivot.rename(columns={"full_name": "اسم الطالبة"})
-            if "student_id" in student_pivot.columns:
-                student_pivot = student_pivot.drop(columns=["student_id"])
-            
-            # Add total
-            status_cols = [c for c in student_pivot.columns if c != "اسم الطالبة"]
-            if status_cols:
-                student_pivot["إجمالي الأيام"] = student_pivot[status_cols].sum(axis=1)
-            
-            report_df = student_pivot
-            
-            # Bar chart comparing sections
-            if "section_id" in monthly.columns:
-                section_attendance = monthly.groupby(["section_id", "status"]).size().reset_index(name="العدد")
-                section_pivot = section_attendance.pivot(index="section_id", columns="status", values="العدد").fillna(0).reset_index()
-                section_pivot.columns.name = None
-                
-                if not sections.empty and "section_id" in sections.columns:
-                    section_pivot = section_pivot.merge(
-                        sections[["section_id", "section_name"]], on="section_id", how="left"
-                    )
-                    section_pivot["section_id"] = section_pivot["section_name"].fillna(section_pivot["section_id"])
-                
-                fig_bar = px.bar(
-                    section_pivot, x="section_id",
-                    y=[c for c in ["حاضر", "غائب", "متأخر"] if c in section_pivot.columns],
-                    title=f"مقارنة بين الفصول - شهر {month}/{year}",
-                    barmode="group",
-                    color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"}
-                )
-                fig_bar.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                    xaxis_title="الفصل", yaxis_title="العدد",
-                    font=dict(family="Cairo")
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
-                charts_to_export.append((fig_bar, "مقارنة الفصول"))
-            
-            # Pie chart
-            status_counts = monthly["status"].value_counts().reset_index()
-            status_counts.columns = ["الحالة", "العدد"]
-            fig_pie = px.pie(
-                status_counts, names="الحالة", values="العدد",
-                title=f"توزيع الحالات - شهر {month}/{year}",
-                color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"}
-            )
-            fig_pie.update_layout(font=dict(family="Cairo"))
-            st.plotly_chart(fig_pie, use_container_width=True)
-            charts_to_export.append((fig_pie, "توزيع الحالات"))
+            summary = monthly.groupby(["student_id", "status"]).size().reset_index(name="count")
+            pivot = summary.pivot(index="student_id", columns="status", values="count").fillna(0).reset_index()
+            if not students.empty:
+                pivot = pivot.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+            st.dataframe(pivot, use_container_width=True)
+            fig = px.pie(monthly, names="status", title=f"نسب الحضور لشهر {month}/{year}")
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info(f"لا توجد بيانات للشهر {month}/{year}.")
-    
-    elif report_type == "تقرير الأعضاء الجدد (آخر 30 يوم)":
-        report_title = "تقرير الأعضاء الجدد"
-        thirty_days_ago = get_cairo_now().date() - timedelta(days=30)
-        
-        # New students
-        new_students = pd.DataFrame()
-        if not students.empty:
-            if "created_by" in students.columns:
-                # Try to find creation date from attendance first record
-                student_ids = students["student_id"].tolist()
-                first_attendance = attendance[attendance["student_id"].isin(student_ids)].copy()
-                if not first_attendance.empty:
-                    first_dates = first_attendance.groupby("student_id")["date"].min().reset_index()
-                    first_dates.columns = ["student_id", "first_date"]
-                    new_students = students.merge(first_dates, on="student_id", how="inner")
-                    new_students = new_students[new_students["first_date"].dt.date >= thirty_days_ago]
-                else:
-                    # No attendance records, show all students as new
-                    new_students = students.copy()
-                    new_students["first_date"] = get_cairo_now()
-            else:
-                # No created_by column, use first attendance date
-                student_ids = students["student_id"].tolist()
-                first_attendance = attendance[attendance["student_id"].isin(student_ids)].copy()
-                if not first_attendance.empty:
-                    first_dates = first_attendance.groupby("student_id")["date"].min().reset_index()
-                    first_dates.columns = ["student_id", "first_date"]
-                    new_students = students.merge(first_dates, on="student_id", how="inner")
-                    new_students = new_students[new_students["first_date"].dt.date >= thirty_days_ago]
-        
-        if not new_students.empty:
-            new_students["first_date_str"] = new_students["first_date"].dt.strftime("%Y-%m-%d")
-            report_df = new_students[["full_name", "phone", "section_id", "first_date_str"]].rename(
-                columns={"full_name": "الاسم", "phone": "الهاتف", "section_id": "الفصل", "first_date_str": "تاريخ أول حضور"}
-            )
-            
-            # Add section names
-            if not sections.empty and "section_id" in sections.columns:
-                report_df = report_df.merge(
-                    sections[["section_id", "section_name"]],
-                    left_on="الفصل", right_on="section_id", how="left"
-                )
-                report_df["الفصل"] = report_df["section_name"].fillna(report_df["الفصل"])
-                report_df = report_df.drop(columns=["section_id"], errors="ignore")
-            
-            st.success(f"✅ تم إضافة {len(new_students)} أعضاء جدد في آخر 30 يوم")
-            
-            # Bar chart for new members by section
-            if not report_df.empty and "الفصل" in report_df.columns:
-                section_counts = report_df["الفصل"].value_counts().reset_index()
-                section_counts.columns = ["الفصل", "العدد"]
-                fig_bar = px.bar(
-                    section_counts, x="الفصل", y="العدد",
-                    title="الأعضاء الجدد حسب الفصل",
-                    color="العدد", color_continuous_scale="Viridis"
-                )
-                fig_bar.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                    font=dict(family="Cairo")
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
-                charts_to_export.append((fig_bar, "أعضاء جدد حسب الفصل"))
-        else:
-            st.info("لا يوجد أعضاء جدد في آخر 30 يوم.")
-    
-    elif report_type == "تقرير الأعضاء الغائبين (أكثر من 3 أيام)":
-        report_title = "تقرير الأعضاء الغائبين"
-        month_start = get_cairo_now().replace(day=1).date()
-        month_attendance = filtered_attendance[filtered_attendance["date"].dt.date >= month_start].copy()
-        
-        if not month_attendance.empty and "status" in month_attendance.columns:
-            # Count absences per student
-            absent_counts = month_attendance[month_attendance["status"] == "غائب"].groupby(
-                ["student_id", "full_name"]
-            ).size().reset_index(name="أيام الغياب")
-            
-            absent_counts = absent_counts[absent_counts["أيام الغياب"] > 3].sort_values("أيام الغياب", ascending=False)
-            
-            if not absent_counts.empty:
-                report_df = absent_counts.rename(columns={"full_name": "اسم الطالبة", "أيام الغياب": "أيام الغياب"})
-                
-                # Add section info
-                if not students.empty and "section_id" in students.columns:
-                    report_df = report_df.merge(
-                        students[["student_id", "section_id"]], on="student_id", how="left"
-                    )
-                    if not sections.empty and "section_id" in sections.columns:
-                        report_df = report_df.merge(
-                            sections[["section_id", "section_name"]], on="section_id", how="left"
-                        )
-                        report_df["الفصل"] = report_df["section_name"].fillna("")
-                        report_df = report_df.drop(columns=["section_id", "section_name"], errors="ignore")
-                    else:
-                        report_df["الفصل"] = report_df.get("section_id", "")
-                        report_df = report_df.drop(columns=["section_id"], errors="ignore")
-                
-                report_df = report_df.drop(columns=["student_id"], errors="ignore")
-                
-                st.warning(f"⚠️ يوجد {len(absent_counts)} طالبة غائبة أكثر من 3 أيام هذا الشهر")
-                
-                # Bar chart
-                fig_bar = px.bar(
-                    absent_counts.head(15), x="full_name", y="أيام الغياب",
-                    title="أكثر الطالبات غياباً (أكثر من 3 أيام)",
-                    color="أيام الغياب", color_continuous_scale="Reds"
-                )
-                fig_bar.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                    xaxis_title="الطالبة", yaxis_title="أيام الغياب",
-                    font=dict(family="Cairo")
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
-                charts_to_export.append((fig_bar, "الطالبات الغائبات"))
-            else:
-                st.success("✅ لا توجد طالبات غائبات أكثر من 3 أيام هذا الشهر.")
-        else:
-            st.info("لا توجد بيانات كافية.")
-    
-    # =========================================================================
-    # DISPLAY REPORT TABLE
-    # =========================================================================
-    if not report_df.empty:
-        st.markdown("#### 📊 بيانات التقرير")
-        st.dataframe(report_df, use_container_width=True)
-    
-    # =========================================================================
-    # INTERACTIVE CHARTS SECTION
-    # =========================================================================
+            st.info("لا توجد بيانات لهذا الشهر.")
     st.markdown("---")
-    st.markdown("### 📈 الرسوم البيانية التفاعلية")
-    
-    tab_chart1, tab_chart2, tab_chart3 = st.tabs([
-        "📈 الحضور عبر الزمن", "📊 مقارنة بين الفصول", "🥧 توزيع الحالات"
-    ])
-    
-    with tab_chart1:
-        # Line chart: attendance over time (last 30 days)
-        thirty_days_ago = get_cairo_now().date() - timedelta(days=30)
-        last_30 = filtered_attendance[filtered_attendance["date"].dt.date >= thirty_days_ago].copy()
-        
-        if not last_30.empty:
-            daily = last_30.groupby([last_30["date"].dt.date, "status"]).size().reset_index(name="العدد")
-            fig_line = px.line(
-                daily, x="date", y="العدد", color="status",
-                title="الحضور عبر الزمن - آخر 30 يوم",
-                color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"},
-                markers=True
-            )
-            fig_line.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="التاريخ", yaxis_title="العدد",
-                font=dict(family="Cairo"),
-                hovermode="x unified"
-            )
-            st.plotly_chart(fig_line, use_container_width=True)
-        else:
-            st.info("لا توجد بيانات كافية لآخر 30 يوم.")
-    
-    with tab_chart2:
-        # Bar chart: compare sections
-        if not filtered_attendance.empty and "section_id" in filtered_attendance.columns:
-            section_comp = filtered_attendance.groupby(["section_id", "status"]).size().reset_index(name="العدد")
-            section_pivot = section_comp.pivot(index="section_id", columns="status", values="العدد").fillna(0).reset_index()
-            section_pivot.columns.name = None
-            
-            if not sections.empty and "section_id" in sections.columns:
-                section_pivot = section_pivot.merge(
-                    sections[["section_id", "section_name"]], on="section_id", how="left"
-                )
-                section_pivot["الفصل"] = section_pivot["section_name"].fillna(section_pivot["section_id"])
-            else:
-                section_pivot["الفصل"] = section_pivot["section_id"]
-            
-            fig_bar = px.bar(
-                section_pivot, x="الفصل",
-                y=[c for c in ["حاضر", "غائب", "متأخر"] if c in section_pivot.columns],
-                title="مقارنة الحضور بين الفصول",
-                barmode="group",
-                color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"}
-            )
-            fig_bar.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="الفصل", yaxis_title="العدد",
-                font=dict(family="Cairo"),
-                legend_title="الحالة"
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
-        else:
-            st.info("لا توجد بيانات كافية للمقارنة بين الفصول.")
-    
-    with tab_chart3:
-        # Pie chart: status distribution
-        if not filtered_attendance.empty and "status" in filtered_attendance.columns:
-            status_counts = filtered_attendance["status"].value_counts().reset_index()
-            status_counts.columns = ["الحالة", "العدد"]
-            
-            fig_pie = px.pie(
-                status_counts, names="الحالة", values="العدد",
-                title="توزيع الحالات (حاضر / غائب / متأخر)",
-                color_discrete_map={"حاضر": "#28a745", "غائب": "#dc3545", "متأخر": "#ffc107"},
-                hole=0.3
-            )
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-            fig_pie.update_layout(font=dict(family="Cairo"))
-            st.plotly_chart(fig_pie, use_container_width=True)
-        else:
-            st.info("لا توجد بيانات كافية لتوزيع الحالات.")
-    
-    # =========================================================================
-    # EXPORT BUTTONS
-    # =========================================================================
-    if not report_df.empty:
-        st.markdown("---")
-        st.markdown("### 📥 تصدير التقرير")
-        
-        col_exp1, col_exp2 = st.columns(2)
-        
-        with col_exp1:
-            # CSV Export
-            csv_bytes = _export_to_csv_bytes(report_df)
-            st.download_button(
-                label="📄 تصدير CSV",
-                data=csv_bytes,
-                file_name=f"{report_title}_{get_cairo_now().strftime('%Y-%m-%d')}.csv",
-                mime="text/csv",
-                use_container_width=True,
-                key="export_csv_btn"
-            )
-        
-        with col_exp2:
-            # Excel Export
-            excel_bytes = _export_to_excel_with_charts(report_title, report_df, charts_to_export)
-            st.download_button(
-                label="📗 تصدير Excel مع الرسوم البيانية",
-                data=excel_bytes,
-                file_name=f"{report_title}_{get_cairo_now().strftime('%Y-%m-%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key="export_excel_btn"
-            )
-    
-    # =========================================================================
-    # EVENT REPORT (if events data available)
-    # =========================================================================
-    if not filtered_events.empty and event_type_filter != "الكل":
-        st.markdown("---")
-        st.markdown("### 📅 تقرير الفعاليات")
-        st.dataframe(filtered_events[["event_name", "event_type", "event_date", "location", "status"]].rename(
-            columns={
-                "event_name": "اسم الفعالية", "event_type": "النوع",
-                "event_date": "التاريخ", "location": "المكان", "status": "الحالة"
-            }
-        ), use_container_width=True)
+    st.subheader("🏆 أكثر 10 طالبات غياباً")
+    if not attendance.empty and "status" in attendance.columns and "student_id" in attendance.columns:
+        absent_counts = attendance[attendance.status == "غائب"].groupby("student_id").size().reset_index(name="أيام الغياب")
+        absent_counts = absent_counts.sort_values("أيام الغياب", ascending=False).head(10)
+        if not students.empty:
+            absent_counts = absent_counts.merge(students[["student_id", "full_name"]], on="student_id", how="left")
+        st.dataframe(absent_counts[["full_name", "أيام الغياب"]], use_container_width=True)
 
 
 # =============================================================================
@@ -4435,7 +3933,7 @@ def main():
             elif choice == "📝 المسابقات والاختبارات":
                 show_quizzes(db)
             elif choice == "📊 التقارير والإحصائيات":
-                show_reports_page(db)
+                show_reports(db)
             elif choice == "📅 إدارة الفعاليات":
                 show_events_page(db)
             elif choice == "📜 سجل العمليات":
