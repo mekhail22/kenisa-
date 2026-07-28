@@ -28,14 +28,6 @@ import plotly.graph_objects as go
 import plotly.io as pio
 import re
 
-# Auto-load background image as base64
-_BG_B64_PATH = os.path.join(os.path.dirname(__file__), "image_b64.py")
-if os.path.exists(_BG_B64_PATH):
-    with open(_BG_B64_PATH, "r", encoding="utf-8") as _f:
-        exec(_f.read())
-else:
-    BG_IMAGE_BASE64 = ""
-
 # =============================================================================
 # الإعدادات العامة والثوابت
 # =============================================================================
@@ -200,8 +192,6 @@ def get_stage_color(stage_name):
 # CSS
 # =============================================================================
 def inject_css():
-    bg_data_url = f"data:image/jpeg;base64,{BG_IMAGE_BASE64}"
-    st.markdown(f"""<style id="bg-img-style">body{{background-image:url('{bg_data_url}')!important;}}</style>""", unsafe_allow_html=True)
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
@@ -215,6 +205,7 @@ def inject_css():
         }
         body {
             direction: rtl; text-align: right; color: #1a1a2e; overflow-x: hidden;
+            background-image: url('image1.jpg') !important;
             background-size: cover !important;
             background-position: center !important;
             background-attachment: fixed !important;
@@ -590,17 +581,6 @@ def inject_css():
             }
         }
         
-        /* ===== Hide unintended pre/code blocks from Markdown ===== */
-        div.stAlert pre, div.stAlert code {
-            display: none !important;
-        }
-        
-        /* ===== Custom Scrollbar ===== */
-        ::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
-        ::-webkit-scrollbar-track { background: rgba(102,126,234,0.05) !important; border-radius: 10px !important; }
-        ::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #667eea, #764ba2) !important; border-radius: 10px !important; }
-        ::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #764ba2, #667eea) !important; }
-        
         /* ===== Gradient Buttons ===== */
         .stButton > button {
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
@@ -615,33 +595,27 @@ def inject_css():
             animation: ripple 0.6s ease-out !important;
         }
         
-        /* ===== Enhanced Primary Button ===== */
-        button[kind="primaryFormSubmit"], .stButton > button[data-testid="baseButton-primary"],
-        button[kind="primary"] {
+        /* Primary Button */
+        button[kind="primaryFormSubmit"], .stButton > button[data-testid="baseButton-primary"] {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important; font-weight: 700 !important;
             box-shadow: 0 5px 15px rgba(102,126,234,0.4) !important;
-            border: none !important;
         }
-        button[kind="primaryFormSubmit"]:hover, .stButton > button[data-testid="baseButton-primary"]:hover,
-        button[kind="primary"]:hover {
+        button[kind="primaryFormSubmit"]:hover, .stButton > button[data-testid="baseButton-primary"]:hover {
             box-shadow: 0 0 25px rgba(102,126,234,0.6) !important;
-            transform: translateY(-3px) !important;
         }
         
-        /* ===== Enhanced Danger Button */        
-        div.stButton > button:has(span:text("حذف")),
-        div[data-testid="stButton"] > button:has-text("حذف") {
+        /* Danger Button */
+        button[kind="secondary"]:has-text("حذف"), .stButton > button:has-text("حذف") {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
             color: white !important;
             box-shadow: 0 5px 15px rgba(245,87,108,0.4) !important;
         }
-        div.stButton > button:has(span:text("حذف")):hover,
-        div[data-testid="stButton"] > button:has-text("حذف"):hover {
+        button[kind="secondary"]:has-text("حذف"):hover, .stButton > button:has-text("حذف"):hover {
             box-shadow: 0 0 25px rgba(245,87,108,0.6) !important;
         }
         
-        /* ===== Enhanced Download Button ===== */
+        /* Download Button */
         div.stDownloadButton > button {
             background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%) !important;
             color: white !important; font-weight: 700 !important;
@@ -649,26 +623,6 @@ def inject_css():
         }
         div.stDownloadButton > button:hover {
             box-shadow: 0 0 25px rgba(67,233,123,0.6) !important;
-        }
-        
-        /* ===== Success Button (Green) ===== */
-        .stButton > button:has-text("تسجيل") {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
-            color: white !important;
-            box-shadow: 0 5px 15px rgba(40,167,69,0.4) !important;
-        }
-        .stButton > button:has-text("تسجيل"):hover {
-            box-shadow: 0 0 25px rgba(40,167,69,0.6) !important;
-        }
-        
-        /* ===== Warning Button (Orange) ===== */
-        .stButton > button:has-text("إصلاح") {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
-            color: white !important;
-            box-shadow: 0 5px 15px rgba(243,156,18,0.4) !important;
-        }
-        .stButton > button:has-text("إصلاح"):hover {
-            box-shadow: 0 0 25px rgba(243,156,18,0.6) !important;
         }
         
         /* ===== Metrics ===== */
