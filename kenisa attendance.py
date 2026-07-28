@@ -195,791 +195,271 @@ def inject_css():
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
-        
-        /* ===== Premium Global Styles ===== */
+        /* ===== إجبار Light Mode بشكل دائم ===== */
         html, body {
             color-scheme: light !important;
             background-color: #ffffff !important;
             color: #1a1a2e !important;
-            font-family: 'Cairo', sans-serif !important;
         }
-        
-        * {
-            font-family: 'Cairo', sans-serif !important;
-            box-sizing: border-box !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        }
-        
-        body {
-            direction: rtl;
-            text-align: right;
-            background-color: #F8FAFC;
-            color: #1a1a2e;
-            overflow-x: hidden;
-            position: relative;
-        }
-        
-        /* ===== Premium Background with Image ===== */
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: url('https://images.unsplash.com/photo-1569003339405-ea396a5a8a90?ixlib=rb-4.0.3&auto=format&fit=crop&w=2074&q=80');
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            background-attachment: fixed;
-            z-index: -1;
-            filter: blur(8px) brightness(0.9);
-        }
-        
-        body::after {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(248, 250, 252, 0.9) 50%, rgba(255, 255, 255, 0.85) 100%);
-            z-index: -1;
-            backdrop-filter: blur(2px);
-        }
-        
-        .stApp {
-            background: transparent !important;
-            position: relative;
-            z-index: 1;
-        }
-        
-        /* ===== Animated Background Particles ===== */
-        @keyframes float {
-            0%, 100% { transform: translateY(0) rotate(0deg); }
-            33% { transform: translateY(-20px) rotate(1deg); }
-            66% { transform: translateY(10px) rotate(-1deg); }
-        }
-        
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3); }
-            50% { box-shadow: 0 4px 25px rgba(37, 99, 235, 0.5); }
-        }
-        
-        @keyframes fade-in-up {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        @keyframes scale-in {
-            from {
-                opacity: 0;
-                transform: scale(0.9);
-            }
-            to {
-                opacity: 1;
-                transform: scale(1);
-            }
-        }
-        
-        @keyframes shimmer {
-            0% { background-position: -1000px 0; }
-            100% { background-position: 1000px 0; }
-        }
-        
-        /* ===== Hide Unwanted Elements ===== */
+        /* ===== التصميم الأساسي - Light Mode فقط ===== */
+        * { font-family: 'Cairo', sans-serif !important; box-sizing: border-box !important; }
+        body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; overflow-x: hidden; }
+        .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
         header[data-testid="stHeader"] { display: none !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
         
-        /* ===== Floating Buttons ===== */
+        /* ===== زر الإظهار العائم ===== */
         .floating-show-btn .stButton > button {
-            position: fixed !important;
-            top: 20px !important;
-            right: 20px !important;
-            z-index: 99999 !important;
-            background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%) !important;
-            color: white !important;
-            border: none !important;
-            border-radius: 20px !important;
-            width: 60px !important;
-            height: 60px !important;
-            font-size: 28px !important;
-            font-weight: bold !important;
-            box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4) !important;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            animation: pulse-glow 2s infinite;
+            position: fixed !important; top: 20px !important; right: 20px !important; z-index: 99999 !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important;
+            border: none !important; border-radius: 15px !important; width: 60px !important; height: 60px !important;
+            font-size: 28px !important; font-weight: bold !important; box-shadow: 0 4px 15px rgba(102,126,234,0.4) !important;
+            transition: all 0.3s ease !important;
         }
-        
         .floating-show-btn .stButton > button:hover {
-            transform: scale(1.15) rotate(5deg) !important;
-            box-shadow: 0 6px 30px rgba(37, 99, 235, 0.6) !important;
+            transform: scale(1.1) rotate(5deg) !important; box-shadow: 0 6px 25px rgba(102,126,234,0.6) !important;
         }
         
-        /* ===== Help Floating Button ===== */
+        /* ===== زر مركز المساعدة الثابت ===== */
         .help-float-container .stButton > button {
-            position: fixed !important;
-            top: 20px !important;
-            right: 100px !important;
-            z-index: 99998 !important;
-            background: linear-gradient(135deg, #F59E0B 0%, #FCD34D 100%) !important;
-            color: white !important;
-            font-weight: 700 !important;
-            border-radius: 15px !important;
-            padding: 12px 20px !important;
-            font-size: 16px !important;
-            border: none !important;
-            white-space: nowrap !important;
-            box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4) !important;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            position: fixed !important; top: 20px !important; right: 100px !important; z-index: 99998 !important;
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important; color: white !important;
+            font-weight: 700 !important; border-radius: 12px !important; padding: 12px 20px !important;
+            font-size: 16px !important; border: none !important; white-space: nowrap !important;
+            box-shadow: 0 4px 15px rgba(243,156,18,0.4) !important; transition: all 0.3s ease !important;
         }
-        
         .help-float-container .stButton > button:hover {
-            transform: translateY(-3px) !important;
-            box-shadow: 0 6px 30px rgba(245, 158, 11, 0.6) !important;
+            transform: translateY(-2px) !important; box-shadow: 0 6px 25px rgba(243,156,18,0.6) !important;
         }
         
-        /* ===== Sidebar Glass Effect ===== */
+        /* ===== Desktop > 1024px - 3 أعمدة، Sidebar ثابت ===== */
         @media (min-width: 1025px) {
             section[data-testid="stSidebar"] {
-                position: fixed !important;
-                top: 0 !important;
-                right: 0 !important;
-                height: 100vh !important;
-                width: 300px !important;
-                z-index: 10000 !important;
-                background: rgba(255, 255, 255, 0.75) !important;
-                backdrop-filter: blur(20px) !important;
-                -webkit-backdrop-filter: blur(20px) !important;
-                border-left: 1px solid rgba(255, 255, 255, 0.25) !important;
-                overflow-y: auto !important;
-                box-shadow: 4px 0 30px rgba(0, 0, 0, 0.08) !important;
+                position: fixed !important; top: 0 !important; right: 0 !important;
+                height: 100vh !important; width: 300px !important; z-index: 10000 !important;
+                background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
+                border-left: 1px solid rgba(0,0,0,0.05) !important; overflow-y: auto !important;
             }
-            .main-header { margin-top: 1rem; animation: fade-in-up 0.6s ease-out; }
+            .main-header { margin-top: 1rem; }
             .content-area { margin-right: 300px !important; }
-            div.row-widget.stHorizontalBlock {
-                display: grid !important;
-                grid-template-columns: repeat(3, 1fr) !important;
-                gap: 1.5rem !important;
-            }
-            div.row-widget.stHorizontalBlock > div[data-testid="column"] {
-                width: 100% !important;
-                flex: 1 1 0 !important;
-                min-width: 0 !important;
-            }
+            /* شبكة 3 أعمدة */
+            div.row-widget.stHorizontalBlock { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 1rem !important; }
+            div.row-widget.stHorizontalBlock > div[data-testid="column"] { width: 100% !important; flex: 1 1 0 !important; min-width: 0 !important; }
         }
         
+        /* ===== Tablet 768-1024px - 2 أعمدة، Sidebar قابل للإخفاء ===== */
         @media (min-width: 768px) and (max-width: 1024px) {
             section[data-testid="stSidebar"] {
-                position: fixed !important;
-                top: 0 !important;
-                right: 0 !important;
-                height: 100vh !important;
-                width: 280px !important;
-                z-index: 10000 !important;
-                background: rgba(255, 255, 255, 0.75) !important;
-                backdrop-filter: blur(20px) !important;
-                -webkit-backdrop-filter: blur(20px) !important;
-                border-left: 1px solid rgba(255, 255, 255, 0.25) !important;
-                transform: translateX(0) !important;
-                transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                position: fixed !important; top: 0 !important; right: 0 !important;
+                height: 100vh !important; width: 280px !important; z-index: 10000 !important;
+                background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
+                border-left: 1px solid rgba(0,0,0,0.05) !important;
+                transform: translateX(0) !important; transition: transform 0.3s ease !important;
                 overflow-y: auto !important;
-                box-shadow: 4px 0 30px rgba(0, 0, 0, 0.08) !important;
             }
-            .main-header { font-size: 1.9rem; margin-top: 1rem; animation: fade-in-up 0.6s ease-out; }
+            .main-header { font-size: 1.9rem; margin-top: 1rem; }
             .help-float-container .stButton > button { right: 90px !important; padding: 10px 16px !important; font-size: 15px !important; }
             .floating-show-btn .stButton > button { width: 55px !important; height: 55px !important; font-size: 26px !important; }
-            div.row-widget.stHorizontalBlock {
-                display: grid !important;
-                grid-template-columns: repeat(2, 1fr) !important;
-                gap: 1.2rem !important;
-            }
-            div.row-widget.stHorizontalBlock > div[data-testid="column"] {
-                width: 100% !important;
-                flex: 1 1 0 !important;
-                min-width: 0 !important;
-            }
+            /* شبكة عمودين */
+            div.row-widget.stHorizontalBlock { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 1rem !important; }
+            div.row-widget.stHorizontalBlock > div[data-testid="column"] { width: 100% !important; flex: 1 1 0 !important; min-width: 0 !important; }
         }
         
+        /* ===== Mobile < 768px - عمود واحد، Sidebar مخفي افتراضياً ===== */
         @media (max-width: 767px) {
             section[data-testid="stSidebar"] {
-                position: fixed !important;
-                top: 0 !important;
-                right: 0 !important;
-                width: 100vw !important;
-                height: 100vh !important;
-                z-index: 10000 !important;
-                background: rgba(255, 255, 255, 0.85) !important;
-                backdrop-filter: blur(30px) !important;
-                -webkit-backdrop-filter: blur(30px) !important;
+                position: fixed !important; top: 0 !important; right: 0 !important;
+                width: 100vw !important; height: 100vh !important; z-index: 10000 !important;
+                background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
                 transform: translateX(100%) !important;
-                transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                overflow-y: auto !important;
-                box-shadow: -4px 0 30px rgba(0, 0, 0, 0.08) !important;
+                transition: transform 0.3s ease !important; overflow-y: auto !important;
             }
-            .main-header {
-                font-size: 1.4rem;
-                margin-top: 0.5rem;
-                padding: 0.8rem;
-                animation: fade-in-up 0.6s ease-out;
-            }
+            .main-header { font-size: 1.4rem; margin-top: 0.5rem; padding: 0.8rem; }
             .content-area { padding: 0 0.3rem; }
             .help-float-container .stButton > button {
-                top: 15px !important;
-                right: 72px !important;
-                padding: 8px 12px !important;
-                font-size: 12px !important;
+                top: 15px !important; right: 72px !important;
+                padding: 8px 12px !important; font-size: 12px !important;
                 border-radius: 10px !important;
             }
             .floating-show-btn .stButton > button {
-                width: 48px !important;
-                height: 48px !important;
-                font-size: 22px !important;
-                top: 15px !important;
-                right: 15px !important;
+                width: 48px !important; height: 48px !important; font-size: 22px !important;
+                top: 15px !important; right: 15px !important;
             }
-            div.row-widget.stHorizontalBlock {
-                display: flex !important;
-                flex-direction: column !important;
-                gap: 0.8rem !important;
-            }
-            div[data-testid="column"] {
-                width: 100% !important;
-                flex: 0 0 100% !important;
-                min-width: 100% !important;
-            }
-            input, textarea, select, .stSelectbox > div, .stTextInput > div {
-                font-size: 16px !important;
-                min-height: 44px !important;
-            }
-            .stButton > button {
-                padding: 0.8rem 1.2rem !important;
-                font-size: 1rem !important;
-                min-height: 44px !important;
-            }
+            /* عمود واحد */
+            div.row-widget.stHorizontalBlock { display: flex !important; flex-direction: column !important; gap: 0.8rem !important; }
+            div[data-testid="column"] { width: 100% !important; flex: 0 0 100% !important; min-width: 100% !important; }
+            /* أزرار وحقول أكبر للشاشات الصغيرة */
+            input, textarea, select, .stSelectbox > div, .stTextInput > div { font-size: 16px !important; min-height: 44px !important; }
+            .stButton > button { padding: 0.8rem 1.2rem !important; font-size: 1rem !important; min-height: 44px !important; }
         }
         
-        /* ===== Navigation Buttons ===== */
+        /* ===== أزرار التنقل في القائمة الجانبية ===== */
         .nav-btn-container .stButton > button {
-            width: 100% !important;
-            text-align: right !important;
-            justify-content: flex-start !important;
-            padding: 0.75rem 1rem !important;
-            font-size: 1rem !important;
-            font-weight: 600 !important;
-            border-radius: 12px !important;
-            background: rgba(255, 255, 255, 0.6) !important;
-            color: #1a1a2e !important;
-            border: 1px solid rgba(255, 255, 255, 0.5) !important;
-            backdrop-filter: blur(10px) !important;
-            direction: rtl !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            width: 100% !important; text-align: right !important; justify-content: flex-start !important;
+            padding: 0.7rem 1rem !important; font-size: 1rem !important; font-weight: 600 !important;
+            border-radius: 10px !important; background: transparent !important; color: #1a1a2e !important;
+            border: 1px solid transparent !important; direction: rtl !important;
+            transition: all 0.2s ease !important;
         }
-        
         .nav-btn-container .stButton > button:hover {
-            background: rgba(37, 99, 235, 0.1) !important;
-            color: #2563EB !important;
-            border-color: rgba(37, 99, 235, 0.3) !important;
-            transform: translateX(-5px) !important;
-            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.2) !important;
+            background: rgba(102,126,234,0.08) !important; color: #667eea !important;
+            border-color: rgba(102,126,234,0.15) !important; transform: translateX(-4px) !important;
         }
-        
         .nav-btn-container .stButton > button[kind="primary"] {
-            background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%) !important;
-            color: white !important;
-            border: none !important;
-            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4) !important;
-            backdrop-filter: blur(0px) !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important; border: none !important; box-shadow: 0 3px 10px rgba(102,126,234,0.3) !important;
         }
-        
         .nav-btn-container .stButton > button[kind="primary"]:hover {
-            transform: translateX(-5px) !important;
-            box-shadow: 0 6px 25px rgba(37, 99, 235, 0.5) !important;
+            transform: translateX(-4px) !important; box-shadow: 0 5px 15px rgba(102,126,234,0.5) !important;
         }
         
-        /* ===== Premium Header ===== */
+        /* ===== الهيدر الرئيسي ===== */
         .main-header {
-            font-size: 2.2rem;
-            font-weight: 700;
-            color: #1a1a2e;
-            text-align: center;
-            margin-bottom: 1.5rem;
-            padding: 1.2rem 1.5rem;
-            background: rgba(255, 255, 255, 0.72);
-            backdrop-filter: blur(20px) !important;
-            -webkit-backdrop-filter: blur(20px) !important;
-            border-radius: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            position: relative;
-            overflow: hidden;
+            font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
+            margin-bottom: 1.5rem; padding: 1rem 1.5rem; background: rgba(255,255,255,0.9);
+            border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.04);
         }
         
-        .main-header::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-            transition: left 0.5s;
-        }
-        
-        .main-header:hover::before {
-            left: 100%;
-        }
-        
-        /* ===== Glass Cards ===== */
+        /* ===== بطاقات الأعضاء والطلاب والخدمات ===== */
         .user-card, .student-card, .event-card {
-            background: rgba(255, 255, 255, 0.72) !important;
-            backdrop-filter: blur(20px) !important;
-            -webkit-backdrop-filter: blur(20px) !important;
-            border-radius: 20px !important;
-            padding: 1.5rem !important;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            position: relative;
-            overflow: hidden;
-            animation: fade-in-up 0.6s ease-out;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px; padding: 1.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            border: 1px solid rgba(0,0,0,0.05); transition: all 0.3s ease; position: relative; overflow: hidden;
         }
-        
         .user-card:hover, .student-card:hover, .event-card:hover {
-            transform: translateY(-8px) scale(1.02) !important;
-            box-shadow: 0 12px 48px rgba(37, 99, 235, 0.25) !important;
-            border-color: rgba(37, 99, 235, 0.3) !important;
+            transform: translateY(-4px); box-shadow: 0 8px 30px rgba(0,0,0,0.12);
         }
         
-        /* ===== User Avatars ===== */
+        /* ===== صور المستخدمين ===== */
         .user-avatar {
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%) !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            color: white !important;
-            font-size: 1.8rem !important;
-            font-weight: 700 !important;
-            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4) !important;
-            transition: all 0.3s ease !important;
+            width: 70px; height: 70px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 1.8rem; font-weight: 700;
+            box-shadow: 0 3px 10px rgba(102,126,234,0.3);
         }
-        
-        .user-card:hover .user-avatar, .student-card:hover .user-avatar {
-            transform: scale(1.1) rotate(5deg) !important;
-            box-shadow: 0 6px 25px rgba(37, 99, 235, 0.5) !important;
-        }
-        
         .student-avatar-large {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%) !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            color: white !important;
-            font-size: 1.5rem !important;
-            font-weight: 700 !important;
-            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4) !important;
+            width: 60px; height: 60px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 1.5rem; font-weight: 700;
+            box-shadow: 0 3px 10px rgba(102,126,234,0.3);
         }
         
-        /* ===== Profile Header ===== */
+        /* ===== رأس الملف الشخصي ===== */
         .profile-header {
-            background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%) !important;
-            border-radius: 20px !important;
-            padding: 2rem !important;
-            color: white !important;
-            box-shadow: 0 8px 32px rgba(37, 99, 235, 0.3) !important;
-            margin-bottom: 2rem;
-            position: relative;
-            overflow: hidden;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px; padding: 2rem; color: white;
+            box-shadow: 0 8px 25px rgba(102,126,234,0.3); margin-bottom: 2rem;
         }
         
-        .profile-header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
-            animation: float 6s ease-in-out infinite;
-        }
-        
-        /* ===== Stat Cards ===== */
+        /* ===== بطاقات الإحصائيات ===== */
         .profile-stat-card {
-            background: rgba(255, 255, 255, 0.72) !important;
-            backdrop-filter: blur(20px) !important;
-            border-radius: 16px !important;
-            padding: 1.2rem !important;
-            text-align: center !important;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            animation: scale-in 0.5s ease-out;
+            background: white; border-radius: 12px; padding: 1rem; text-align: center;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.04);
+            transition: all 0.3s ease;
         }
+        .profile-stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+        .profile-stat-card h3 { color: #667eea; font-size: 1.8rem; margin: 0; }
+        .profile-stat-card p { color: #6c757d; font-size: 0.85rem; margin: 0; }
         
-        .profile-stat-card:hover {
-            transform: translateY(-5px) scale(1.05) !important;
-            box-shadow: 0 8px 32px rgba(37, 99, 235, 0.2) !important;
-        }
+        /* ===== الشارات ===== */
+        .status-badge { display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+        .status-badge.active { background: #d4edda; color: #155724; }
+        .status-badge.inactive { background: #e2e3e5; color: #383d41; }
+        .role-badge { display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+        .role-badge.admin { background: #cce5ff; color: #004085; }
+        .role-badge.priest { background: #d4edda; color: #155724; }
+        .role-badge.leader { background: #fff3cd; color: #856404; }
+        .role-badge.teacher { background: #f8d7da; color: #721c24; }
+        .role-badge.student { background: #e2e3e5; color: #383d41; }
+        .event-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+        .event-badge.meeting { background: #cce5ff; color: #004085; }
+        .event-badge.service { background: #d4edda; color: #155724; }
+        .event-badge.trip { background: #fff3cd; color: #856404; }
+        .event-badge.celebration { background: #f8d7da; color: #721c24; }
         
-        .profile-stat-card h3 {
-            color: #2563EB !important;
-            font-size: 1.8rem !important;
-            margin: 0 !important;
-            font-weight: 800 !important;
-        }
+        /* ===== وسوم البطاقات ===== */
+        .card-badge { position: absolute; top: 0; left: 0; padding: 0.3rem 1rem; border-radius: 0 0 16px 0; font-size: 0.7rem; font-weight: 700; color: white; }
+        .card-badge.active { background: linear-gradient(135deg, #28a745, #20c997); }
+        .card-badge.inactive { background: linear-gradient(135deg, #6c757d, #adb5bd); }
         
-        .profile-stat-card p {
-            color: #64748B !important;
-            font-size: 0.85rem !important;
-            margin: 0 !important;
-        }
+        /* ===== معلومات الطالب ===== */
+        .student-info-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.4rem 0; font-size: 0.9rem; color: #333; }
+        .student-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+        .student-badge.active { background: #d4edda; color: #155724; }
+        .student-badge.inactive { background: #e2e3e5; color: #383d41; }
         
-        /* ===== Badges ===== */
-        .status-badge {
-            display: inline-block !important;
-            padding: 0.25rem 0.8rem !important;
-            border-radius: 20px !important;
-            font-size: 0.75rem !important;
-            font-weight: 600 !important;
-            backdrop-filter: blur(10px) !important;
-        }
+        /* ===== منطقة المحتوى ===== */
+        .content-area { padding: 0 1rem; }
         
-        .status-badge.active {
-            background: rgba(34, 197, 94, 0.15) !important;
-            color: #22C55E !important;
-            border: 1px solid rgba(34, 197, 94, 0.3) !important;
-        }
+        /* ===== جداول البيانات ===== */
+        .stDataFrame { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
         
-        .status-badge.inactive {
-            background: rgba(100, 116, 139, 0.15) !important;
-            color: #64748B !important;
-            border: 1px solid rgba(100, 116, 139, 0.3) !important;
-        }
-        
-        .role-badge {
-            display: inline-block !important;
-            padding: 0.25rem 0.8rem !important;
-            border-radius: 20px !important;
-            font-size: 0.75rem !important;
-            font-weight: 600 !important;
-            backdrop-filter: blur(10px) !important;
-        }
-        
-        .role-badge.admin {
-            background: rgba(37, 99, 235, 0.15) !important;
-            color: #2563EB !important;
-            border: 1px solid rgba(37, 99, 235, 0.3) !important;
-        }
-        
-        .role-badge.priest {
-            background: rgba(245, 158, 11, 0.15) !important;
-            color: #F59E0B !important;
-            border: 1px solid rgba(245, 158, 11, 0.3) !important;
-        }
-        
-        .role-badge.leader {
-            background: rgba(96, 165, 250, 0.15) !important;
-            color: #60A5FA !important;
-            border: 1px solid rgba(96, 165, 250, 0.3) !important;
-        }
-        
-        .role-badge.teacher {
-            background: rgba(239, 68, 68, 0.15) !important;
-            color: #EF4444 !important;
-            border: 1px solid rgba(239, 68, 68, 0.3) !important;
-        }
-        
-        .role-badge.student {
-            background: rgba(148, 163, 184, 0.15) !important;
-            color: #64748B !important;
-            border: 1px solid rgba(148, 163, 184, 0.3) !important;
-        }
-        
-        .event-badge {
-            display: inline-block !important;
-            padding: 0.25rem 0.75rem !important;
-            border-radius: 20px !important;
-            font-size: 0.75rem !important;
-            font-weight: 600 !important;
-            backdrop-filter: blur(10px) !important;
-        }
-        
-        .event-badge.meeting {
-            background: rgba(37, 99, 235, 0.15) !important;
-            color: #2563EB !important;
-            border: 1px solid rgba(37, 99, 235, 0.3) !important;
-        }
-        
-        .event-badge.service {
-            background: rgba(34, 197, 94, 0.15) !important;
-            color: #22C55E !important;
-            border: 1px solid rgba(34, 197, 94, 0.3) !important;
-        }
-        
-        .event-badge.trip {
-            background: rgba(245, 158, 11, 0.15) !important;
-            color: #F59E0B !important;
-            border: 1px solid rgba(245, 158, 11, 0.3) !important;
-        }
-        
-        .event-badge.celebration {
-            background: rgba(239, 68, 68, 0.15) !important;
-            color: #EF4444 !important;
-            border: 1px solid rgba(239, 68, 68, 0.3) !important;
-        }
-        
-        /* ===== Card Badges ===== */
-        .card-badge {
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
-            padding: 0.3rem 1rem !important;
-            border-radius: 0 0 16px 0 !important;
-            font-size: 0.7rem !important;
-            font-weight: 700 !important;
-            color: white !important;
-            backdrop-filter: blur(10px) !important;
-        }
-        
-        .card-badge.active {
-            background: linear-gradient(135deg, #22C55E, #4ADE80) !important;
-        }
-        
-        .card-badge.inactive {
-            background: linear-gradient(135deg, #64748B, #94A3B8) !important;
-        }
-        
-        /* ===== Student Info Row ===== */
-        .student-info-row {
-            display: flex !important;
-            align-items: center !important;
-            gap: 0.5rem !important;
-            margin: 0.4rem 0 !important;
-            font-size: 0.9rem !important;
-            color: #475569 !important;
-        }
-        
-        .student-badge {
-            display: inline-block !important;
-            padding: 0.25rem 0.75rem !important;
-            border-radius: 20px !important;
-            font-size: 0.75rem !important;
-            font-weight: 600 !important;
-        }
-        
-        .student-badge.active {
-            background: rgba(34, 197, 94, 0.15) !important;
-            color: #22C55E !important;
-        }
-        
-        .student-badge.inactive {
-            background: rgba(100, 116, 139, 0.15) !important;
-            color: #64748B !important;
-        }
-        
-        /* ===== Content Area ===== */
-        .content-area {
-            padding: 0 1rem;
-            animation: fade-in-up 0.6s ease-out;
-        }
-        
-        /* ===== Data Frames ===== */
-        .stDataFrame, div[data-testid="stDataFrame"] {
-            background: rgba(255, 255, 255, 0.72) !important;
-            backdrop-filter: blur(20px) !important;
-            border-radius: 16px !important;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-        }
-        
-        /* ===== Expander ===== */
+        /* ===== الـ Expander ===== */
         .streamlit-expanderHeader {
-            background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%) !important;
-            color: white !important;
-            border-radius: 12px !important;
-            font-weight: 600 !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important; border-radius: 8px !important; font-weight: 600 !important;
             transition: all 0.3s ease !important;
-            backdrop-filter: blur(10px) !important;
         }
+        .streamlit-expanderHeader:hover { opacity: 0.9; }
         
-        .streamlit-expanderHeader:hover {
-            opacity: 0.9;
-            transform: translateY(-2px) !important;
-            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3) !important;
-        }
+        /* ===== الإشعارات ===== */
+        .stSuccess { background: rgba(40,167,69,0.1) !important; border: 1px solid rgba(40,167,69,0.2) !important; color: #155724 !important; border-radius: 10px !important; }
+        .stError { background: rgba(220,53,69,0.1) !important; border: 1px solid rgba(220,53,69,0.2) !important; color: #721c24 !important; border-radius: 10px !important; }
+        .stWarning { background: rgba(255,193,7,0.1) !important; border: 1px solid rgba(255,193,7,0.2) !important; color: #856404 !important; border-radius: 10px !important; }
+        .stInfo { background: rgba(23,162,184,0.1) !important; border: 1px solid rgba(23,162,184,0.2) !important; color: #0c5460 !important; border-radius: 10px !important; }
         
-        /* ===== Alerts/Notifications ===== */
-        .stSuccess {
-            background: rgba(34, 197, 94, 0.1) !important;
-            border: 1px solid rgba(34, 197, 94, 0.2) !important;
-            color: #22C55E !important;
-            border-radius: 12px !important;
-            backdrop-filter: blur(10px) !important;
-        }
-        
-        .stError {
-            background: rgba(239, 68, 68, 0.1) !important;
-            border: 1px solid rgba(239, 68, 68, 0.2) !important;
-            color: #EF4444 !important;
-            border-radius: 12px !important;
-            backdrop-filter: blur(10px) !important;
-        }
-        
-        .stWarning {
-            background: rgba(245, 158, 11, 0.1) !important;
-            border: 1px solid rgba(245, 158, 11, 0.2) !important;
-            color: #F59E0B !important;
-            border-radius: 12px !important;
-            backdrop-filter: blur(10px) !important;
-        }
-        
-        .stInfo {
-            background: rgba(37, 99, 235, 0.1) !important;
-            border: 1px solid rgba(37, 99, 235, 0.2) !important;
-            color: #2563EB !important;
-            border-radius: 12px !important;
-            backdrop-filter: blur(10px) !important;
-        }
-        
-        /* ===== Buttons ===== */
-        .stButton > button {
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            border-radius: 12px !important;
-            backdrop-filter: blur(10px) !important;
-            background: rgba(255, 255, 255, 0.72) !important;
-            color: #1a1a2e !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-        }
-        
-        .stButton > button:hover {
-            transform: translateY(-3px) scale(1.02) !important;
-            box-shadow: 0 8px 25px rgba(37, 99, 235, 0.3) !important;
-            background: rgba(255, 255, 255, 0.85) !important;
-        }
-        
-        .stButton > button:active {
-            transform: translateY(-1px) scale(0.98) !important;
-        }
-        
+        /* ===== الأزرار العامة بتدرجات لونية ===== */
+        .stButton > button { transition: all 0.3s ease !important; border-radius: 10px !important; }
+        .stButton > button:hover { transform: translateY(-2px) !important; box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important; }
         button[kind="primaryFormSubmit"] {
-            background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%) !important;
-            color: white !important;
-            border: none !important;
-            box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4) !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important; border: none !important; box-shadow: 0 4px 15px rgba(102,126,234,0.3) !important;
         }
-        
-        button[kind="primaryFormSubmit"]:hover {
-            box-shadow: 0 6px 30px rgba(37, 99, 235, 0.5) !important;
-        }
-        
         div.stDownloadButton > button {
-            background: linear-gradient(135deg, #22C55E 0%, #4ADE80 100%) !important;
-            color: white !important;
-            border: none !important;
-            box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4) !important;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+            color: white !important; border: none !important; box-shadow: 0 4px 15px rgba(40,167,69,0.3) !important;
         }
         
-        div.stDownloadButton > button:hover {
-            box-shadow: 0 6px 30px rgba(34, 197, 94, 0.5) !important;
-        }
-        
-        /* ===== Metrics ===== */
+        /* ===== القيم المترية ===== */
         div[data-testid="stMetric"] {
-            background: rgba(255, 255, 255, 0.72) !important;
-            backdrop-filter: blur(20px) !important;
-            border-radius: 16px !important;
-            padding: 1.2rem !important;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            animation: scale-in 0.5s ease-out;
+            background: white; border-radius: 12px; padding: 1rem;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.03);
+            transition: all 0.3s ease;
         }
+        div[data-testid="stMetric"]:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
         
-        div[data-testid="stMetric"]:hover {
-            transform: translateY(-5px) scale(1.05) !important;
-            box-shadow: 0 8px 32px rgba(37, 99, 235, 0.2) !important;
-        }
-        
-        /* ===== Tabs ===== */
+        /* ===== علامات التبويب ===== */
         button[data-testid="stTab"] {
-            border-radius: 12px 12px 0 0 !important;
-            font-weight: 600 !important;
-            transition: all 0.3s ease !important;
+            border-radius: 10px 10px 0 0 !important; font-weight: 600 !important;
+            transition: all 0.2s ease !important;
         }
+        button[data-testid="stTab"]:hover { background: rgba(102,126,234,0.05) !important; }
+        button[data-testid="stTab"][aria-selected="true"] { border-bottom: 3px solid #667eea !important; }
         
-        button[data-testid="stTab"]:hover {
-            background: rgba(37, 99, 235, 0.1) !important;
-        }
-        
-        button[data-testid="stTab"][aria-selected="true"] {
-            border-bottom: 3px solid #2563EB !important;
-            background: rgba(37, 99, 235, 0.15) !important;
-        }
-        
-        /* ===== Dialogs ===== */
+        /* ===== النوافذ المنبثقة ===== */
         div[role="dialog"] {
-            border-radius: 20px !important;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            max-height: 90vh !important;
-            overflow-y: auto !important;
-            backdrop-filter: blur(30px) !important;
-            background: rgba(255, 255, 255, 0.85) !important;
+            border-radius: 20px !important; box-shadow: 0 10px 40px rgba(0,0,0,0.2) !important;
+            border: 1px solid rgba(0,0,0,0.05) !important; max-height: 90vh !important; overflow-y: auto !important;
         }
         
-        /* ===== Form Inputs ===== */
-        .stTextInput > div > div > input,
-        .stSelectbox > div > div > select,
-        .stTextArea > div > div > textarea {
-            background: rgba(255, 255, 255, 0.72) !important;
-            backdrop-filter: blur(10px) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            border-radius: 12px !important;
-            color: #1a1a2e !important;
-            transition: all 0.3s ease !important;
-        }
-        
-        .stTextInput > div > div > input:focus,
-        .stSelectbox > div > div > select:focus,
-        .stTextArea > div > div > textarea:focus {
-            border-color: #2563EB !important;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
-            backdrop-filter: blur(20px) !important;
-        }
-        
-        /* ===== Force Light Mode ===== */
+        /* ===== إجبار Light Mode ومنع Dark Mode ===== */
         @media (prefers-color-scheme: dark) {
             html, body {
                 color-scheme: light !important;
                 background-color: #ffffff !important;
                 color: #1a1a2e !important;
             }
-            .stApp, body {
-                background: linear-gradient(135deg, #F8FAFC 0%, #FFFFFF 100%) !important;
-                color: #1a1a2e !important;
-            }
-            section[data-testid="stSidebar"] {
-                background: rgba(255, 255, 255, 0.85) !important;
-                border-left-color: rgba(255, 255, 255, 0.25) !important;
-            }
-            .stDataFrame, div[data-testid="stDataFrame"] { background: rgba(255, 255, 255, 0.72) !important; }
-            input, textarea, select, .stSelectbox > div, .stTextInput > div {
-                background: rgba(255, 255, 255, 0.72) !important;
-                color: #1a1a2e !important;
-                border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            }
+            .stApp, body { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%) !important; color: #1a1a2e !important; }
+            section[data-testid="stSidebar"] { background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important; border-left-color: rgba(0,0,0,0.05) !important; }
+            .stDataFrame, div[data-testid="stDataFrame"] { background: white !important; }
+            input, textarea, select, .stSelectbox > div, .stTextInput > div { background: white !important; color: #1a1a2e !important; border: 1px solid #ddd !important; }
+            .st-bd, .st-cb { background-color: white !important; }
+            .st-emotion-cache-1y4p8pa { background: transparent !important; }
+            div[data-testid="stMetric"] { background: white !important; }
+            .profile-stat-card { background: white !important; }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -989,59 +469,21 @@ def inject_user_cards_css():
     st.markdown("""
     <style>
         .user-card {
-            background: rgba(255, 255, 255, 0.72);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 1.5rem;
-            margin-bottom: 1.2rem;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-            animation: fade-in-up 0.6s ease-out;
-        }
-        .user-card:hover {
-            transform: translateY(-8px) scale(1.02);
-            box-shadow: 0 12px 48px rgba(37, 99, 235, 0.25);
-            border-color: rgba(37, 99, 235, 0.3);
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);
         }
         .user-card .card-badge {
-            position: absolute;
-            top: 0;
-            left: 0;
-            padding: 0.3rem 1rem;
-            border-radius: 0 0 16px 0;
-            font-size: 0.7rem;
-            font-weight: 700;
-            color: white;
-            backdrop-filter: blur(10px);
+            position: absolute; top: 0; left: 0; padding: 0.3rem 1rem;
+            border-radius: 0 0 16px 0; font-size: 0.7rem; font-weight: 700; color: white;
         }
-        .user-card .card-badge.active {
-            background: linear-gradient(135deg, #22C55E, #4ADE80);
-        }
-        .user-card .card-badge.inactive {
-            background: linear-gradient(135deg, #64748B, #94A3B8);
-        }
+        .user-card .card-badge.active { background: linear-gradient(135deg, #28a745, #20c997); }
+        .user-card .card-badge.inactive { background: linear-gradient(135deg, #6c757d, #adb5bd); }
         .user-avatar {
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 1.8rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
-            transition: all 0.3s ease;
-        }
-        .user-card:hover .user-avatar {
-            transform: scale(1.1) rotate(5deg);
-            box-shadow: 0 6px 25px rgba(37, 99, 235, 0.5);
+            width: 70px; height: 70px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 1.8rem; font-weight: 700; margin-bottom: 0.5rem;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -1051,67 +493,28 @@ def inject_students_cards_css():
     st.markdown("""
     <style>
         .student-card {
-            background: rgba(255, 255, 255, 0.72);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 1.5rem;
-            margin-bottom: 1.2rem;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            position: relative;
-            overflow: hidden;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            animation: fade-in-up 0.6s ease-out;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);
+            position: relative; overflow: hidden; transition: all 0.3s ease;
         }
-        .student-card:hover {
-            transform: translateY(-8px) scale(1.02);
-            box-shadow: 0 12px 48px rgba(37, 99, 235, 0.25);
-            border-color: rgba(37, 99, 235, 0.3);
-        }
+        .student-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.12); }
         .student-avatar-large {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 1.5rem;
-            font-weight: 700;
-            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
-            transition: all 0.3s ease;
-        }
-        .student-card:hover .student-avatar-large {
-            transform: scale(1.1) rotate(5deg);
-            box-shadow: 0 6px 25px rgba(37, 99, 235, 0.5);
+            width: 60px; height: 60px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 1.5rem; font-weight: 700;
         }
         .student-info-row {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin: 0.4rem 0;
-            font-size: 0.9rem;
-            color: #475569;
+            display: flex; align-items: center; gap: 0.5rem;
+            margin: 0.4rem 0; font-size: 0.9rem; color: #333;
         }
         .student-badge {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
+            display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px;
+            font-size: 0.75rem; font-weight: 600;
         }
-        .student-badge.active {
-            background: rgba(34, 197, 94, 0.15);
-            color: #22C55E;
-            border: 1px solid rgba(34, 197, 94, 0.3);
-        }
-        .student-badge.inactive {
-            background: rgba(100, 116, 139, 0.15);
-            color: #64748B;
-            border: 1px solid rgba(100, 116, 139, 0.3);
-        }
+        .student-badge.active { background: #d4edda; color: #155724; }
+        .student-badge.inactive { background: #e2e3e5; color: #383d41; }
     </style>
     """, unsafe_allow_html=True)
 
