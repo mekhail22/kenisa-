@@ -194,98 +194,261 @@ def get_stage_color(stage_name):
 def inject_css():
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-        * { font-family: 'Cairo', sans-serif; }
-        body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; }
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
+        /* ===== التصميم الأساسي - Light Mode فقط ===== */
+        * { font-family: 'Cairo', sans-serif !important; box-sizing: border-box !important; }
+        body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; overflow-x: hidden; }
         .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
         header[data-testid="stHeader"] { display: none !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
-        section[data-testid="stSidebar"] {
-            position: fixed !important; top: 0 !important; right: 0 !important;
-            height: 100vh !important; width: 300px !important; z-index: 10000 !important;
-            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
-        }
-        @media (max-width: 768px) { section[data-testid="stSidebar"] { width: 100vw !important; } }
-        .nav-btn-container .stButton > button {
-            width: 100% !important; text-align: right !important; justify-content: flex-start !important;
-            padding: 0.7rem 1rem !important; font-size: 1rem !important; font-weight: 600 !important;
-            border-radius: 10px !important; background: transparent !important; color: #1a1a2e !important;
-            border: 1px solid transparent !important; direction: rtl !important;
-        }
-        .nav-btn-container .stButton > button:hover {
-            background: rgba(102,126,234,0.08) !important; color: #667eea !important;
-            border-color: rgba(102,126,234,0.15) !important;
-        }
-        .nav-btn-container .stButton > button[kind="primary"] {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important; border: none !important;
-        }
+        
+        /* ===== زر الإظهار العائم ===== */
         .floating-show-btn .stButton > button {
             position: fixed !important; top: 20px !important; right: 20px !important; z-index: 99999 !important;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important;
             border: none !important; border-radius: 15px !important; width: 60px !important; height: 60px !important;
             font-size: 28px !important; font-weight: bold !important; box-shadow: 0 4px 15px rgba(102,126,234,0.4) !important;
+            transition: all 0.3s ease !important;
         }
+        .floating-show-btn .stButton > button:hover {
+            transform: scale(1.1) rotate(5deg) !important; box-shadow: 0 6px 25px rgba(102,126,234,0.6) !important;
+        }
+        
+        /* ===== زر مركز المساعدة الثابت ===== */
         .help-float-container .stButton > button {
             position: fixed !important; top: 20px !important; right: 100px !important; z-index: 99998 !important;
             background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important; color: white !important;
             font-weight: 700 !important; border-radius: 12px !important; padding: 12px 20px !important;
             font-size: 16px !important; border: none !important; white-space: nowrap !important;
+            box-shadow: 0 4px 15px rgba(243,156,18,0.4) !important; transition: all 0.3s ease !important;
         }
+        .help-float-container .stButton > button:hover {
+            transform: translateY(-2px) !important; box-shadow: 0 6px 25px rgba(243,156,18,0.6) !important;
+        }
+        
+        /* ===== Desktop > 1024px - 3 أعمدة، Sidebar ثابت ===== */
+        @media (min-width: 1025px) {
+            section[data-testid="stSidebar"] {
+                position: fixed !important; top: 0 !important; right: 0 !important;
+                height: 100vh !important; width: 300px !important; z-index: 10000 !important;
+                background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
+                border-left: 1px solid rgba(0,0,0,0.05) !important; overflow-y: auto !important;
+            }
+            .main-header { margin-top: 1rem; }
+            .content-area { margin-right: 300px !important; }
+            /* شبكة 3 أعمدة */
+            div.row-widget.stHorizontalBlock { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 1rem !important; }
+            div.row-widget.stHorizontalBlock > div[data-testid="column"] { width: 100% !important; flex: 1 1 0 !important; min-width: 0 !important; }
+        }
+        
+        /* ===== Tablet 768-1024px - 2 أعمدة، Sidebar قابل للإخفاء ===== */
+        @media (min-width: 768px) and (max-width: 1024px) {
+            section[data-testid="stSidebar"] {
+                position: fixed !important; top: 0 !important; right: 0 !important;
+                height: 100vh !important; width: 280px !important; z-index: 10000 !important;
+                background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
+                border-left: 1px solid rgba(0,0,0,0.05) !important;
+                transform: translateX(0) !important; transition: transform 0.3s ease !important;
+                overflow-y: auto !important;
+            }
+            .main-header { font-size: 1.9rem; margin-top: 1rem; }
+            .help-float-container .stButton > button { right: 90px !important; padding: 10px 16px !important; font-size: 15px !important; }
+            .floating-show-btn .stButton > button { width: 55px !important; height: 55px !important; font-size: 26px !important; }
+            /* شبكة عمودين */
+            div.row-widget.stHorizontalBlock { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 1rem !important; }
+            div.row-widget.stHorizontalBlock > div[data-testid="column"] { width: 100% !important; flex: 1 1 0 !important; min-width: 0 !important; }
+        }
+        
+        /* ===== Mobile < 768px - عمود واحد، Sidebar مخفي افتراضياً ===== */
+        @media (max-width: 767px) {
+            section[data-testid="stSidebar"] {
+                position: fixed !important; top: 0 !important; right: 0 !important;
+                width: 100vw !important; height: 100vh !important; z-index: 10000 !important;
+                background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
+                transform: translateX(100%) !important;
+                transition: transform 0.3s ease !important; overflow-y: auto !important;
+            }
+            .main-header { font-size: 1.4rem; margin-top: 0.5rem; padding: 0.8rem; }
+            .content-area { padding: 0 0.3rem; }
+            .help-float-container .stButton > button {
+                top: 15px !important; right: 72px !important;
+                padding: 8px 12px !important; font-size: 12px !important;
+                border-radius: 10px !important;
+            }
+            .floating-show-btn .stButton > button {
+                width: 48px !important; height: 48px !important; font-size: 22px !important;
+                top: 15px !important; right: 15px !important;
+            }
+            /* عمود واحد */
+            div.row-widget.stHorizontalBlock { display: flex !important; flex-direction: column !important; gap: 0.8rem !important; }
+            div[data-testid="column"] { width: 100% !important; flex: 0 0 100% !important; min-width: 100% !important; }
+            /* أزرار وحقول أكبر للشاشات الصغيرة */
+            input, textarea, select, .stSelectbox > div, .stTextInput > div { font-size: 16px !important; min-height: 44px !important; }
+            .stButton > button { padding: 0.8rem 1.2rem !important; font-size: 1rem !important; min-height: 44px !important; }
+        }
+        
+        /* ===== أزرار التنقل في القائمة الجانبية ===== */
+        .nav-btn-container .stButton > button {
+            width: 100% !important; text-align: right !important; justify-content: flex-start !important;
+            padding: 0.7rem 1rem !important; font-size: 1rem !important; font-weight: 600 !important;
+            border-radius: 10px !important; background: transparent !important; color: #1a1a2e !important;
+            border: 1px solid transparent !important; direction: rtl !important;
+            transition: all 0.2s ease !important;
+        }
+        .nav-btn-container .stButton > button:hover {
+            background: rgba(102,126,234,0.08) !important; color: #667eea !important;
+            border-color: rgba(102,126,234,0.15) !important; transform: translateX(-4px) !important;
+        }
+        .nav-btn-container .stButton > button[kind="primary"] {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important; border: none !important; box-shadow: 0 3px 10px rgba(102,126,234,0.3) !important;
+        }
+        .nav-btn-container .stButton > button[kind="primary"]:hover {
+            transform: translateX(-4px) !important; box-shadow: 0 5px 15px rgba(102,126,234,0.5) !important;
+        }
+        
+        /* ===== الهيدر الرئيسي ===== */
         .main-header {
             font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
-            margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
-            border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-top: 100px;
+            margin-bottom: 1.5rem; padding: 1rem 1.5rem; background: rgba(255,255,255,0.9);
+            border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.04);
         }
-        .user-card {
+        
+        /* ===== بطاقات الأعضاء والطلاب والخدمات ===== */
+        .user-card, .student-card, .event-card {
             background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
             border-radius: 16px; padding: 1.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
             border: 1px solid rgba(0,0,0,0.05); transition: all 0.3s ease; position: relative; overflow: hidden;
         }
+        .user-card:hover, .student-card:hover, .event-card:hover {
+            transform: translateY(-4px); box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+        
+        /* ===== صور المستخدمين ===== */
         .user-avatar {
             width: 70px; height: 70px; border-radius: 50%;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             display: flex; align-items: center; justify-content: center;
             color: white; font-size: 1.8rem; font-weight: 700;
+            box-shadow: 0 3px 10px rgba(102,126,234,0.3);
         }
+        .student-avatar-large {
+            width: 60px; height: 60px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 1.5rem; font-weight: 700;
+            box-shadow: 0 3px 10px rgba(102,126,234,0.3);
+        }
+        
+        /* ===== رأس الملف الشخصي ===== */
         .profile-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border-radius: 20px; padding: 2rem; color: white;
             box-shadow: 0 8px 25px rgba(102,126,234,0.3); margin-bottom: 2rem;
         }
+        
+        /* ===== بطاقات الإحصائيات ===== */
         .profile-stat-card {
             background: white; border-radius: 12px; padding: 1rem; text-align: center;
             box-shadow: 0 3px 10px rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.04);
+            transition: all 0.3s ease;
         }
+        .profile-stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
         .profile-stat-card h3 { color: #667eea; font-size: 1.8rem; margin: 0; }
         .profile-stat-card p { color: #6c757d; font-size: 0.85rem; margin: 0; }
-        .status-badge {
-            display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px;
-            font-size: 0.75rem; font-weight: 600;
-        }
+        
+        /* ===== الشارات ===== */
+        .status-badge { display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
         .status-badge.active { background: #d4edda; color: #155724; }
         .status-badge.inactive { background: #e2e3e5; color: #383d41; }
-        .role-badge {
-            display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px;
-            font-size: 0.75rem; font-weight: 600;
-        }
+        .role-badge { display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
         .role-badge.admin { background: #cce5ff; color: #004085; }
         .role-badge.priest { background: #d4edda; color: #155724; }
         .role-badge.leader { background: #fff3cd; color: #856404; }
-        .role-badge.teacher { background: #e2e3e5; color: #383d41; }
+        .role-badge.teacher { background: #f8d7da; color: #721c24; }
+        .role-badge.student { background: #e2e3e5; color: #383d41; }
+        .event-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+        .event-badge.meeting { background: #cce5ff; color: #004085; }
+        .event-badge.service { background: #d4edda; color: #155724; }
+        .event-badge.trip { background: #fff3cd; color: #856404; }
+        .event-badge.celebration { background: #f8d7da; color: #721c24; }
+        
+        /* ===== وسوم البطاقات ===== */
+        .card-badge { position: absolute; top: 0; left: 0; padding: 0.3rem 1rem; border-radius: 0 0 16px 0; font-size: 0.7rem; font-weight: 700; color: white; }
+        .card-badge.active { background: linear-gradient(135deg, #28a745, #20c997); }
+        .card-badge.inactive { background: linear-gradient(135deg, #6c757d, #adb5bd); }
+        
+        /* ===== معلومات الطالب ===== */
+        .student-info-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.4rem 0; font-size: 0.9rem; color: #333; }
+        .student-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+        .student-badge.active { background: #d4edda; color: #155724; }
+        .student-badge.inactive { background: #e2e3e5; color: #383d41; }
+        
+        /* ===== منطقة المحتوى ===== */
         .content-area { padding: 0 1rem; }
-        .stDataFrame { background: white; border-radius: 10px; }
+        
+        /* ===== جداول البيانات ===== */
+        .stDataFrame { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+        
+        /* ===== الـ Expander ===== */
         .streamlit-expanderHeader {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important; border-radius: 8px !important; font-weight: 600 !important;
+            transition: all 0.3s ease !important;
         }
-        .stSuccess { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }
-        .stError { background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }
-        @media (max-width: 768px) {
-            .main-header { font-size: 1.6rem; margin-top: 110px; }
-            .floating-show-btn .stButton > button { width: 50px !important; height: 50px !important; font-size: 24px !important; }
-            .help-float-container .stButton > button { right: 80px !important; padding: 10px 16px !important; font-size: 14px !important; }
+        .streamlit-expanderHeader:hover { opacity: 0.9; }
+        
+        /* ===== الإشعارات ===== */
+        .stSuccess { background: rgba(40,167,69,0.1) !important; border: 1px solid rgba(40,167,69,0.2) !important; color: #155724 !important; border-radius: 10px !important; }
+        .stError { background: rgba(220,53,69,0.1) !important; border: 1px solid rgba(220,53,69,0.2) !important; color: #721c24 !important; border-radius: 10px !important; }
+        .stWarning { background: rgba(255,193,7,0.1) !important; border: 1px solid rgba(255,193,7,0.2) !important; color: #856404 !important; border-radius: 10px !important; }
+        .stInfo { background: rgba(23,162,184,0.1) !important; border: 1px solid rgba(23,162,184,0.2) !important; color: #0c5460 !important; border-radius: 10px !important; }
+        
+        /* ===== الأزرار العامة بتدرجات لونية ===== */
+        .stButton > button { transition: all 0.3s ease !important; border-radius: 10px !important; }
+        .stButton > button:hover { transform: translateY(-2px) !important; box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important; }
+        button[kind="primaryFormSubmit"] {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important; border: none !important; box-shadow: 0 4px 15px rgba(102,126,234,0.3) !important;
+        }
+        div.stDownloadButton > button {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+            color: white !important; border: none !important; box-shadow: 0 4px 15px rgba(40,167,69,0.3) !important;
+        }
+        
+        /* ===== القيم المترية ===== */
+        div[data-testid="stMetric"] {
+            background: white; border-radius: 12px; padding: 1rem;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.03);
+            transition: all 0.3s ease;
+        }
+        div[data-testid="stMetric"]:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+        
+        /* ===== علامات التبويب ===== */
+        button[data-testid="stTab"] {
+            border-radius: 10px 10px 0 0 !important; font-weight: 600 !important;
+            transition: all 0.2s ease !important;
+        }
+        button[data-testid="stTab"]:hover { background: rgba(102,126,234,0.05) !important; }
+        button[data-testid="stTab"][aria-selected="true"] { border-bottom: 3px solid #667eea !important; }
+        
+        /* ===== النوافذ المنبثقة ===== */
+        div[role="dialog"] {
+            border-radius: 20px !important; box-shadow: 0 10px 40px rgba(0,0,0,0.2) !important;
+            border: 1px solid rgba(0,0,0,0.05) !important; max-height: 90vh !important; overflow-y: auto !important;
+        }
+        
+        /* ===== إجبار Light Mode ومنع Dark Mode ===== */
+        @media (prefers-color-scheme: dark) {
+            .stApp, body { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%) !important; color: #1a1a2e !important; }
+            section[data-testid="stSidebar"] { background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important; border-left-color: rgba(0,0,0,0.05) !important; }
+            .stDataFrame, div[data-testid="stDataFrame"] { background: white !important; }
+            input, textarea, select, .stSelectbox > div, .stTextInput > div { background: white !important; color: #1a1a2e !important; border: 1px solid #ddd !important; }
+            .st-bd, .st-cb { background-color: white !important; }
+            .st-emotion-cache-1y4p8pa { background: transparent !important; }
+            div[data-testid="stMetric"] { background: white !important; }
+            .profile-stat-card { background: white !important; }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -353,6 +516,16 @@ def init_data_cache():
         st.session_state.data_cache = {}
     if 'data_dirty' not in st.session_state:
         st.session_state.data_dirty = {}
+    if 'cache_stats' not in st.session_state:
+        st.session_state.cache_stats = {'hits': 0, 'misses': 0, 'last_cleanup': time.time()}
+    # Auto-invalidation: periodically clean expired cache entries
+    now = time.time()
+    if now - st.session_state.cache_stats.get('last_cleanup', 0) > 300:  # Every 5 minutes
+        cache = st.session_state.get('data_cache', {})
+        expired_keys = [k for k, v in cache.items() if now - v.get('timestamp', 0) > CACHE_TTL_SECONDS]
+        for k in expired_keys:
+            del cache[k]
+        st.session_state.cache_stats['last_cleanup'] = now
 
 
 def retry_operation(max_retries=5, base_delay=2):
@@ -528,7 +701,10 @@ class Database:
         except gspread.WorksheetNotFound:
             ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(columns), 1))
             if columns:
-                ws.append_row(columns)
+                try:
+                    ws.append_row(columns)
+                except Exception:
+                    pass
         time.sleep(0.2)
         return ws
 
@@ -609,6 +785,31 @@ class Database:
     # --- Users ---
     def get_users(self):
         return self._sheet_to_df("Users")
+
+    def ensure_all_sheets_exist(self):
+        """Ensure all required sheets exist with proper columns."""
+        sheets_config = {
+            "Users": ["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email"],
+            "Students": ["student_id", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"],
+            "Stages": self.STAGE_COLUMNS,
+            "StageSupervisors": self.STAGE_SUPERVISOR_COLUMNS,
+            "SectionTeachers": self.SECTION_TEACHER_COLUMNS,
+            "Sections": self.SECTION_COLUMNS,
+            "Attendance": self.ATTENDANCE_COLUMNS,
+            "FollowUp": ["record_id", "student_id", "teacher_id", "followup_date", "followup_type", "notes", "regularity_status"],
+            "Quizzes": ["quiz_id", "title", "description", "created_by", "section_id", "num_questions", "time_limit_minutes", "total_marks", "expiry_date", "quiz_code", "password", "is_active"],
+            "QuizQuestions": ["question_id", "quiz_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer"],
+            "QuizResults": ["result_id", "quiz_id", "student_id", "student_name", "score", "total_marks", "start_time", "submission_time", "answers", "status"],
+            "AuditLog": AUDIT_LOG_COLUMNS,
+            "Events": self.EVENT_COLUMNS,
+            "EventRSVP": self.EVENT_RSVP_COLUMNS,
+            "EventAttendance": self.EVENT_ATTENDANCE_COLUMNS
+        }
+        for sheet_name, columns in sheets_config.items():
+            try:
+                self._get_or_create_worksheet(sheet_name, columns)
+            except Exception:
+                pass
 
     def add_user(self, user_data):
         df = self.get_users()
