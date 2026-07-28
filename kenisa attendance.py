@@ -195,6 +195,12 @@ def inject_css():
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
+        /* ===== إجبار Light Mode بشكل دائم ===== */
+        html, body {
+            color-scheme: light !important;
+            background-color: #ffffff !important;
+            color: #1a1a2e !important;
+        }
         /* ===== التصميم الأساسي - Light Mode فقط ===== */
         * { font-family: 'Cairo', sans-serif !important; box-sizing: border-box !important; }
         body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; overflow-x: hidden; }
@@ -441,6 +447,11 @@ def inject_css():
         
         /* ===== إجبار Light Mode ومنع Dark Mode ===== */
         @media (prefers-color-scheme: dark) {
+            html, body {
+                color-scheme: light !important;
+                background-color: #ffffff !important;
+                color: #1a1a2e !important;
+            }
             .stApp, body { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%) !important; color: #1a1a2e !important; }
             section[data-testid="stSidebar"] { background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important; border-left-color: rgba(0,0,0,0.05) !important; }
             .stDataFrame, div[data-testid="stDataFrame"] { background: white !important; }
