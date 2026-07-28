@@ -3104,17 +3104,23 @@ def _export_to_excel_with_charts(report_title, df, charts_list=None):
         
         # Add charts as images if provided
         if charts_list:
+            import warnings
             for fig, sheet_name in charts_list:
-                img_bytes = pio.to_image(fig, format='png', width=1200, height=500, scale=2)
-                img_stream = io.BytesIO(img_bytes)
-                from openpyxl.drawing.image import Image as XLImage
-                img = XLImage(img_stream)
-                img.width = 800
-                img.height = 350
-                
-                # Create new sheet for chart
-                ws_chart = workbook.create_sheet(title=sheet_name)
-                ws_chart.add_image(img, 'A1')
+                try:
+                    img_bytes = pio.to_image(fig, format='png', width=1200, height=500, scale=2)
+                    img_stream = io.BytesIO(img_bytes)
+                    from openpyxl.drawing.image import Image as XLImage
+                    img = XLImage(img_stream)
+                    img.width = 800
+                    img.height = 350
+                    
+                    # Create new sheet for chart
+                    ws_chart = workbook.create_sheet(title=sheet_name)
+                    ws_chart.add_image(img, 'A1')
+                except Exception:
+                    warnings.warn(f"Chart export skipped for {sheet_name}: Kaleido not available")
+                    note_ws = workbook.create_sheet(title=sheet_name)
+                    note_ws['A1'] = "الرسوم البيانية غير متاحة في بيئة التشغيل الحالية. استخدم خيار CSV أو شاهد الرسوم في التطبيق."
     
     output.seek(0)
     return output.getvalue()
@@ -3584,15 +3590,18 @@ def show_reports_page(db):
         
         with col_exp2:
             # Excel Export
-            excel_bytes = _export_to_excel_with_charts(report_title, report_df, charts_to_export)
-            st.download_button(
-                label="📗 تصدير Excel مع الرسوم البيانية",
-                data=excel_bytes,
-                file_name=f"{report_title}_{get_cairo_now().strftime('%Y-%m-%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key="export_excel_btn"
-            )
+            try:
+                excel_bytes = _export_to_excel_with_charts(report_title, report_df, charts_to_export)
+                st.download_button(
+                    label="📗 تصدير Excel مع الرسوم البيانية",
+                    data=excel_bytes,
+                    file_name=f"{report_title}_{get_cairo_now().strftime('%Y-%m-%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="export_excel_btn"
+                )
+            except Exception as e:
+                st.error("تعذر تصدير Excel: " + str(e))
     
     # =========================================================================
     # EVENT REPORT (if events data available)
