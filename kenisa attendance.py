@@ -26,7 +26,7 @@ import base64
 from io import BytesIO
 import plotly.graph_objects as go
 import plotly.io as pio
-import platform
+import re
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -34,14 +34,14 @@ import platform
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 QUIZ_JWT_SECRET = "StDemianaChurch2025!QuizSecure#Key"
 CACHE_TTL_SECONDS = 600
+# تحديث مدة الجلسة إلى 24 ساعة
 SESSION_TIMEOUT_HOURS = 24
 CAIRO_TZ = timezone(timedelta(hours=3), name='Africa/Cairo')
 
-# AuditLog columns
+# أعمدة سجل التدقيق (AuditLog)
 AUDIT_LOG_COLUMNS = [
-    "log_id", "timestamp", "username", "user_id", "action",
-    "details", "ip_address", "country", "city", "browser", "os",
-    "device_type", "screen_size"
+    "log_id", "timestamp", "username", "user_id", "action", "details",
+    "ip_address", "country", "city", "browser", "os", "device_type", "screen_size"
 ]
 
 # Password hashing
@@ -384,100 +384,118 @@ def retry_operation(max_retries=5, base_delay=2):
 
 
 # =============================================================================
-# Audit Log: IP & Geo, Browser Info, Audit Log Writer
+# Audit Log - Client Info (IP, location, browser, OS, device)
 # =============================================================================
-def get_client_ip_geo():
+def _get_client_ip_and_location():
     """
-    محاولة جلب IP والموقع الجغرافي باستخدام ipapi.co (مجاني).
-    ترجع (ip_address, country, city) أو ('غير معروف','','') عند الفشل.
+    جلب عنوان IP والموقع الجغرافي باستخدام ipapi.co API المجاني.
     """
     try:
-        resp = requests.get("https://ipapi.co/json/", timeout=10)
+        resp = requests.get("https://ipapi.co/json/", timeout=5)
         if resp.status_code == 200:
             data = resp.json()
-            ip = data.get("ip", "غير معروف")
-            country = data.get("country_name", "")
-            city = data.get("city", "")
-            return ip, country, city
+            return {
+                "ip_address": data.get("ip", ""),
+                "country": data.get("country_name", ""),
+                "city": data.get("city", "")
+            }
     except Exception:
         pass
-    return "غير معروف", "", ""
+    return {"ip_address": "", "country": "", "city": ""}
+
+
+def _parse_user_agent(ua_string):
+    """
+    تحليل User-Agent لاستخراج: browser, os, device_type.
+    """
+    ua = ua_string or ""
+    result = {"browser": "", "os": "", "device_type": "", "screen_size": ""}
+
+    # Browser detection
+    browser_patterns = [
+        (r"Edge|Edg/", "Edge"),
+        (r"Chrome/", "Chrome"),
+        (r"Firefox/", "Firefox"),
+        (r"Safari/", "Safari"),
+        (r"Opera|OPR/", "Opera"),
+        (r"MSIE|Trident/", "Internet Explorer"),
+    ]
+    for pattern, name in browser_patterns:
+        if re.search(pattern, ua):
+            result["browser"] = name
+            break
+
+    # OS detection
+    os_patterns = [
+        (r"Windows NT 10\.0", "Windows 10/11"),
+        (r"Windows NT 6\.\d", "Windows"),
+        (r"Android", "Android"),
+        (r"iPhone|iPad|iOS", "iOS"),
+        (r"Mac OS X", "macOS"),
+        (r"Linux", "Linux"),
+    ]
+    for pattern, name in os_patterns:
+        if re.search(pattern, ua):
+            result["os"] = name
+            break
+
+    # Device type detection
+    if re.search(r"Mobile|Android|iPhone|iPad|iPod", ua):
+        if re.search(r"iPad", ua):
+            result["device_type"] = "Tablet"
+        else:
+            result["device_type"] = "Mobile"
+    else:
+        result["device_type"] = "Desktop"
+
+    return result
+
+
+def _get_screen_size():
+    """
+    محاولة جلب حجم الشاشة باستخدام JavaScript عبر streamlit_js_eval.
+    إذا فشل، نعيد قيمة افتراضية.
+    """
+    try:
+        # استخدم get_page_location أو get_browser_language كطريقة للحصول على معلومات
+        from streamlit_js_eval import get_page_location
+        # لا نستطيع الحصول على screen size مباشرة، لذا نعيد قيمة افتراضية
+        pass
+    except Exception:
+        pass
+    return ""
 
 
 def get_client_info():
     """
-    محاولة جلب معلومات المتصفح ونظام التشغيل.
-    ترجع (browser, os, device_type, screen_size) أو مvalues افتراضية.
+    تجميع معلومات العميل: IP، الموقع، المتصفح، نظام التشغيل، نوع الجهاز.
     """
-    browser = "غير معروف"
-    os_name = "غير معروف"
-    device_type = "غير معروف"
-    screen_size = "غير معروف"
+    info = _get_client_ip_and_location()
+    
+    # محاولة الحصول على User-Agent من streamlit_js_eval
+    ua_string = ""
     try:
-        # استخدام streamlit_js_eval لجلب بيانات المتصفح
-        from streamlit_js_eval import get_browser_info
-        b_info = get_browser_info()
-        if b_info:
-            browser = b_info.get("browser", browser) or browser
-            os_name = b_info.get("os", os_name) or os_name
-            device_type = b_info.get("device", device_type) or device_type
-            # محاولة جلب screen dimensions
-            w = b_info.get("screenWidth", "")
-            h = b_info.get("screenHeight", "")
-            if w and h:
-                screen_size = f"{w}x{h}"
+        from streamlit_js_eval import get_user_agent
+        ua_result = get_user_agent()
+        if ua_result and isinstance(ua_result, str):
+            ua_string = ua_result
+        elif ua_result and isinstance(ua_result, dict):
+            ua_string = ua_result.get("userAgent", "")
     except Exception:
-        # Fallback: استخدام platform
+        pass
+    
+    # إذا لم نتمكن من الحصول على User-Agent من JS، نستخدم طريقة بديلة
+    if not ua_string:
         try:
-            import platform
-            browser = "غير معروف"
-            os_name = platform.system() + " " + platform.release()
-            device_type = "PC" if os_name.lower().startswith(("windows", "linux", "mac")) else "جوال"
+            # محاولة من request headers (قد لا تكون متاحة في Streamlit)
+            ua_string = st.context.headers.get("User-Agent", "") if hasattr(st, 'context') else ""
         except Exception:
             pass
-    return browser, os_name, device_type, screen_size
 
-
-def add_audit_log(db, action, details="", user_override=None):
-    """
-    تسجيل حدث في سجل المراجعة (AuditLog) مع بيانات الموقع والمتصفح.
-    - db: كائن قاعدة البيانات
-    - action: نوع العملية (مثال: "تسجيل دخول", "إضافة عضو", ...)
-    - details: تفاصيل إضافية
-    - user_override: dict يحتوي على user_id و username (للاستخدام عند تسجيل الدخول قبل تخزين session)
-    """
-    if user_override:
-        user_id = user_override.get("user_id", "")
-        username = user_override.get("username", "")
-        full_name = user_override.get("full_name", username)
-    else:
-        user = st.session_state.get("user", {})
-        user_id = user.get("user_id", "") if user else ""
-        username = user.get("username", "") if user else ""
-        full_name = user.get("full_name", username) if user else username
-
-    ip_address, country, city = get_client_ip_geo()
-    browser, os_name, device_type, screen_size = get_client_info()
-
-    log_entry = {
-        "log_id": str(uuid.uuid4()),
-        "timestamp": get_cairo_now().isoformat(),
-        "username": username,
-        "user_id": user_id,
-        "action": action,
-        "details": details,
-        "ip_address": ip_address,
-        "country": country,
-        "city": city,
-        "browser": browser,
-        "os": os_name,
-        "device_type": device_type,
-        "screen_size": screen_size
-    }
-    try:
-        db.add_audit_log(log_entry)
-    except Exception:
-        pass  # لا نريد تعطيل التطبيق إذا فشل تسجيل المراجعة
+    parsed = _parse_user_agent(ua_string)
+    info.update(parsed)
+    info["screen_size"] = _get_screen_size()
+    return info
 
 
 # =============================================================================
@@ -587,22 +605,6 @@ class Database:
         if isinstance(value, (dict, list)):
             return str(value)
         return str(value)
-
-    # --- Audit Log ---
-    def add_audit_log(self, log_entry):
-        """
-        إضافة سجل مراجعة إلى ورقة AuditLog.
-        log_entry يجب أن يحتوي على المفاتيح المحددة في AUDIT_LOG_COLUMNS.
-        """
-        df = self._sheet_to_df("AuditLog")
-        if df.empty:
-            df = pd.DataFrame(columns=AUDIT_LOG_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([log_entry])], ignore_index=True)
-        self._df_to_sheet("AuditLog", df, AUDIT_LOG_COLUMNS)
-
-    def get_audit_logs(self):
-        """قراءة سجل المراجعة من ورقة AuditLog."""
-        return self._sheet_to_df("AuditLog")
 
     # --- Users ---
     def get_users(self):
@@ -1105,25 +1107,103 @@ class Database:
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
                                               "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
-    # --- Logs ---
+    # =====================================================================
+    # Audit Log - سجل التدقيق الجديد
+    # =====================================================================
+    def get_audit_log(self):
+        """جلب جميع سجلات التدقيق من ورقة AuditLog."""
+        return self._sheet_to_df("AuditLog")
+
+    def add_audit_log(self, action, details="", user_info=None, client_info=None):
+        """
+        إضافة سجل تدقيق جديد إلى ورقة AuditLog.
+        
+        Parameters:
+        - action: نوع العملية (مثل "تسجيل دخول", "إضافة عضو", ...)
+        - details: تفاصيل إضافية عن العملية
+        - user_info: dict يحتوي على معلومات المستخدم (user_id, username, ...)
+        - client_info: dict يحتوي على معلومات العميل (ip, browser, os, ...)
+        """
+        if user_info is None:
+            user_info = st.session_state.get("user", {}) if "user" in st.session_state else {}
+        if client_info is None:
+            client_info = get_client_info()
+        
+        username = user_info.get("username", "") if isinstance(user_info, dict) else ""
+        user_id = user_info.get("user_id", "") if isinstance(user_info, dict) else ""
+        # إذا كان user_info هو مجرد user_id string
+        if isinstance(user_info, str):
+            user_id = user_info
+            username = ""
+        elif isinstance(user_info, dict) and not username and user_id:
+            # حاول الحصول على اسم المستخدم من users sheet إذا كان متاحاً
+            try:
+                if 'db_instance' in st.session_state:
+                    users_df = st.session_state.db_instance.get_users()
+                    if not users_df.empty:
+                        match = users_df[users_df.user_id == user_id]
+                        if not match.empty:
+                            username = match.iloc[0].get("username", "")
+            except Exception:
+                pass
+        
+        log_entry = {
+            "log_id": str(uuid.uuid4()),
+            "timestamp": get_cairo_now().isoformat(),
+            "username": username,
+            "user_id": user_id,
+            "action": action,
+            "details": details,
+            "ip_address": client_info.get("ip_address", ""),
+            "country": client_info.get("country", ""),
+            "city": client_info.get("city", ""),
+            "browser": client_info.get("browser", ""),
+            "os": client_info.get("os", ""),
+            "device_type": client_info.get("device_type", ""),
+            "screen_size": client_info.get("screen_size", "")
+        }
+        
+        df = self.get_audit_log()
+        if df.empty:
+            df = pd.DataFrame(columns=AUDIT_LOG_COLUMNS)
+        df = pd.concat([df, pd.DataFrame([log_entry])], ignore_index=True)
+        self._df_to_sheet("AuditLog", df, AUDIT_LOG_COLUMNS)
+        return log_entry["log_id"]
+
+    def delete_audit_log(self, log_id):
+        """حذف سجل تدقيق معين."""
+        df = self.get_audit_log()
+        if df.empty:
+            return
+        df = df[df.log_id != log_id]
+        self._df_to_sheet("AuditLog", df, AUDIT_LOG_COLUMNS)
+
+    # =====================================================================
+    # دوال قديمة للتوافق العكسي - تشير إلى AuditLog الجديد
+    # =====================================================================
     def get_logs(self):
-        return self._sheet_to_df("Logs")
+        """للتوافق مع الكود القديم - يحول إلى AuditLog."""
+        return self.get_audit_log()
 
     def add_log(self, user_id, action, details=""):
-        log = {
-            "log_id": str(uuid.uuid4()), "timestamp": get_cairo_now().isoformat(),
-            "user_id": user_id, "action": action, "details": details
-        }
-        df = self.get_logs()
-        if df.empty:
-            df = pd.DataFrame(columns=["log_id", "timestamp", "user_id", "action", "details"])
-        df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
-        self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
+        """للتوافق مع الكود القديم - يحول إلى AuditLog."""
+        client_info = get_client_info()
+        user_info = {"user_id": user_id, "username": ""}
+        # محاولة الحصول على اسم المستخدم
+        try:
+            users_df = self.get_users()
+            if not users_df.empty:
+                match = users_df[users_df.user_id == user_id]
+                if not match.empty:
+                    user_info["username"] = match.iloc[0].get("username", "")
+                    user_info["full_name"] = match.iloc[0].get("full_name", "")
+        except Exception:
+            pass
+        return self.add_audit_log(action, details, user_info=user_info, client_info=client_info)
 
     def delete_log(self, log_id):
-        df = self.get_logs()
-        df = df[df.log_id != log_id]
-        self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
+        """للتوافق مع الكود القديم - يحذف من AuditLog."""
+        self.delete_audit_log(log_id)
 
     # --- Events ---
     EVENT_COLUMNS = ["event_id", "event_name", "event_type", "event_date", "event_time",
@@ -1251,10 +1331,6 @@ def logout(db=None):
     if db and st.session_state.user:
         try:
             db.add_log(st.session_state.user.get("user_id", ""), "تسجيل خروج", "تم تسجيل الخروج بنجاح")
-        except Exception:
-            pass
-        try:
-            add_audit_log(db, "تسجيل خروج", "تم تسجيل الخروج بنجاح")
         except Exception:
             pass
     for key in list(st.session_state.keys()):
@@ -1516,7 +1592,6 @@ def show_login_page(db, jwt_secret):
                             user_status = get_user_status(user)
                             if user_status != "active":
                                 db.add_log(user.get("user_id", ""), "محاولة دخول فاشلة", f"الحساب غير نشط (الحالة: {user_status})")
-                                add_audit_log(db, "محاولة دخول فاشلة", f"الحساب غير نشط (الحالة: {user_status})", user_override=user)
                                 st.error(f"🚫 هذا الحساب {user_status}. يرجى التواصل مع مسؤول النظام.")
                             elif verify_password(password, user.get("password", "")):
                                 token = generate_token(user, jwt_secret)
@@ -1527,13 +1602,11 @@ def show_login_page(db, jwt_secret):
                                 st.session_state.menu_choice = "🏠 لوحة التحكم"
                                 st.session_state.show_sidebar = True
                                 db.add_log(user["user_id"], "تسجيل دخول", "تم تسجيل الدخول بنجاح")
-                                add_audit_log(db, "تسجيل دخول", "تم تسجيل الدخول بنجاح", user_override=user)
                                 st.success("تم تسجيل الدخول بنجاح!")
                                 time.sleep(1)
                                 st.rerun()
                             else:
                                 db.add_log(user.get("user_id", ""), "محاولة دخول فاشلة", "كلمة مرور خاطئة")
-                                add_audit_log(db, "محاولة دخول فاشلة", "كلمة مرور خاطئة", user_override=user)
                                 st.error("كلمة المرور غير صحيحة")
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
@@ -2164,7 +2237,6 @@ def show_members_cards_page(db):
                                 else:
                                     db.update_user(mid, {"status": "inactive"})
                                 db.add_log(user.get("user_id", ""), "تعطيل عضو", f"تم تعطيل {full_name}")
-                                add_audit_log(db, "تعطيل عضو", f"تم تعطيل {full_name} ({member_type})")
                                 st.success("✅ تم التعطيل")
                                 time.sleep(1)
                                 st.rerun()
@@ -2175,7 +2247,6 @@ def show_members_cards_page(db):
                                 else:
                                     db.update_user(mid, {"status": "active"})
                                 db.add_log(user.get("user_id", ""), "تفعيل عضو", f"تم تفعيل {full_name}")
-                                add_audit_log(db, "تفعيل عضو", f"تم تفعيل {full_name} ({member_type})")
                                 st.success("✅ تم التفعيل")
                                 time.sleep(1)
                                 st.rerun()
@@ -2191,7 +2262,6 @@ def show_members_cards_page(db):
                                 else:
                                     db.delete_user(mid)
                                 db.add_log(user.get("user_id", ""), "حذف عضو", f"تم حذف {full_name}")
-                                add_audit_log(db, "حذف عضو", f"تم حذف {full_name} ({member_type})")
                                 st.success("✅ تم الحذف")
                                 time.sleep(1)
                                 st.rerun()
@@ -2205,7 +2275,6 @@ def show_members_cards_page(db):
                             if confirm:
                                 db.delete_student(mid)
                                 db.add_log(user.get("user_id", ""), "حذف طالبة", f"تم حذف {full_name}")
-                                add_audit_log(db, "حذف طالبة", f"تم حذف {full_name}")
                                 st.success("✅ تم الحذف")
                                 time.sleep(1)
                                 st.rerun()
@@ -2253,7 +2322,6 @@ def show_members_cards_page(db):
                                 else:
                                     db.update_user(mid, {"full_name": edit_name, "phone": edit_phone, "email": edit_email, "section_id": edit_section})
                                 db.add_log(user.get("user_id", ""), "تعديل عضو", f"تم تعديل {edit_name}")
-                                add_audit_log(db, "تعديل عضو", f"تم تعديل {edit_name} ({member_type})")
                                 st.session_state[f"edit_mode_{mid}"] = False
                                 st.success("✅ تم التحديث")
                                 time.sleep(1)
@@ -2305,7 +2373,6 @@ def show_members_cards_page(db):
                             "created_by": user_id
                         }
                         db.add_student(student_data)
-                        add_audit_log(db, "إضافة طالبة", f"تم إضافة طالبة {new_name.strip()}")
                     else:
                         role_map = {"أمين خدمة": "Service Manager", "مدرسة": "Teacher"}
                         db.add_user({
@@ -2318,7 +2385,6 @@ def show_members_cards_page(db):
                             "phone": new_phone,
                             "email": ""
                         })
-                        add_audit_log(db, "إضافة عضو", f"تم إضافة {new_name.strip()} ({role_map.get(member_type, 'Teacher')})")
                     db.add_log(user.get("user_id", ""), "إضافة عضو", f"تمت إضافة {new_name}")
                     st.success("✅ تمت الإضافة بنجاح")
                     time.sleep(1)
@@ -2741,7 +2807,6 @@ def show_attendance(db):
                 })
             db.batch_add_attendance(records)
             db.add_log(user.get("user_id", ""), f"تسجيل حضور فصل {selected_section} ليوم {date_str}")
-            add_audit_log(db, "تسجيل حضور", f"تم تسجيل حضور فصل {section_name or selected_section} ليوم {date_str}")
             st.success("✅ تم تسجيل الحضور بنجاح")
             time.sleep(1)
             st.rerun()
@@ -2766,7 +2831,6 @@ def show_attendance(db):
             del_id = st.selectbox("اختر سجل حضور لحذفه", rec["record_id"], key="del_att_sel")
             if st.button("حذف سجل الحضور"):
                 db.delete_attendance_record(del_id)
-                add_audit_log(db, "حذف سجل حضور", f"تم حذف سجل حضور للفصل {section_name or selected_section} ليوم {date_str}")
                 st.success("تم الحذف")
                 time.sleep(1)
                 st.rerun()
@@ -4226,3 +4290,445 @@ def show_student_profile(db, student_id):
             st.markdown(f"**👤 الاسم الكامل:** {full_name}")
             st.markdown(f"**📱 الهاتف:** {student.get('phone', '—') or '—'}")
             st.markdown(f"**📱 رقم ولي الأمر:** {student.get('parent_phone', '—') or '—'}")
+            st.markdown(f"**🎂 تاريخ الميلاد:** {birthdate or '—'}")
+        with info_cols[1]:
+            st.markdown(f"**🏫 الفصل:** {section_name or '—'}")
+            st.markdown(f"**🏫 المدرسة:** {student.get('school', '—') or '—'}")
+            st.markdown(f"**📍 العنوان:** {student.get('address', '—') or '—'}")
+            st.markdown(f"**📌 الحالة:** {status_label}")
+    
+    if student.get("notes"):
+        with st.expander("📝 ملاحظات"):
+            st.write(student.get("notes", ""))
+    
+    st.markdown("---")
+    
+    # Action buttons based on role
+    if role in ["System Admin", "Service Manager"]:
+        act_col1, act_col2, act_col3 = st.columns(3)
+        with act_col1:
+            if st.button("✏️ تعديل", use_container_width=True):
+                st.session_state.edit_student_id = student_id
+                st.session_state.profile_user_id = None
+                st.rerun()
+        with act_col2:
+            if status == "active":
+                if st.button("⏸️ تعطيل", use_container_width=True):
+                    db.update_student(student_id, {"status": "inactive"})
+                    db.add_log(user.get("user_id", ""), f"تعطيل طالبة {student_id}", f"تم تعطيل {full_name}")
+                    st.success("✅ تم التعطيل")
+                    time.sleep(1)
+                    st.rerun()
+            else:
+                if st.button("▶️ تفعيل", use_container_width=True):
+                    db.update_student(student_id, {"status": "active"})
+                    db.add_log(user.get("user_id", ""), f"تفعيل طالبة {student_id}", f"تم تفعيل {full_name}")
+                    st.success("✅ تم التفعيل")
+                    time.sleep(1)
+                    st.rerun()
+        with act_col3:
+            if st.button("🗑️ حذف", use_container_width=True):
+                db.delete_student(student_id)
+                db.add_log(user.get("user_id", ""), f"حذف طالبة {student_id}", f"تم حذف {full_name}")
+                st.success("✅ تم الحذف")
+                st.session_state.profile_user_id = None
+                time.sleep(1)
+                st.rerun()
+    elif role == "Teacher":
+        st.info("👁️ وضع العرض فقط - لا يمكنك التعديل على بيانات الطالبات")
+    
+    if st.button("🔙 العودة", use_container_width=True):
+        st.session_state.profile_user_id = None
+        st.rerun()
+    
+    # Edit form for System Admin and Service Manager
+    if role in ["System Admin", "Service Manager"] and st.session_state.get("edit_student_id") == student_id:
+        st.markdown("---")
+        with st.expander("✏️ تعديل بيانات الطالبة", expanded=True):
+            with st.form("edit_student_profile_form"):
+                edit_name = st.text_input("الاسم الكامل*", value=full_name)
+                edit_phone = st.text_input("الهاتف", value=student.get("phone", ""))
+                edit_parent_phone = st.text_input("رقم ولي الأمر", value=student.get("parent_phone", ""))
+                bd_value = pd.to_datetime(birthdate).date() if birthdate else None
+                edit_birthdate = st.date_input("تاريخ الميلاد", value=bd_value)
+                edit_address = st.text_input("العنوان", value=student.get("address", ""))
+                edit_school = st.text_input("المدرسة", value=student.get("school", ""))
+                edit_notes = st.text_area("ملاحظات", value=student.get("notes", ""))
+                
+                sec_options = sections["section_id"].tolist() if not sections.empty else []
+                current_sec = sec_id if sec_id in sec_options else (sec_options[0] if sec_options else "")
+                edit_section = st.selectbox("الفصل", sec_options, 
+                                           index=sec_options.index(current_sec) if current_sec in sec_options else 0,
+                                           format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0]) if sec_options else ""
+                
+                edit_status = st.selectbox("الحالة", ["نشطة", "غير نشطة"], index=0 if status == "active" else 1)
+                
+                if st.form_submit_button("💾 حفظ التعديلات"):
+                    db.update_student(student_id, {
+                        "full_name": edit_name,
+                        "phone": edit_phone,
+                        "section_id": edit_section,
+                        "parent_phone": edit_parent_phone,
+                        "birthdate": edit_birthdate.strftime("%Y-%m-%d") if edit_birthdate else "",
+                        "address": edit_address,
+                        "school": edit_school,
+                        "notes": edit_notes,
+                        "status": "active" if edit_status == "نشطة" else "inactive"
+                    })
+                    db.add_log(user.get("user_id", ""), "تعديل طالبة", f"تم تعديل {edit_name}")
+                    st.session_state.edit_student_id = None
+                    st.success("✅ تم التحديث")
+                    time.sleep(1)
+                    st.rerun()
+
+
+# =============================================================================
+# User Profile Page
+# =============================================================================
+def show_user_profile(db, user_id):
+    users_df = db.get_users()
+    user_row = users_df[users_df.user_id == user_id]
+    if user_row.empty:
+        st.error("لم يتم العثور على المستخدم")
+        if st.button("🔙 العودة"):
+            st.session_state.profile_user_id = None
+            st.rerun()
+        return
+    user = user_row.iloc[0].to_dict()
+    sections = db.get_sections()
+    stages = db.get_stages()
+    logs = db.get_logs()
+    user_logs = logs[logs.user_id == user_id] if not logs.empty and "user_id" in logs.columns else pd.DataFrame()
+    section_name = ""
+    if not sections.empty:
+        sec = sections[sections.section_id == user.get("section_id", "")]
+        section_name = sec.iloc[0]["section_name"] if not sec.empty else ""
+    initials = get_initials(user.get("full_name", ""))
+    role = user.get("role", "")
+    role_label = {"System Admin": "مدير النظام", "Father Account": "أب كاهن", "Service Manager": "أمين الخدمة", "Teacher": "مدرسة"}.get(role, role)
+    status = get_user_status(user)
+    status_label = {"active": "نشط", "inactive": "غير نشط", "suspended": "موقوف", "archived": "مؤرشف"}.get(status, "نشط")
+    st.markdown(f"""
+    <div class="profile-header">
+        <div style="display:flex; align-items:center; gap:2rem;">
+            <div style="width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.2); display:flex;align-items:center;justify-content:center;font-size:2.5rem;font-weight:700;">{initials}</div>
+            <div>
+                <h1 style="margin:0;font-size:1.8rem;">{user.get('full_name', '')}</h1>
+                <p style="margin:0.3rem 0;opacity:0.9;">{role_label}</p>
+                <p style="margin:0;opacity:0.8;font-size:0.85rem;">🆔 {user.get('user_id', '')[:12]}... | 📅 تاريخ التسجيل: {user.get('registration_date', get_cairo_now().strftime('%Y-%m-%d'))[:10]}</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        st.markdown('<div class="profile-stat-card">', unsafe_allow_html=True)
+        st.markdown(f"<h3>{len(user_logs)}</h3>", unsafe_allow_html=True)
+        st.markdown("<p>📋 نشاطات</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col2:
+        st.markdown('<div class="profile-stat-card">', unsafe_allow_html=True)
+        now = get_cairo_now()
+        if user.get("birthdate"):
+            try:
+                age = now.year - pd.to_datetime(user["birthdate"]).year
+                st.markdown(f"<h3>{age}</h3>", unsafe_allow_html=True)
+                st.markdown("<p>🎂 العمر</p>", unsafe_allow_html=True)
+            except:
+                st.markdown("<h3>—</h3>", unsafe_allow_html=True)
+                st.markdown("<p>🎂 العمر</p>", unsafe_allow_html=True)
+        else:
+            st.markdown("<h3>—</h3>", unsafe_allow_html=True)
+            st.markdown("<p>🎂 العمر</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown('<div class="profile-stat-card">', unsafe_allow_html=True)
+        st.markdown(f'<h3><span class="status-badge {status}">{status_label}</span></h3>', unsafe_allow_html=True)
+        st.markdown("<p>📌 الحالة</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with st.expander("📋 المعلومات الشخصية", expanded=True):
+        info_cols = st.columns(2)
+        with info_cols[0]:
+            st.markdown(f"**👤 الاسم الكامل:** {user.get('full_name', '')}")
+            st.markdown(f"**👤 اسم المستخدم:** {user.get('username', '')}")
+            st.markdown(f"**📱 الهاتف:** {user.get('phone', '—')}")
+            st.markdown(f"**📧 البريد:** {user.get('email', '—')}")
+        with info_cols[1]:
+            st.markdown(f"**🎭 الدور:** {role_label}")
+            st.markdown(f"**📚 الفصل:** {section_name or '—'}")
+            st.markdown(f"**📌 الحالة:** {status_label}")
+            st.markdown(f"**🆔 المعرف:** {user.get('user_id', '')}")
+    with st.expander("📜 سجل النشاطات"):
+        if not user_logs.empty:
+            display_logs = user_logs.sort_values("timestamp", ascending=False).head(20)
+            for _, log_row in display_logs.iterrows():
+                ts = log_row.get("timestamp", "")
+                action = log_row.get("action", "")
+                details = log_row.get("details", "")
+                st.markdown(f"- **{str(ts)[:19]}** — {action} {('(' + details + ')') if details else ''}")
+        else:
+            st.info("لا توجد نشاطات مسجلة لهذا المستخدم.")
+    st.markdown("---")
+    act_col1, act_col2, act_col3, act_col4 = st.columns(4)
+    with act_col1:
+        if st.button("✏️ تعديل", use_container_width=True):
+            st.session_state.edit_user_id = user_id
+            st.session_state.profile_user_id = None
+            st.rerun()
+    with act_col2:
+        if status == "active":
+            if st.button("⏸️ تعطيل", use_container_width=True):
+                db.update_user(user_id, {"status": "inactive"})
+                db.add_log(st.session_state.user.get("user_id", ""), f"تعطيل مستخدم {user_id}", f"تم تعطيل {user.get('full_name', '')}")
+                st.rerun()
+        else:
+            if st.button("▶️ تفعيل", use_container_width=True):
+                db.update_user(user_id, {"status": "active"})
+                db.add_log(st.session_state.user.get("user_id", ""), f"تفعيل مستخدم {user_id}", f"تم تفعيل {user.get('full_name', '')}")
+                st.rerun()
+    with act_col3:
+        if st.button("🗑️ حذف", use_container_width=True):
+            if user_id == st.session_state.user.get("user_id"):
+                st.error("لا يمكنك حذف حسابك الحالي!")
+            else:
+                db.delete_user(user_id)
+                db.add_log(st.session_state.user.get("user_id", ""), f"حذف مستخدم {user_id}", f"تم حذف {user.get('full_name', '')}")
+                st.success("✅ تم حذف المستخدم")
+                st.session_state.profile_user_id = None
+                time.sleep(1)
+                st.rerun()
+    with act_col4:
+        if st.button("🔙 العودة للقائمة", use_container_width=True):
+            st.session_state.profile_user_id = None
+            st.rerun()
+
+
+# =============================================================================
+# Audit Log Page - سجل التدقيق
+# =============================================================================
+def show_logs(db):
+    st.markdown("<h2 class='main-header'>📜 سجل التدقيق (Audit Log)</h2>", unsafe_allow_html=True)
+    logs = db.get_audit_log()
+    if not logs.empty:
+        if "timestamp" in logs.columns:
+            logs["timestamp"] = pd.to_datetime(logs["timestamp"])
+        
+        # إضافة عمليات البحث والتصفية
+        st.markdown("#### 🔍 تصفية السجلات")
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            # فلتر حسب المستخدم
+            user_ids = ["الكل"] + sorted(logs["user_id"].dropna().unique().tolist()) if "user_id" in logs.columns else ["الكل"]
+            if user_ids:
+                selected_user = st.selectbox("المستخدم", user_ids, format_func=lambda x: "الكل" if x == "الكل" else str(x)[:30])
+        with col_f2:
+            # فلتر حسب نوع العملية
+            actions = ["الكل"] + sorted(logs["action"].dropna().unique().tolist()) if "action" in logs.columns else ["الكل"]
+            selected_action = st.selectbox("نوع العملية", actions)
+        with col_f3:
+            # فلتر حسب التاريخ
+            date_options = ["الكل", "آخر 24 ساعة", "آخر 7 أيام", "آخر 30 يوم"]
+            selected_date_range = st.selectbox("الفترة الزمنية", date_options)
+        
+        filtered_logs = logs.copy()
+        
+        # تطبيق فلتر المستخدم
+        if selected_user != "الكل" and "user_id" in filtered_logs.columns:
+            filtered_logs = filtered_logs[filtered_logs["user_id"] == selected_user]
+        
+        # تطبيق فلتر العملية
+        if selected_action != "الكل" and "action" in filtered_logs.columns:
+            filtered_logs = filtered_logs[filtered_logs["action"] == selected_action]
+        
+        # تطبيق فلتر التاريخ
+        if selected_date_range != "الكل":
+            now = get_cairo_now()
+            if selected_date_range == "آخر 24 ساعة":
+                cutoff = now - timedelta(hours=24)
+                filtered_logs = filtered_logs[filtered_logs["timestamp"] >= cutoff]
+            elif selected_date_range == "آخر 7 أيام":
+                cutoff = now - timedelta(days=7)
+                filtered_logs = filtered_logs[filtered_logs["timestamp"] >= cutoff]
+            elif selected_date_range == "آخر 30 يوم":
+                cutoff = now - timedelta(days=30)
+                filtered_logs = filtered_logs[filtered_logs["timestamp"] >= cutoff]
+        
+        # أعمدة العرض
+        display_columns = ["timestamp", "username", "user_id", "action", "details", 
+                          "ip_address", "country", "city", "browser", "os", "device_type"]
+        available = [c for c in display_columns if c in filtered_logs.columns]
+        
+        st.markdown(f"**عدد السجلات:** {len(filtered_logs)}")
+        st.dataframe(
+            filtered_logs[available].sort_values("timestamp", ascending=False),
+            use_container_width=True,
+            column_config={
+                "timestamp": "الوقت",
+                "username": "اسم المستخدم",
+                "user_id": "المعرف",
+                "action": "العملية",
+                "details": "التفاصيل",
+                "ip_address": "IP",
+                "country": "الدولة",
+                "city": "المدينة",
+                "browser": "المتصفح",
+                "os": "نظام التشغيل",
+                "device_type": "الجهاز"
+            }
+        )
+        
+        # حذف السجلات
+        if st.session_state.user.get("role") == "System Admin" and "log_id" in filtered_logs.columns:
+            st.markdown("---")
+            st.subheader("🗑️ حذف سجل")
+            del_id = st.selectbox("اختر سجلاً لحذفه", filtered_logs["log_id"], key="del_log_sel")
+            if st.button("حذف السجل"):
+                db.delete_audit_log(del_id)
+                st.success("تم الحذف")
+                time.sleep(1)
+                st.rerun()
+    else:
+        st.info("لا توجد سجلات تدقيق بعد.")
+
+
+# =============================================================================
+# Change Password
+# =============================================================================
+def change_password(db):
+    st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
+    with st.form("change_password_form"):
+        old = st.text_input("كلمة المرور الحالية", type="password").strip()
+        new = st.text_input("كلمة المرور الجديدة", type="password").strip()
+        confirm = st.text_input("تأكيد كلمة المرور الجديدة", type="password").strip()
+        if st.form_submit_button("تغيير كلمة المرور"):
+            if not old or not new or not confirm:
+                st.error("الرجاء ملء جميع الحقول")
+            elif not verify_password(old, st.session_state.user.get("password", "")):
+                st.error("كلمة المرور الحالية غير صحيحة")
+            elif len(new) < 4:
+                st.error("كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل")
+            elif new != confirm:
+                st.error("كلمتا المرور غير متطابقتين")
+            else:
+                hashed = hash_password(new)
+                db.update_user(st.session_state.user["user_id"], {"password": hashed})
+                st.session_state.user["password"] = hashed
+                db.add_log(st.session_state.user["user_id"], "تغيير كلمة المرور", "تم تغيير كلمة المرور بنجاح")
+                st.success("✅ تم تغيير كلمة المرور بنجاح!")
+
+
+# =============================================================================
+# Main App
+# =============================================================================
+def main():
+    inject_css()
+    init_session()
+    init_data_cache()
+    if 'db_instance' not in st.session_state:
+        try:
+            creds = get_credentials()
+            st.session_state.db_instance = Database(creds, get_spreadsheet_id())
+        except Exception as e:
+            st.error(f"❌ خطأ في الاتصال: {e}")
+            st.stop()
+    db = st.session_state.db_instance
+    jwt_secret = get_jwt_secret()
+    if st.session_state.get("authenticated"):
+        try:
+            migrated = db.migrate_single_supervisors()
+            if migrated and migrated > 0:
+                st.caption(f"تم نقل {migrated} تعيين من مسؤول المرحلة القديم إلى نظام المشرفين المتعددين.")
+        except Exception:
+            pass
+    st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
+    if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
+        st.session_state.open_help_dialog = True
+        st.rerun()
+    if st.session_state.student_quiz_started:
+        show_student_quiz(db)
+    else:
+        if not st.session_state.authenticated:
+            show_login_page(db, jwt_secret)
+        else:
+            token_data = verify_token(st.session_state.token, jwt_secret)
+            if not token_data:
+                st.error("⏰ انتهت صلاحية الجلسة.")
+                st.session_state.clear()
+                time.sleep(2)
+                st.rerun()
+                return
+            if not st.session_state.get("data_validated"):
+                errors = validate_data_integrity(db)
+                st.session_state.data_errors = errors
+                st.session_state.data_validated = True
+            if not st.session_state.show_sidebar:
+                st.markdown("""<style>section[data-testid="stSidebar"] { transform: translateX(100%) !important; }</style>""", unsafe_allow_html=True)
+                st.markdown('<div class="floating-show-btn"></div>', unsafe_allow_html=True)
+                if st.button("القائمه", key="show_sidebar_btn"):
+                    st.session_state.show_sidebar = True
+                    st.rerun()
+            else:
+                st.markdown("""<style>section[data-testid="stSidebar"] { transform: translateX(0) !important; }</style>""", unsafe_allow_html=True)
+                choice = show_sidebar_navigation(db)
+            if not st.session_state.show_sidebar:
+                choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+                role = st.session_state.user.get("role", "")
+                menu_items = get_role_menu(role)
+                if choice not in menu_items:
+                    choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
+                    st.session_state.menu_choice = choice
+            st.markdown("<div class='content-area'>", unsafe_allow_html=True)
+            if st.session_state.get("profile_user_id"):
+                profile_id = st.session_state.profile_user_id
+                # Check if this ID exists in Students sheet first
+                students_df = db.get_students()
+                if not students_df.empty and "student_id" in students_df.columns:
+                    student_match = students_df[students_df["student_id"] == profile_id]
+                    if not student_match.empty:
+                        show_student_profile(db, profile_id)
+                    else:
+                        show_user_profile(db, profile_id)
+                else:
+                    show_user_profile(db, profile_id)
+            elif choice == "🏠 لوحة التحكم":
+                show_dashboard(db)
+            elif choice == "🏫 إدارة المراحل الدراسية":
+                if st.session_state.user.get("role") in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
+                    show_stages_page(db)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice == "📚 إدارة الفصول":
+                if st.session_state.user.get("role") in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
+                    show_sections_page(db)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice == "👥 إدارة الأعضاء":
+                if st.session_state.user.get("role") in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
+                    show_members_cards_page(db)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice == "📋 الحضور":
+                show_attendance(db)
+            elif choice == "💬 الافتقاد":
+                show_followup(db)
+            elif choice == "📝 المسابقات والاختبارات":
+                show_quizzes(db)
+            elif choice == "📊 التقارير والإحصائيات":
+                show_reports_page(db)
+            elif choice == "📅 إدارة الفعاليات":
+                show_events_page(db)
+            elif choice == "📜 سجل العمليات":
+                if st.session_state.user.get("role") == "System Admin":
+                    show_logs(db)
+                else:
+                    st.error("🚫 غير مصرح")
+            elif choice == "🔒 تغيير كلمة المرور":
+                change_password(db)
+            st.markdown("</div>", unsafe_allow_html=True)
+    if st.session_state.get("open_help_dialog"):
+        show_help_dialog()
+        st.session_state.open_help_dialog = False
+
+
+if __name__ == "__main__":
+    main()
