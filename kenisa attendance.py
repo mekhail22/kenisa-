@@ -205,6 +205,7 @@ def inject_css():
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
         @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
         
         /* ===== Background Image with Overlay ===== */
@@ -230,12 +231,46 @@ def inject_css():
         }
         
         /* ===== Glassmorphism Base ===== */
-        * { font-family: 'Cairo', sans-serif !important; box-sizing: border-box !important; }
+        * { box-sizing: border-box !important; }
+        /* Apply Cairo font to all elements EXCEPT Material icon elements */
+        *:not(.material-symbols-rounded):not(.material-icons):not([class*="material-symbols"]):not([class*="material-icons"]) {
+            font-family: 'Cairo', sans-serif !important;
+        }
+        /* Ensure Material Symbols render correctly */
+        .material-symbols-rounded, .material-icons, [class*="material-symbols"], [class*="material-icons"] {
+            font-family: 'Material Symbols Rounded' !important;
+            font-weight: normal !important;
+            font-style: normal !important;
+            font-size: 24px !important;
+            line-height: 1 !important;
+            letter-spacing: normal !important;
+            text-transform: none !important;
+            display: inline-block !important;
+            white-space: nowrap !important;
+            word-wrap: normal !important;
+            direction: ltr !important;
+            -webkit-font-smoothing: antialiased !important;
+            -moz-osx-font-smoothing: grayscale !important;
+            text-rendering: optimizeLegibility !important;
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
+        }
         
         /* ===== Hide Streamlit Elements ===== */
         header[data-testid="stHeader"] { display: none !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
+        
+        /* ===== Hide Streamlit InputInstructions (Press Enter tooltip) ===== */
+        [data-testid="InputInstructions"] {
+            display: none !important;
+        }
+        
+        /* ===== Fix base-input icon rendering (ensure Material icons not showing as text) ===== */
+        .stTextInput .st-bp, [data-testid="stTextInput"] .st-bp,
+        .stTextInput [data-testid="stTextInputIcon"],
+        [data-testid="stTextInput"] [data-testid="stTextInputIcon"] {
+            font-family: 'Material Symbols Rounded' !important;
+        }
         
         /* ===== Animations ===== */
         @keyframes fadeInUp {
@@ -800,12 +835,59 @@ def inject_css():
         /* ===== Content Area ===== */
         .content-area { padding: 0 0.5rem !important; }
         
-        /* ===== Loading Spinner ===== */
-        .stSpinner > div {
-            border-top-color: #667eea !important;
-            animation: spin 1s linear infinite !important;
+        /* ===== Premium Loading Animation ===== */
+        .stSpinner {
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            min-height: 100px !important;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .stSpinner > div {
+            border: none !important;
+            width: 48px !important;
+            height: 48px !important;
+            background: transparent !important;
+            position: relative !important;
+            animation: none !important;
+        }
+        .stSpinner > div::after {
+            content: '' !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            border: 4px solid rgba(102,126,234,0.15) !important;
+            border-top-color: #667eea !important;
+            border-radius: 50% !important;
+            animation: premiumSpin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite !important;
+            box-shadow: 0 0 15px rgba(102,126,234,0.2) !important;
+        }
+        .stSpinner > div::before {
+            content: '' !important;
+            position: absolute !important;
+            top: 4px !important;
+            left: 4px !important;
+            width: calc(100% - 8px) !important;
+            height: calc(100% - 8px) !important;
+            border: 3px solid transparent !important;
+            border-bottom-color: #764ba2 !important;
+            border-radius: 50% !important;
+            animation: premiumSpin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite reverse !important;
+        }
+        @keyframes premiumSpin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Loading text styling */
+        .stSpinner + div, .stSpinner ~ div {
+            text-align: center !important;
+            color: #667eea !important;
+            font-weight: 600 !important;
+            font-size: 1rem !important;
+            margin-top: 0.5rem !important;
+            animation: pulse 1.5s ease-in-out infinite !important;
+        }
         
         /* ===== Dark Mode Override ===== */
         @media (prefers-color-scheme: dark) {
