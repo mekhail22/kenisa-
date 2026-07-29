@@ -28,6 +28,14 @@ import plotly.graph_objects as go
 import plotly.io as pio
 import re
 
+# Auto-load background image as base64 from image1.jpg
+_BG_IMG_PATH = os.path.join(os.path.dirname(__file__), "image1.jpg")
+if os.path.exists(_BG_IMG_PATH):
+    with open(_BG_IMG_PATH, "rb") as _f:
+        BG_IMAGE_BASE64 = base64.b64encode(_f.read()).decode("utf-8")
+else:
+    BG_IMAGE_BASE64 = ""
+
 # =============================================================================
 # الإعدادات العامة والثوابت
 # =============================================================================
@@ -192,6 +200,8 @@ def get_stage_color(stage_name):
 # CSS
 # =============================================================================
 def inject_css():
+    bg_data_url = f"data:image/jpeg;base64,{BG_IMAGE_BASE64}"
+    st.markdown(f"""<style id="bg-img-style">body{{background-image:url('{bg_data_url}')!important;}}</style>""", unsafe_allow_html=True)
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
@@ -205,7 +215,6 @@ def inject_css():
         }
         body {
             direction: rtl; text-align: right; color: #1a1a2e; overflow-x: hidden;
-            background-image: url('image1.jpg') !important;
             background-size: cover !important;
             background-position: center !important;
             background-attachment: fixed !important;
@@ -581,6 +590,17 @@ def inject_css():
             }
         }
         
+        /* ===== Hide unintended pre/code blocks from Markdown ===== */
+        div.stAlert pre, div.stAlert code {
+            display: none !important;
+        }
+        
+        /* ===== Custom Scrollbar ===== */
+        ::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
+        ::-webkit-scrollbar-track { background: rgba(102,126,234,0.05) !important; border-radius: 10px !important; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #667eea, #764ba2) !important; border-radius: 10px !important; }
+        ::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #764ba2, #667eea) !important; }
+        
         /* ===== Gradient Buttons ===== */
         .stButton > button {
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
@@ -595,27 +615,33 @@ def inject_css():
             animation: ripple 0.6s ease-out !important;
         }
         
-        /* Primary Button */
-        button[kind="primaryFormSubmit"], .stButton > button[data-testid="baseButton-primary"] {
+        /* ===== Enhanced Primary Button ===== */
+        button[kind="primaryFormSubmit"], .stButton > button[data-testid="baseButton-primary"],
+        button[kind="primary"] {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important; font-weight: 700 !important;
             box-shadow: 0 5px 15px rgba(102,126,234,0.4) !important;
+            border: none !important;
         }
-        button[kind="primaryFormSubmit"]:hover, .stButton > button[data-testid="baseButton-primary"]:hover {
+        button[kind="primaryFormSubmit"]:hover, .stButton > button[data-testid="baseButton-primary"]:hover,
+        button[kind="primary"]:hover {
             box-shadow: 0 0 25px rgba(102,126,234,0.6) !important;
+            transform: translateY(-3px) !important;
         }
         
-        /* Danger Button */
-        button[kind="secondary"]:has-text("حذف"), .stButton > button:has-text("حذف") {
+        /* ===== Enhanced Danger Button */        
+        div.stButton > button:has(span:text("حذف")),
+        div[data-testid="stButton"] > button:has-text("حذف") {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
             color: white !important;
             box-shadow: 0 5px 15px rgba(245,87,108,0.4) !important;
         }
-        button[kind="secondary"]:has-text("حذف"):hover, .stButton > button:has-text("حذف"):hover {
+        div.stButton > button:has(span:text("حذف")):hover,
+        div[data-testid="stButton"] > button:has-text("حذف"):hover {
             box-shadow: 0 0 25px rgba(245,87,108,0.6) !important;
         }
         
-        /* Download Button */
+        /* ===== Enhanced Download Button ===== */
         div.stDownloadButton > button {
             background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%) !important;
             color: white !important; font-weight: 700 !important;
@@ -623,6 +649,26 @@ def inject_css():
         }
         div.stDownloadButton > button:hover {
             box-shadow: 0 0 25px rgba(67,233,123,0.6) !important;
+        }
+        
+        /* ===== Success Button (Green) ===== */
+        .stButton > button:has-text("تسجيل") {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+            color: white !important;
+            box-shadow: 0 5px 15px rgba(40,167,69,0.4) !important;
+        }
+        .stButton > button:has-text("تسجيل"):hover {
+            box-shadow: 0 0 25px rgba(40,167,69,0.6) !important;
+        }
+        
+        /* ===== Warning Button (Orange) ===== */
+        .stButton > button:has-text("إصلاح") {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
+            color: white !important;
+            box-shadow: 0 5px 15px rgba(243,156,18,0.4) !important;
+        }
+        .stButton > button:has-text("إصلاح"):hover {
+            box-shadow: 0 0 25px rgba(243,156,18,0.6) !important;
         }
         
         /* ===== Metrics ===== */
@@ -2099,8 +2145,7 @@ def show_initialization(db):
             }
             admin_data["password"] = hash_password(admin_data["password"])
             db.add_user(admin_data)
-            st.success("✅ تم إنشاء مدير النظام بنجاح!")
-            st.info("**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`")
+            st.success("✅ تم إنشاء مدير النظام بنجاح! الرجاء تسجيل الدخول باستخدام الحساب الافتراضي.")
             time.sleep(2)
             st.rerun()
         st.stop()
@@ -2113,7 +2158,7 @@ def show_login_page(db, jwt_secret):
     with tab1:
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم").strip()
-            password = st.text_input("كلمة المرور", type="password").strip()
+            password = st.text_input("كلمة المرور", type="password", placeholder="").strip()
             if st.form_submit_button("تسجيل الدخول", use_container_width=True):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
@@ -2148,7 +2193,7 @@ def show_login_page(db, jwt_secret):
         st.subheader("دخول الاختبار الإلكتروني")
         with st.form("student_login_form"):
             code = st.text_input("كود الاختبار", placeholder="مثال: GEN123").strip()
-            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="مثال: QUIZ99").strip()
+            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="").strip()
             if st.form_submit_button("بدء الاختبار", use_container_width=True):
                 if not code or not passwd:
                     st.error("الرجاء إدخال الكود وكلمة المرور")
@@ -2389,11 +2434,11 @@ def show_student_quiz(db):
             st.markdown("#### ⏱️ معلومات الوقت")
             col_t1, col_t2 = st.columns(2)
             with col_t1:
-                st.write("**بداية الامتحان:**")
-                st.write(format_cairo_time(st.session_state.quiz_start_time))
+                st.markdown("**بداية الامتحان:**")
+                st.markdown(format_cairo_time(st.session_state.quiz_start_time))
             with col_t2:
-                st.write("**نهاية الامتحان (التسليم):**")
-                st.write(format_cairo_time(st.session_state.quiz_submit_time))
+                st.markdown("**نهاية الامتحان (التسليم):**")
+                st.markdown(format_cairo_time(st.session_state.quiz_submit_time))
             col_btn, _ = st.columns([2, 3])
             if col_btn.button("عرض الإجابات والأخطاء", use_container_width=True, key="show_review_btn"):
                 st.session_state.show_review = True
@@ -2420,8 +2465,8 @@ def show_student_quiz(db):
                     is_correct = (correct == student_ans)
                     st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
                     col1, col2 = st.columns(2)
-                    col1.write(f"📝 إجابتك: {student_ans if student_ans else 'لم تجب'}")
-                    col2.write(f"✅ الإجابة الصحيحة: {correct}")
+                    col1.markdown(f"📝 إجابتك: {student_ans if student_ans else 'لم تجب'}")
+                    col2.markdown(f"✅ الإجابة الصحيحة: {correct}")
                     if is_correct:
                         st.success("✔️ صحيح")
                     else:
@@ -3324,7 +3369,7 @@ def show_attendance(db):
     if role == "Teacher" and section_id:
         selected_section = section_id
         section_name = sections[sections.section_id == section_id]["section_name"].values[0] if not sections.empty else section_id
-        st.write(f"**الفصل:** {section_name}")
+        st.markdown(f"**الفصل:** {section_name}")
     else:
         selected_section = st.selectbox("اختر الفصل", sections["section_id"],
                                         format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0])
@@ -3349,7 +3394,7 @@ def show_attendance(db):
         prev_status = prev.iloc[0]["status"] if not prev.empty else "حاضر"
         prev_notes = prev.iloc[0]["notes"] if not prev.empty else ""
         cols = st.columns([3, 2, 2])
-        cols[0].write(f"**{sname}**")
+        cols[0].markdown(f"**{sname}**")
         status_list = ["حاضر", "غائب", "متأخر"]
         status_index = status_list.index(prev_status) if prev_status in status_list else 0
         status = cols[1].radio("الحالة", status_list, index=status_index, key=f"att_{sid}", horizontal=True)
@@ -3705,10 +3750,10 @@ def show_quizzes(db):
                 expiry = q.get("expiry_date", "")
                 created_by = q.get("created_by", "")
                 col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
-                col1.write(f"**{title}**")
-                col2.write(f"الكود: {code}")
-                col3.write("حالة: " + ("🟢 نشط" if active else "🔴 مغلق"))
-                col4.write(f"ينتهي: {expiry}")
+                col1.markdown(f"**{title}**")
+                col2.markdown(f"الكود: {code}")
+                col3.markdown("حالة: " + ("🟢 نشط" if active else "🔴 مغلق"))
+                col4.markdown(f"ينتهي: {expiry}")
                 
                 # Check if teacher can modify this quiz
                 can_manage_quiz = True
@@ -4862,7 +4907,7 @@ def show_student_profile(db, student_id):
     
     if student.get("notes"):
         with st.expander("📝 ملاحظات"):
-            st.write(student.get("notes", ""))
+            st.markdown(student.get("notes", ""))
     
     st.markdown("---")
     
@@ -5160,9 +5205,9 @@ def show_logs(db):
 def change_password(db):
     st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
     with st.form("change_password_form"):
-        old = st.text_input("كلمة المرور الحالية", type="password").strip()
-        new = st.text_input("كلمة المرور الجديدة", type="password").strip()
-        confirm = st.text_input("تأكيد كلمة المرور الجديدة", type="password").strip()
+        old = st.text_input("كلمة المرور الحالية", type="password", placeholder="").strip()
+        new = st.text_input("كلمة المرور الجديدة", type="password", placeholder="").strip()
+        confirm = st.text_input("تأكيد كلمة المرور الجديدة", type="password", placeholder="").strip()
         if st.form_submit_button("تغيير كلمة المرور"):
             if not old or not new or not confirm:
                 st.error("الرجاء ملء جميع الحقول")
