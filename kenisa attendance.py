@@ -205,7 +205,6 @@ def inject_css():
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
         @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
         
         /* ===== Background Image with Overlay ===== */
@@ -232,27 +231,9 @@ def inject_css():
         
         /* ===== Glassmorphism Base ===== */
         * { box-sizing: border-box !important; }
-        /* Apply Cairo font to all elements EXCEPT Material icon elements */
-        *:not(.material-symbols-rounded):not(.material-icons):not([class*="material-symbols"]):not([class*="material-icons"]) {
+        /* Apply Cairo font to all elements */
+        html, body, div, span, button, input, textarea, select, label, p, h1, h2, h3, h4, h5, h6, table, th, td, a, li, ul, ol, section, header, footer, nav, article, aside, main, form {
             font-family: 'Cairo', sans-serif !important;
-        }
-        /* Ensure Material Symbols render correctly */
-        .material-symbols-rounded, .material-icons, [class*="material-symbols"], [class*="material-icons"] {
-            font-family: 'Material Symbols Rounded' !important;
-            font-weight: normal !important;
-            font-style: normal !important;
-            font-size: 24px !important;
-            line-height: 1 !important;
-            letter-spacing: normal !important;
-            text-transform: none !important;
-            display: inline-block !important;
-            white-space: nowrap !important;
-            word-wrap: normal !important;
-            direction: ltr !important;
-            -webkit-font-smoothing: antialiased !important;
-            -moz-osx-font-smoothing: grayscale !important;
-            text-rendering: optimizeLegibility !important;
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
         }
         
         /* ===== Hide Streamlit Elements ===== */
@@ -665,14 +646,12 @@ def inject_css():
         }
         
         /* ===== Enhanced Danger Button */        
-        div.stButton > button:has(span:text("حذف")),
-        div[data-testid="stButton"] > button:has-text("حذف") {
+        div.stButton > button[kind="secondary"]:has(span) {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
             color: white !important;
             box-shadow: 0 5px 15px rgba(245,87,108,0.4) !important;
         }
-        div.stButton > button:has(span:text("حذف")):hover,
-        div[data-testid="stButton"] > button:has-text("حذف"):hover {
+        div.stButton > button[kind="secondary"]:has(span):hover {
             box-shadow: 0 0 25px rgba(245,87,108,0.6) !important;
         }
         
@@ -684,26 +663,6 @@ def inject_css():
         }
         div.stDownloadButton > button:hover {
             box-shadow: 0 0 25px rgba(67,233,123,0.6) !important;
-        }
-        
-        /* ===== Success Button (Green) ===== */
-        .stButton > button:has-text("تسجيل") {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
-            color: white !important;
-            box-shadow: 0 5px 15px rgba(40,167,69,0.4) !important;
-        }
-        .stButton > button:has-text("تسجيل"):hover {
-            box-shadow: 0 0 25px rgba(40,167,69,0.6) !important;
-        }
-        
-        /* ===== Warning Button (Orange) ===== */
-        .stButton > button:has-text("إصلاح") {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
-            color: white !important;
-            box-shadow: 0 5px 15px rgba(243,156,18,0.4) !important;
-        }
-        .stButton > button:has-text("إصلاح"):hover {
-            box-shadow: 0 0 25px rgba(243,156,18,0.6) !important;
         }
         
         /* ===== Metrics ===== */
