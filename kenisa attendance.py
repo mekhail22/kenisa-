@@ -202,7 +202,7 @@ def get_stage_color(stage_name):
 def inject_css():
     bg_data_url = f"data:image/jpeg;base64,{BG_IMAGE_BASE64}"
     st.markdown(f"""<style id="bg-img-style">
-        body, .stApp, [data-testid="stAppViewContainer"], .st-emotion-cache-1y4p8pa {{
+        html, body, .stApp, [data-testid="stAppViewContainer"], .st-emotion-cache-1y4p8pa {{
             background-image: url('{bg_data_url}') !important;
             background-size: cover !important;
             background-position: center !important;
@@ -213,12 +213,13 @@ def inject_css():
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
         @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
         
-        /* ===== Background Image with Overlay ===== */
+        /* ===== Background Image ===== */
         html, body {
             color-scheme: light !important;
-            background-color: #ffffff !important;
             color: #1a1a2e !important;
         }
         body {
@@ -227,11 +228,6 @@ def inject_css():
             background-position: center !important;
             background-attachment: fixed !important;
             background-repeat: no-repeat !important;
-        }
-        .stApp::before {
-            content: ''; position: fixed; inset: 0;
-            background: rgba(255,255,255,0.88) !important;
-            z-index: -1; pointer-events: none;
         }
         .stApp {
             background: transparent !important;
@@ -242,14 +238,27 @@ def inject_css():
         .st-emotion-cache-1y4p8pa {
             background: transparent !important;
         }
-        /* Extra background container as fallback */
-        .app-bg-fallback {
-            content: '' !important;
-            position: fixed !important;
-            inset: 0 !important;
-            background: rgba(255,255,255,0.88) !important;
-            z-index: -1 !important;
-            pointer-events: none !important;
+        
+        /* ===== Material Icons Fix ===== */
+        .material-icons, .material-symbols-outlined {
+            font-family: 'Material Icons', 'Material Symbols Outlined' !important;
+            font-weight: normal !important;
+            font-style: normal !important;
+            font-size: 24px !important;
+            line-height: 1 !important;
+            letter-spacing: normal !important;
+            text-transform: none !important;
+            display: inline-block !important;
+            white-space: nowrap !important;
+            word-wrap: normal !important;
+            direction: ltr !important;
+            -webkit-font-feature-settings: 'liga' !important;
+            -webkit-font-smoothing: antialiased !important;
+        }
+        /* Ensure Material Icons ligatures render correctly */
+        .material-icons, .material-symbols-outlined {
+            font-variant-ligatures: normal !important;
+            font-feature-settings: "liga" 1 !important;
         }
         
         /* ===== Glassmorphism Base ===== */
@@ -257,6 +266,10 @@ def inject_css():
         /* Apply Cairo font to all elements */
         html, body, div, span, button, input, textarea, select, label, p, h1, h2, h3, h4, h5, h6, table, th, td, a, li, ul, ol, section, header, footer, nav, article, aside, main, form {
             font-family: 'Cairo', sans-serif !important;
+        }
+        /* Keep Material Icons font for icon elements */
+        .material-icons, .material-symbols-outlined, [class*="material-icons"] {
+            font-family: 'Material Icons' !important;
         }
         
         /* ===== Hide Streamlit Elements ===== */
@@ -912,11 +925,9 @@ def inject_css():
         @media (prefers-color-scheme: dark) {
             html, body {
                 color-scheme: light !important;
-                background-color: #ffffff !important; color: #1a1a2e !important;
+                color: #1a1a2e !important;
             }
-            .stApp::before { background: rgba(255,255,255,0.92) !important; }
             .stApp, [data-testid="stAppViewContainer"], .st-emotion-cache-1y4p8pa { background: transparent !important; }
-            .app-bg-fallback { background: rgba(255,255,255,0.92) !important; }
             section[data-testid="stSidebar"] {
                 background: rgba(255,255,255,0.9) !important;
                 border-left-color: rgba(255,255,255,0.3) !important;
@@ -2623,15 +2634,7 @@ def show_sidebar_navigation(db):
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
             icon = menu_icons.get(item, "fas fa-circle")
-            # Create button with icon using HTML
-            button_html = f"""
-            <button class="nav-btn-with-icon" onclick="this.click()">
-                <i class="{icon}" style="margin-left: 8px; width: 20px;"></i>
-                <span>{item}</span>
-            </button>
-            """
-            # Use Streamlit button but with icon in label
-            icon_label = f"{icon.split('fa-')[-1].replace(' fa-', '')}"
+            # Streamlit button with emoji icon already in menu item label
             if st.button(f"{item}", key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
@@ -5332,8 +5335,6 @@ def change_password(db):
 # =============================================================================
 def main():
     inject_css()
-    # إضافة طبقة خلفية إضافية لضمان ظهور الخلفية فوق التطبيق
-    st.markdown('<div class="app-bg-fallback"></div>', unsafe_allow_html=True)
     init_session()
     init_data_cache()
     if 'db_instance' not in st.session_state:
