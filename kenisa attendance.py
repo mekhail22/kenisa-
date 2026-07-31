@@ -201,7 +201,15 @@ def get_stage_color(stage_name):
 # =============================================================================
 def inject_css():
     bg_data_url = f"data:image/jpeg;base64,{BG_IMAGE_BASE64}"
-    st.markdown(f"""<style id="bg-img-style">body{{background-image:url('{bg_data_url}')!important;}}</style>""", unsafe_allow_html=True)
+    st.markdown(f"""<style id="bg-img-style">
+        body, .stApp, [data-testid="stAppViewContainer"], .st-emotion-cache-1y4p8pa {{
+            background-image: url('{bg_data_url}') !important;
+            background-size: cover !important;
+            background-position: center !important;
+            background-attachment: fixed !important;
+            background-repeat: no-repeat !important;
+        }}
+    </style>""", unsafe_allow_html=True)
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
@@ -220,13 +228,28 @@ def inject_css():
             background-attachment: fixed !important;
             background-repeat: no-repeat !important;
         }
-        body::before {
-            content: ''; position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+        .stApp::before {
+            content: ''; position: fixed; inset: 0;
             background: rgba(255,255,255,0.88) !important;
             z-index: -1; pointer-events: none;
         }
         .stApp {
             background: transparent !important;
+        }
+        [data-testid="stAppViewContainer"] {
+            background: transparent !important;
+        }
+        .st-emotion-cache-1y4p8pa {
+            background: transparent !important;
+        }
+        /* Extra background container as fallback */
+        .app-bg-fallback {
+            content: '' !important;
+            position: fixed !important;
+            inset: 0 !important;
+            background: rgba(255,255,255,0.88) !important;
+            z-index: -1 !important;
+            pointer-events: none !important;
         }
         
         /* ===== Glassmorphism Base ===== */
@@ -242,15 +265,40 @@ def inject_css():
         footer { visibility: hidden; }
         
         /* ===== Hide Streamlit InputInstructions (Press Enter tooltip) ===== */
-        [data-testid="InputInstructions"] {
+        [data-testid="InputInstructions"],
+        div[class*="InputInstructions"],
+        div[class*="input-instructions"],
+        .st-emotion-cache-q8sbsg,
+        .st-emotion-cache-q9dj5s,
+        div[kind="chatMessage"] {
             display: none !important;
+            visibility: hidden !important;
+            height: 0px !important;
+            overflow: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
-        
-        /* ===== Fix base-input icon rendering (ensure Material icons not showing as text) ===== */
-        .stTextInput .st-bp, [data-testid="stTextInput"] .st-bp,
-        .stTextInput [data-testid="stTextInputIcon"],
-        [data-testid="stTextInput"] [data-testid="stTextInputIcon"] {
-            font-family: 'Material Symbols Rounded' !important;
+        /* Keep instructions hidden everywhere: sidebar, dialogs, forms, expanders */
+        section[data-testid="stSidebar"] [data-testid="InputInstructions"],
+        section[data-testid="stSidebar"] div[class*="InputInstructions"],
+        div[role="dialog"] [data-testid="InputInstructions"],
+        div[role="dialog"] div[class*="InputInstructions"],
+        form [data-testid="InputInstructions"],
+        form div[class*="InputInstructions"],
+        [data-testid="stExpander"] [data-testid="InputInstructions"],
+        [data-testid="stExpander"] div[class*="InputInstructions"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0px !important;
+            overflow: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+        /* Hide the wrapper container that may hold instruction texts */
+        div[data-testid="stTextInput"] p,
+        div[data-testid="stTextArea"] p,
+        div[data-testid="stChatInput"] p {
+            display: none !important;
         }
         
         /* ===== Animations ===== */
@@ -606,10 +654,22 @@ def inject_css():
             }
         }
         
-        /* ===== Hide unintended pre/code blocks from Markdown ===== */
-        div.stAlert pre, div.stAlert code {
+        /* ===== Hide unintended pre/code blocks from Alerts ===== */
+        div.stAlert pre, div.stAlert code,
+        [data-testid="stAlert"] pre, [data-testid="stAlert"] code {
             display: none !important;
+            visibility: hidden !important;
+            height: 0px !important;
+            overflow: hidden !important;
         }
+        /* Hide extra markdown/code text inside Alerts but keep the main useful text */
+        div.stAlert div.stMarkdown pre,
+        div.stAlert div.stMarkdown code {
+            display: none !important;
+            visibility: hidden !important;
+        }
+        /* Hide empty or code-only alert content - keep visible the main message */
+        div.stAlert pre + * { display: inline !important; }
         
         /* ===== Custom Scrollbar ===== */
         ::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
@@ -854,8 +914,9 @@ def inject_css():
                 color-scheme: light !important;
                 background-color: #ffffff !important; color: #1a1a2e !important;
             }
-            body::before { background: rgba(255,255,255,0.92) !important; }
-            .stApp { background: transparent !important; }
+            .stApp::before { background: rgba(255,255,255,0.92) !important; }
+            .stApp, [data-testid="stAppViewContainer"], .st-emotion-cache-1y4p8pa { background: transparent !important; }
+            .app-bg-fallback { background: rgba(255,255,255,0.92) !important; }
             section[data-testid="stSidebar"] {
                 background: rgba(255,255,255,0.9) !important;
                 border-left-color: rgba(255,255,255,0.3) !important;
@@ -5271,6 +5332,8 @@ def change_password(db):
 # =============================================================================
 def main():
     inject_css()
+    # إضافة طبقة خلفية إضافية لضمان ظهور الخلفية فوق التطبيق
+    st.markdown('<div class="app-bg-fallback"></div>', unsafe_allow_html=True)
     init_session()
     init_data_cache()
     if 'db_instance' not in st.session_state:
