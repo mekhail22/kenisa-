@@ -201,13 +201,49 @@ def get_stage_color(stage_name):
 # =============================================================================
 def inject_css():
     bg_data_url = f"data:image/jpeg;base64,{BG_IMAGE_BASE64}"
+    # ===== Background & Overlay - SINGLE consolidated definition (no duplicates, no overflow) =====
     st.markdown(f"""<style id="bg-img-style">
-        html, body, .stApp, [data-testid="stAppViewContainer"], .st-emotion-cache-1y4p8pa {{
+        html, body {{
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            overflow-x: hidden !important;
+        }}
+        [data-testid="stAppViewContainer"] {{
             background-image: url('{bg_data_url}') !important;
-            background-size: cover !important;
-            background-position: center !important;
-            background-attachment: fixed !important;
+            background-position: center center !important;
             background-repeat: no-repeat !important;
+            background-size: cover !important;
+            background-attachment: fixed !important;
+            width: 100% !important;
+            height: 100% !important;
+            overflow-x: hidden !important;
+            position: relative !important;
+        }}
+        .stApp {{
+            background: transparent !important;
+        }}
+        /* ===== Professional Dark Overlay - covers full screen, doesn't block clicks ===== */
+        [data-testid="stAppViewContainer"]::before {{
+            content: '' !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background: rgba(0, 0, 0, 0.45) !important;
+            z-index: 0 !important;
+            pointer-events: none !important;
+        }}
+        /* Content sits above the overlay */
+        .block-container {{
+            position: relative !important;
+            z-index: 1 !important;
+        }}
+        section.main {{
+            position: relative !important;
+            z-index: 1 !important;
         }}
     </style>""", unsafe_allow_html=True)
     st.markdown("""
@@ -215,33 +251,20 @@ def inject_css():
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
         @import url('https://fonts.googleapis.com/icon?family=Material+Icons');
         @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Sharp:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
         @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
-        
-        /* ===== Background Image ===== */
+
+        /* ===== Color Scheme & Direction ===== */
         html, body {
             color-scheme: light !important;
             color: #1a1a2e !important;
+            direction: rtl; text-align: right;
         }
-        body {
-            direction: rtl; text-align: right; color: #1a1a2e; overflow-x: hidden;
-            background-size: cover !important;
-            background-position: center !important;
-            background-attachment: fixed !important;
-            background-repeat: no-repeat !important;
-        }
-        .stApp {
-            background: transparent !important;
-        }
-        [data-testid="stAppViewContainer"] {
-            background: transparent !important;
-        }
-        .st-emotion-cache-1y4p8pa {
-            background: transparent !important;
-        }
-        
-        /* ===== Material Icons Fix ===== */
-        .material-icons, .material-symbols-outlined {
-            font-family: 'Material Icons', 'Material Symbols Outlined' !important;
+
+        /* ===== Material Icons & Symbols - Correct Font Families ===== */
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined' !important;
             font-weight: normal !important;
             font-style: normal !important;
             font-size: 24px !important;
@@ -252,24 +275,81 @@ def inject_css():
             white-space: nowrap !important;
             word-wrap: normal !important;
             direction: ltr !important;
+            font-feature-settings: 'liga' 1 !important;
+            font-variant-ligatures: normal !important;
             -webkit-font-feature-settings: 'liga' !important;
             -webkit-font-smoothing: antialiased !important;
         }
-        /* Ensure Material Icons ligatures render correctly */
-        .material-icons, .material-symbols-outlined {
+        .material-symbols-rounded {
+            font-family: 'Material Symbols Rounded' !important;
+            font-weight: normal !important;
+            font-style: normal !important;
+            font-size: 24px !important;
+            line-height: 1 !important;
+            letter-spacing: normal !important;
+            text-transform: none !important;
+            display: inline-block !important;
+            white-space: nowrap !important;
+            word-wrap: normal !important;
+            direction: ltr !important;
+            font-feature-settings: 'liga' 1 !important;
             font-variant-ligatures: normal !important;
-            font-feature-settings: "liga" 1 !important;
+            -webkit-font-feature-settings: 'liga' !important;
+            -webkit-font-smoothing: antialiased !important;
         }
-        
+        .material-symbols-sharp {
+            font-family: 'Material Symbols Sharp' !important;
+            font-weight: normal !important;
+            font-style: normal !important;
+            font-size: 24px !important;
+            line-height: 1 !important;
+            letter-spacing: normal !important;
+            text-transform: none !important;
+            display: inline-block !important;
+            white-space: nowrap !important;
+            word-wrap: normal !important;
+            direction: ltr !important;
+            font-feature-settings: 'liga' 1 !important;
+            font-variant-ligatures: normal !important;
+            -webkit-font-feature-settings: 'liga' !important;
+            -webkit-font-smoothing: antialiased !important;
+        }
+        .material-icons {
+            font-family: 'Material Icons' !important;
+            font-weight: normal !important;
+            font-style: normal !important;
+            font-size: 24px !important;
+            line-height: 1 !important;
+            letter-spacing: normal !important;
+            text-transform: none !important;
+            display: inline-block !important;
+            white-space: nowrap !important;
+            word-wrap: normal !important;
+            direction: ltr !important;
+            font-feature-settings: 'liga' 1 !important;
+            font-variant-ligatures: normal !important;
+            -webkit-font-feature-settings: 'liga' !important;
+            -webkit-font-smoothing: antialiased !important;
+        }
+        [class*="material-symbols"], [class*="material-icons"],
+        [class*="material-symbols-outlined"], [class*="material-symbols-rounded"], [class*="material-symbols-sharp"] {
+            font-feature-settings: 'liga' 1 !important;
+            font-variant-ligatures: normal !important;
+        }
+
         /* ===== Glassmorphism Base ===== */
         * { box-sizing: border-box !important; }
-        /* Apply Cairo font to all elements */
+        /* Apply Cairo font to all text elements (icon elements keep their own font) */
         html, body, div, span, button, input, textarea, select, label, p, h1, h2, h3, h4, h5, h6, table, th, td, a, li, ul, ol, section, header, footer, nav, article, aside, main, form {
             font-family: 'Cairo', sans-serif !important;
         }
-        /* Keep Material Icons font for icon elements */
-        .material-icons, .material-symbols-outlined, [class*="material-icons"] {
-            font-family: 'Material Icons' !important;
+        /* Icon elements always keep their Material font, overriding the Cairo rule above.
+           Supports Outlined, Rounded, Sharp variants plus Material Icons ligatures. */
+        .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp,
+        [class^="material-symbols"], [class*=" material-symbols"],
+        [class^="material-icons"], [class*=" material-icons"],
+        [class*="material-symbols-outlined"], [class*="material-symbols-rounded"], [class*="material-symbols-sharp"] {
+            font-family: 'Material Symbols Outlined', 'Material Symbols Rounded', 'Material Symbols Sharp', 'Material Icons', sans-serif !important;
         }
         
         /* ===== Hide Streamlit Elements ===== */
@@ -927,7 +1007,9 @@ def inject_css():
                 color-scheme: light !important;
                 color: #1a1a2e !important;
             }
-            .stApp, [data-testid="stAppViewContainer"], .st-emotion-cache-1y4p8pa { background: transparent !important; }
+            /* Do NOT set background: transparent on stAppViewContainer here —
+               the background image is applied via the #bg-img-style <style> block. */
+            .stApp { background: transparent !important; }
             section[data-testid="stSidebar"] {
                 background: rgba(255,255,255,0.9) !important;
                 border-left-color: rgba(255,255,255,0.3) !important;
