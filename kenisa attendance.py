@@ -26,15 +26,6 @@ import base64
 from io import BytesIO
 import plotly.graph_objects as go
 import plotly.io as pio
-import re
-
-# Auto-load background image as base64 from image1.jpg
-_BG_IMG_PATH = os.path.join(os.path.dirname(__file__), "image1.jpg")
-if os.path.exists(_BG_IMG_PATH):
-    with open(_BG_IMG_PATH, "rb") as _f:
-        BG_IMAGE_BASE64 = base64.b64encode(_f.read()).decode("utf-8")
-else:
-    BG_IMAGE_BASE64 = ""
 
 # =============================================================================
 # الإعدادات العامة والثوابت
@@ -42,15 +33,8 @@ else:
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 QUIZ_JWT_SECRET = "StDemianaChurch2025!QuizSecure#Key"
 CACHE_TTL_SECONDS = 600
-# تحديث مدة الجلسة إلى 24 ساعة
-SESSION_TIMEOUT_HOURS = 24
+SESSION_TIMEOUT_HOURS = 8
 CAIRO_TZ = timezone(timedelta(hours=3), name='Africa/Cairo')
-
-# أعمدة سجل التدقيق (AuditLog)
-AUDIT_LOG_COLUMNS = [
-    "log_id", "timestamp", "username", "user_id", "action", "details",
-    "ip_address", "country", "city", "browser", "os", "device_type", "screen_size"
-]
 
 # Password hashing
 def hash_password(password: str) -> str:
@@ -200,636 +184,100 @@ def get_stage_color(stage_name):
 # CSS
 # =============================================================================
 def inject_css():
-    bg_data_url = f"data:image/jpeg;base64,{BG_IMAGE_BASE64}"
-    st.markdown(f"""<style id="bg-img-style">body{{background-image:url('{bg_data_url}')!important;}}</style>""", unsafe_allow_html=True)
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
-        @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
-        
-        /* ===== Background Image with Overlay ===== */
-        html, body {
-            color-scheme: light !important;
-            background-color: #ffffff !important;
-            color: #1a1a2e !important;
-        }
-        body {
-            direction: rtl; text-align: right; color: #1a1a2e; overflow-x: hidden;
-            background-size: cover !important;
-            background-position: center !important;
-            background-attachment: fixed !important;
-            background-repeat: no-repeat !important;
-        }
-        body::before {
-            content: ''; position: fixed; top: 0; right: 0; bottom: 0; left: 0;
-            background: rgba(255,255,255,0.88) !important;
-            z-index: -1; pointer-events: none;
-        }
-        .stApp {
-            background: transparent !important;
-        }
-        
-        /* ===== Glassmorphism Base ===== */
-        * { font-family: 'Cairo', sans-serif !important; box-sizing: border-box !important; }
-        
-        /* ===== Hide Streamlit Elements ===== */
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+        * { font-family: 'Cairo', sans-serif; }
+        body { direction: rtl; text-align: right; background-color: #f0f2f6; color: #1a1a2e; }
+        .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
         header[data-testid="stHeader"] { display: none !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
-        
-        /* ===== Animations ===== */
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        @keyframes scaleIn {
-            from { opacity: 0; transform: scale(0.9); }
-            to { opacity: 1; transform: scale(1); }
-        }
-        @keyframes slideInRight {
-            from { opacity: 0; transform: translateX(30px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
-        }
-        @keyframes float {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-        }
-        @keyframes glow {
-            0%, 100% { box-shadow: 0 0 5px rgba(102,126,234,0.5); }
-            50% { box-shadow: 0 0 20px rgba(102,126,234,0.8); }
-        }
-        @keyframes countUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes ripple {
-            0% { transform: scale(0); opacity: 0.5; }
-            100% { transform: scale(4); opacity: 0; }
-        }
-        
-        /* ===== Glassmorphism Cards ===== */
-        .glass-card {
-            background: rgba(255,255,255,0.7) !important;
-            backdrop-filter: blur(10px) !important;
-            -webkit-backdrop-filter: blur(10px) !important;
-            border-radius: 20px !important;
-            border: 1px solid rgba(255,255,255,0.3) !important;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1) !important;
-            padding: 1.5rem !important;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            animation: fadeInUp 0.6s ease-out !important;
-        }
-        .glass-card:hover {
-            transform: translateY(-8px) scale(1.02) !important;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.15) !important;
-        }
-        
-        /* ===== Staggered Animation Delays ===== */
-        .glass-card:nth-child(1) { animation-delay: 0.1s !important; }
-        .glass-card:nth-child(2) { animation-delay: 0.2s !important; }
-        .glass-card:nth-child(3) { animation-delay: 0.3s !important; }
-        .glass-card:nth-child(4) { animation-delay: 0.4s !important; }
-        .glass-card:nth-child(5) { animation-delay: 0.5s !important; }
-        .glass-card:nth-child(6) { animation-delay: 0.6s !important; }
-        
-        /* ===== User Cards ===== */
-        .user-card {
-            background: rgba(255,255,255,0.75) !important;
-            backdrop-filter: blur(12px) !important;
-            -webkit-backdrop-filter: blur(12px) !important;
-            border-radius: 20px !important; padding: 1.5rem !important;
-            border: 1px solid rgba(255,255,255,0.4) !important;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.08) !important;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            animation: fadeInUp 0.6s ease-out !important;
-            position: relative !important; overflow: hidden !important;
-        }
-        .user-card:hover {
-            transform: translateY(-8px) scale(1.02) !important;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.15) !important;
-        }
-        
-        /* ===== Student Cards ===== */
-        .student-card {
-            background: rgba(255,255,255,0.75) !important;
-            backdrop-filter: blur(12px) !important;
-            -webkit-backdrop-filter: blur(12px) !important;
-            border-radius: 20px !important; padding: 1.5rem !important;
-            border: 1px solid rgba(255,255,255,0.4) !important;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.08) !important;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            animation: fadeInUp 0.6s ease-out !important;
-            position: relative !important; overflow: hidden !important;
-        }
-        .student-card:hover {
-            transform: translateY(-8px) scale(1.02) !important;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.15) !important;
-        }
-        
-        /* ===== Event Cards ===== */
-        .event-card {
-            background: rgba(255,255,255,0.75) !important;
-            backdrop-filter: blur(12px) !important;
-            -webkit-backdrop-filter: blur(12px) !important;
-            border-radius: 20px !important; padding: 1.5rem !important;
-            border: 1px solid rgba(255,255,255,0.4) !important;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.08) !important;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            animation: fadeInUp 0.6s ease-out !important;
-        }
-        .event-card:hover {
-            transform: translateY(-8px) scale(1.02) !important;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.15) !important;
-        }
-        
-        /* ===== Avatars ===== */
-        .user-avatar, .student-avatar-large {
-            width: 70px !important; height: 70px !important; border-radius: 50% !important;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            display: flex !important; align-items: center !important; justify-content: center !important;
-            color: white !important; font-size: 1.8rem !important; font-weight: 700 !important;
-            box-shadow: 0 4px 15px rgba(102,126,234,0.4) !important;
-            animation: float 3s ease-in-out infinite !important;
-        }
-        .student-avatar-large {
-            width: 60px !important; height: 60px !important; font-size: 1.5rem !important;
-        }
-        
-        /* ===== Badges ===== */
-        .status-badge {
-            display: inline-block !important; padding: 0.3rem 0.9rem !important; border-radius: 25px !important;
-            font-size: 0.75rem !important; font-weight: 600 !important;
-            animation: pulse 2s ease-in-out infinite !important;
-        }
-        .status-badge.active {
-            background: linear-gradient(135deg, #28a745, #20c997) !important;
-            color: white !important;
-        }
-        .status-badge.inactive {
-            background: linear-gradient(135deg, #6c757d, #adb5bd) !important;
-            color: white !important;
-        }
-        .role-badge {
-            display: inline-block !important; padding: 0.3rem 0.9rem !important; border-radius: 25px !important;
-            font-size: 0.75rem !important; font-weight: 600 !important;
-        }
-        .role-badge.admin { background: linear-gradient(135deg, #4facfe, #00f2fe) !important; color: white !important; }
-        .role-badge.priest { background: linear-gradient(135deg, #43e97b, #38f9d7) !important; color: white !important; }
-        .role-badge.leader { background: linear-gradient(135deg, #f093fb, #f5576c) !important; color: white !important; }
-        .role-badge.teacher { background: linear-gradient(135deg, #fa709a, #fee140) !important; color: white !important; }
-        .role-badge.student { background: linear-gradient(135deg, #30cfd0, #330867) !important; color: white !important; }
-        
-        .card-badge {
-            position: absolute !important; top: 0 !important; left: 0 !important;
-            padding: 0.4rem 1.2rem !important; border-radius: 0 0 20px 0 !important;
-            font-size: 0.75rem !important; font-weight: 700 !important; color: white !important;
-        }
-        .card-badge.active { background: linear-gradient(135deg, #28a745, #20c997) !important; }
-        .card-badge.inactive { background: linear-gradient(135deg, #6c757d, #adb5bd) !important; }
-        
-        /* ===== Student Info ===== */
-        .student-info-row {
-            display: flex !important; align-items: center !important; gap: 0.5rem !important;
-            margin: 0.5rem 0 !important; font-size: 0.95rem !important; color: #333 !important;
-        }
-        .student-badge {
-            display: inline-block !important; padding: 0.3rem 0.9rem !important; border-radius: 25px !important;
-            font-size: 0.75rem !important; font-weight: 600 !important;
-            animation: pulse 2s ease-in-out infinite !important;
-        }
-        .student-badge.active {
-            background: linear-gradient(135deg, #28a745, #20c997) !important; color: white !important;
-        }
-        .student-badge.inactive {
-            background: linear-gradient(135deg, #6c757d, #adb5bd) !important; color: white !important;
-        }
-        
-        /* ===== Profile Header ===== */
-        .profile-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            border-radius: 25px !important; padding: 2.5rem !important; color: white !important;
-            box-shadow: 0 15px 35px rgba(102,126,234,0.4) !important;
-            margin-bottom: 2rem !important;
-            animation: scaleIn 0.5s ease-out !important;
-        }
-        
-        /* ===== Stat Cards ===== */
-        .profile-stat-card {
-            background: rgba(255,255,255,0.8) !important;
-            backdrop-filter: blur(10px) !important;
-            -webkit-backdrop-filter: blur(10px) !important;
-            border-radius: 18px !important; padding: 1.2rem !important; text-align: center !important;
-            border: 1px solid rgba(255,255,255,0.5) !important;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.08) !important;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            animation: fadeInUp 0.6s ease-out !important;
-        }
-        .profile-stat-card:hover {
-            transform: translateY(-5px) scale(1.03) !important;
-            box-shadow: 0 15px 35px rgba(102,126,234,0.2) !important;
-        }
-        .profile-stat-card h3 {
-            color: #667eea !important; font-size: 2rem !important; margin: 0 !important;
-            animation: countUp 0.8s ease-out !important;
-        }
-        .profile-stat-card p { color: #6c757d !important; font-size: 0.9rem !important; margin: 0 !important; }
-        
-        /* ===== Main Header ===== */
-        .main-header {
-            font-size: 2.5rem !important; font-weight: 800 !important;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            -webkit-background-clip: text !important;
-            -webkit-text-fill-color: transparent !important;
-            background-clip: text !important;
-            text-align: center !important; margin-bottom: 2rem !important;
-            padding: 1.2rem 1.5rem !important;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.1) !important;
-            letter-spacing: -0.5px !important;
-            animation: fadeIn 0.8s ease-out !important;
-        }
-        
-        /* ===== Floating Buttons ===== */
-        .floating-show-btn .stButton > button {
-            position: fixed !important; top: 20px !important; right: 20px !important; z-index: 99999 !important;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important;
-            border: none !important; border-radius: 18px !important; width: 65px !important; height: 65px !important;
-            font-size: 28px !important; font-weight: bold !important;
-            box-shadow: 0 8px 25px rgba(102,126,234,0.5) !important;
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            animation: glow 2s ease-in-out infinite !important;
-        }
-        .floating-show-btn .stButton > button:hover {
-            transform: scale(1.1) rotate(5deg) !important;
-            box-shadow: 0 12px 35px rgba(102,126,234,0.7) !important;
-        }
-        
-        .help-float-container .stButton > button {
-            position: fixed !important; top: 20px !important; right: 100px !important; z-index: 99998 !important;
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important; color: white !important;
-            font-weight: 700 !important; border-radius: 15px !important; padding: 12px 24px !important;
-            font-size: 16px !important; border: none !important; white-space: nowrap !important;
-            box-shadow: 0 8px 25px rgba(243,156,18,0.5) !important;
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-        }
-        .help-float-container .stButton > button:hover {
-            transform: translateY(-3px) !important;
-            box-shadow: 0 12px 35px rgba(243,156,18,0.7) !important;
-        }
-        
-        /* ===== Sidebar ===== */
         section[data-testid="stSidebar"] {
-            background: rgba(255,255,255,0.85) !important;
-            backdrop-filter: blur(15px) !important;
-            -webkit-backdrop-filter: blur(15px) !important;
-            border-left: 1px solid rgba(255,255,255,0.3) !important;
+            position: fixed !important; top: 0 !important; right: 0 !important;
+            height: 100vh !important; width: 300px !important; z-index: 10000 !important;
+            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%) !important;
         }
+        @media (max-width: 768px) { section[data-testid="stSidebar"] { width: 100vw !important; } }
         .nav-btn-container .stButton > button {
             width: 100% !important; text-align: right !important; justify-content: flex-start !important;
-            padding: 0.8rem 1.2rem !important; font-size: 1rem !important; font-weight: 600 !important;
-            border-radius: 12px !important; background: rgba(255,255,255,0.5) !important; color: #1a1a2e !important;
-            border: 1px solid rgba(255,255,255,0.3) !important; direction: rtl !important;
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            position: relative !important; overflow: hidden !important;
+            padding: 0.7rem 1rem !important; font-size: 1rem !important; font-weight: 600 !important;
+            border-radius: 10px !important; background: transparent !important; color: #1a1a2e !important;
+            border: 1px solid transparent !important; direction: rtl !important;
         }
         .nav-btn-container .stButton > button:hover {
-            background: rgba(102,126,234,0.1) !important; color: #667eea !important;
-            border-color: rgba(102,126,234,0.3) !important;
-            transform: translateX(-5px) !important;
-            border-right: 3px solid #667eea !important;
+            background: rgba(102,126,234,0.08) !important; color: #667eea !important;
+            border-color: rgba(102,126,234,0.15) !important;
         }
         .nav-btn-container .stButton > button[kind="primary"] {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important; border: none !important;
-            box-shadow: 0 5px 15px rgba(102,126,234,0.4) !important;
         }
-        .nav-btn-container .stButton > button[kind="primary"]:hover {
-            transform: translateX(-5px) !important;
-            box-shadow: 0 8px 25px rgba(102,126,234,0.6) !important;
+        .floating-show-btn .stButton > button {
+            position: fixed !important; top: 20px !important; right: 20px !important; z-index: 99999 !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important;
+            border: none !important; border-radius: 15px !important; width: 60px !important; height: 60px !important;
+            font-size: 28px !important; font-weight: bold !important; box-shadow: 0 4px 15px rgba(102,126,234,0.4) !important;
         }
-        
-        /* ===== Desktop > 1024px ===== */
-        @media (min-width: 1025px) {
-            section[data-testid="stSidebar"] {
-                position: fixed !important; top: 0 !important; right: 0 !important;
-                height: 100vh !important; width: 300px !important; z-index: 10000 !important;
-                overflow-y: auto !important;
-            }
-            .main-header { margin-top: 1rem; }
-            .content-area { margin-right: 300px !important; }
-            div.row-widget.stHorizontalBlock {
-                display: grid !important; grid-template-columns: repeat(3, 1fr) !important;
-                gap: 1.2rem !important;
-            }
-            div.row-widget.stHorizontalBlock > div[data-testid="column"] {
-                width: 100% !important; flex: 1 1 0 !important; min-width: 0 !important;
-            }
+        .help-float-container .stButton > button {
+            position: fixed !important; top: 20px !important; right: 100px !important; z-index: 99998 !important;
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important; color: white !important;
+            font-weight: 700 !important; border-radius: 12px !important; padding: 12px 20px !important;
+            font-size: 16px !important; border: none !important; white-space: nowrap !important;
         }
-        
-        /* ===== Tablet 768-1024px ===== */
-        @media (min-width: 768px) and (max-width: 1024px) {
-            section[data-testid="stSidebar"] {
-                position: fixed !important; top: 0 !important; right: 0 !important;
-                height: 100vh !important; width: 280px !important; z-index: 10000 !important;
-                transform: translateX(0) !important; transition: transform 0.3s ease !important;
-                overflow-y: auto !important;
-            }
-            .main-header { font-size: 2rem !important; margin-top: 1rem !important; }
-            .help-float-container .stButton > button { right: 90px !important; padding: 10px 18px !important; font-size: 15px !important; }
-            .floating-show-btn .stButton > button { width: 58px !important; height: 58px !important; font-size: 26px !important; }
-            div.row-widget.stHorizontalBlock {
-                display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 1rem !important;
-            }
-            div.row-widget.stHorizontalBlock > div[data-testid="column"] {
-                width: 100% !important; flex: 1 1 0 !important; min-width: 0 !important;
-            }
+        .main-header {
+            font-size: 2.2rem; font-weight: 700; color: #1a1a2e; text-align: center;
+            margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.9);
+            border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-top: 100px;
         }
-        
-        /* ===== Mobile < 768px ===== */
-        @media (max-width: 767px) {
-            section[data-testid="stSidebar"] {
-                position: fixed !important; top: 0 !important; right: 0 !important;
-                width: 100vw !important; height: 100vh !important; z-index: 10000 !important;
-                transform: translateX(100%) !important;
-                transition: transform 0.3s ease !important; overflow-y: auto !important;
-            }
-            .main-header { font-size: 1.6rem !important; margin-top: 0.8rem !important; padding: 1rem !important; }
-            .content-area { padding: 0 0.5rem !important; }
-            .help-float-container .stButton > button {
-                top: 15px !important; right: 75px !important;
-                padding: 10px 14px !important; font-size: 13px !important;
-                border-radius: 12px !important;
-            }
-            .floating-show-btn .stButton > button {
-                width: 52px !important; height: 52px !important; font-size: 24px !important;
-                top: 15px !important; right: 15px !important;
-            }
-            div.row-widget.stHorizontalBlock {
-                display: flex !important; flex-direction: column !important; gap: 0.8rem !important;
-            }
-            div[data-testid="column"] {
-                width: 100% !important; flex: 0 0 100% !important; min-width: 100% !important;
-            }
-            input, textarea, select, .stSelectbox > div, .stTextInput > div {
-                font-size: 16px !important; min-height: 44px !important;
-            }
-            .stButton > button {
-                padding: 0.9rem 1.2rem !important; font-size: 1rem !important; min-height: 44px !important;
-            }
+        .user-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px; padding: 1.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            border: 1px solid rgba(0,0,0,0.05); transition: all 0.3s ease; position: relative; overflow: hidden;
         }
-        
-        /* ===== Hide unintended pre/code blocks from Markdown ===== */
-        div.stAlert pre, div.stAlert code {
-            display: none !important;
+        .user-avatar {
+            width: 70px; height: 70px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 1.8rem; font-weight: 700;
         }
-        
-        /* ===== Custom Scrollbar ===== */
-        ::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
-        ::-webkit-scrollbar-track { background: rgba(102,126,234,0.05) !important; border-radius: 10px !important; }
-        ::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #667eea, #764ba2) !important; border-radius: 10px !important; }
-        ::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #764ba2, #667eea) !important; }
-        
-        /* ===== Gradient Buttons ===== */
-        .stButton > button {
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            border-radius: 12px !important; border: none !important;
-            position: relative !important; overflow: hidden !important;
+        .profile-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px; padding: 2rem; color: white;
+            box-shadow: 0 8px 25px rgba(102,126,234,0.3); margin-bottom: 2rem;
         }
-        .stButton > button:hover {
-            transform: translateY(-2px) scale(1.05) !important;
-            box-shadow: 0 0 20px rgba(102,126,234,0.4) !important;
+        .profile-stat-card {
+            background: white; border-radius: 12px; padding: 1rem; text-align: center;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.04);
         }
-        .stButton > button:active {
-            animation: ripple 0.6s ease-out !important;
+        .profile-stat-card h3 { color: #667eea; font-size: 1.8rem; margin: 0; }
+        .profile-stat-card p { color: #6c757d; font-size: 0.85rem; margin: 0; }
+        .status-badge {
+            display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px;
+            font-size: 0.75rem; font-weight: 600;
         }
-        
-        /* ===== Enhanced Primary Button ===== */
-        button[kind="primaryFormSubmit"], .stButton > button[data-testid="baseButton-primary"],
-        button[kind="primary"] {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important; font-weight: 700 !important;
-            box-shadow: 0 5px 15px rgba(102,126,234,0.4) !important;
-            border: none !important;
+        .status-badge.active { background: #d4edda; color: #155724; }
+        .status-badge.inactive { background: #e2e3e5; color: #383d41; }
+        .role-badge {
+            display: inline-block; padding: 0.2rem 0.8rem; border-radius: 20px;
+            font-size: 0.75rem; font-weight: 600;
         }
-        button[kind="primaryFormSubmit"]:hover, .stButton > button[data-testid="baseButton-primary"]:hover,
-        button[kind="primary"]:hover {
-            box-shadow: 0 0 25px rgba(102,126,234,0.6) !important;
-            transform: translateY(-3px) !important;
-        }
-        
-        /* ===== Enhanced Danger Button */        
-        div.stButton > button:has(span:text("حذف")),
-        div[data-testid="stButton"] > button:has-text("حذف") {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
-            color: white !important;
-            box-shadow: 0 5px 15px rgba(245,87,108,0.4) !important;
-        }
-        div.stButton > button:has(span:text("حذف")):hover,
-        div[data-testid="stButton"] > button:has-text("حذف"):hover {
-            box-shadow: 0 0 25px rgba(245,87,108,0.6) !important;
-        }
-        
-        /* ===== Enhanced Download Button ===== */
-        div.stDownloadButton > button {
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%) !important;
-            color: white !important; font-weight: 700 !important;
-            box-shadow: 0 5px 15px rgba(67,233,123,0.4) !important;
-        }
-        div.stDownloadButton > button:hover {
-            box-shadow: 0 0 25px rgba(67,233,123,0.6) !important;
-        }
-        
-        /* ===== Success Button (Green) ===== */
-        .stButton > button:has-text("تسجيل") {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
-            color: white !important;
-            box-shadow: 0 5px 15px rgba(40,167,69,0.4) !important;
-        }
-        .stButton > button:has-text("تسجيل"):hover {
-            box-shadow: 0 0 25px rgba(40,167,69,0.6) !important;
-        }
-        
-        /* ===== Warning Button (Orange) ===== */
-        .stButton > button:has-text("إصلاح") {
-            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
-            color: white !important;
-            box-shadow: 0 5px 15px rgba(243,156,18,0.4) !important;
-        }
-        .stButton > button:has-text("إصلاح"):hover {
-            box-shadow: 0 0 25px rgba(243,156,18,0.6) !important;
-        }
-        
-        /* ===== Metrics ===== */
-        div[data-testid="stMetric"] {
-            background: rgba(255,255,255,0.8) !important;
-            backdrop-filter: blur(10px) !important;
-            -webkit-backdrop-filter: blur(10px) !important;
-            border-radius: 18px !important; padding: 1.2rem !important;
-            border: 1px solid rgba(255,255,255,0.4) !important;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.08) !important;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            animation: fadeInUp 0.6s ease-out !important;
-        }
-        div[data-testid="stMetric"]:hover {
-            transform: translateY(-5px) scale(1.03) !important;
-            box-shadow: 0 15px 35px rgba(102,126,234,0.2) !important;
-        }
-        div[data-testid="stMetric"] label {
-            color: #667eea !important; font-weight: 700 !important; font-size: 0.9rem !important;
-        }
-        div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-            font-size: 2rem !important; font-weight: 800 !important;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            -webkit-background-clip: text !important;
-            -webkit-text-fill-color: transparent !important;
-            background-clip: text !important;
-        }
-        
-        /* ===== Tabs ===== */
-        button[data-testid="stTab"] {
-            border-radius: 12px 12px 0 0 !important; font-weight: 700 !important;
-            background: rgba(255,255,255,0.6) !important;
-            backdrop-filter: blur(10px) !important;
-            transition: all 0.3s ease !important; border: 1px solid rgba(255,255,255,0.3) !important;
-        }
-        button[data-testid="stTab"]:hover {
-            background: rgba(102,126,234,0.1) !important;
-            transform: translateY(-2px) !important;
-        }
-        button[data-testid="stTab"][aria-selected="true"] {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important; border-bottom: none !important;
-        }
-        
-        /* ===== Expanders ===== */
+        .role-badge.admin { background: #cce5ff; color: #004085; }
+        .role-badge.priest { background: #d4edda; color: #155724; }
+        .role-badge.leader { background: #fff3cd; color: #856404; }
+        .role-badge.teacher { background: #e2e3e5; color: #383d41; }
+        .content-area { padding: 0 1rem; }
+        .stDataFrame { background: white; border-radius: 10px; }
         .streamlit-expanderHeader {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important; border-radius: 12px !important; font-weight: 700 !important;
-            transition: all 0.3s ease !important;
+            color: white !important; border-radius: 8px !important; font-weight: 600 !important;
         }
-        .streamlit-expanderHeader:hover { opacity: 0.9; transform: translateY(-2px); }
-        
-        /* ===== DataFrames ===== */
-        .stDataFrame {
-            background: rgba(255,255,255,0.9) !important;
-            backdrop-filter: blur(10px) !important;
-            border-radius: 15px !important;
-            border: 1px solid rgba(255,255,255,0.4) !important;
-            overflow: hidden !important;
-        }
-        .stDataFrame table {
-            width: 100% !important; border-collapse: collapse !important;
-        }
-        .stDataFrame thead {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important;
-        }
-        .stDataFrame thead th {
-            padding: 12px !important; text-align: right !important;
-            font-weight: 700 !important; border-bottom: 2px solid rgba(255,255,255,0.2) !important;
-        }
-        .stDataFrame tbody tr:nth-child(even) {
-            background: rgba(102,126,234,0.05) !important;
-        }
-        .stDataFrame tbody tr:hover {
-            background: rgba(102,126,234,0.1) !important;
-            transition: background 0.3s ease !important;
-        }
-        .stDataFrame tbody td {
-            padding: 10px !important; border-bottom: 1px solid rgba(0,0,0,0.05) !important;
-        }
-        
-        /* ===== Form Inputs ===== */
-        input, textarea, select, .stSelectbox > div, .stTextInput > div {
-            background: rgba(255,255,255,0.8) !important;
-            backdrop-filter: blur(10px) !important;
-            border: 1px solid rgba(102,126,234,0.2) !important;
-            border-radius: 12px !important; padding: 0.6rem 1rem !important;
-            transition: all 0.3s ease !important;
-        }
-        input:focus, textarea:focus, select:focus {
-            outline: none !important; border-color: #667eea !important;
-            box-shadow: 0 0 0 3px rgba(102,126,234,0.2) !important;
-            background: rgba(255,255,255,0.95) !important;
-        }
-        
-        /* ===== Dialogs ===== */
-        div[role="dialog"] {
-            background: rgba(255,255,255,0.95) !important;
-            backdrop-filter: blur(15px) !important;
-            border-radius: 25px !important;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.2) !important;
-            border: 1px solid rgba(255,255,255,0.4) !important;
-            max-height: 90vh !important; overflow-y: auto !important;
-        }
-        
-        /* ===== Alerts ===== */
-        .stSuccess {
-            background: linear-gradient(135deg, rgba(67,233,123,0.15), rgba(56,249,215,0.15)) !important;
-            border: 1px solid rgba(67,233,123,0.3) !important; color: #155724 !important;
-            border-radius: 12px !important; animation: slideInRight 0.3s ease-out !important;
-        }
-        .stError {
-            background: linear-gradient(135deg, rgba(240,147,251,0.15), rgba(245,87,108,0.15)) !important;
-            border: 1px solid rgba(245,87,108,0.3) !important; color: #721c24 !important;
-            border-radius: 12px !important; animation: shake 0.5s ease-in-out !important;
-        }
-        .stWarning {
-            background: linear-gradient(135deg, rgba(243,156,18,0.15), rgba(230,126,34,0.15)) !important;
-            border: 1px solid rgba(243,156,18,0.3) !important; color: #856404 !important;
-            border-radius: 12px !important;
-        }
-        .stInfo {
-            background: linear-gradient(135deg, rgba(79,172,254,0.15), rgba(0,242,254,0.15)) !important;
-            border: 1px solid rgba(79,172,254,0.3) !important; color: #0c5460 !important;
-            border-radius: 12px !important;
-        }
-        
-        /* ===== Content Area ===== */
-        .content-area { padding: 0 0.5rem !important; }
-        
-        /* ===== Loading Spinner ===== */
-        .stSpinner > div {
-            border-top-color: #667eea !important;
-            animation: spin 1s linear infinite !important;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        /* ===== Dark Mode Override ===== */
-        @media (prefers-color-scheme: dark) {
-            html, body {
-                color-scheme: light !important;
-                background-color: #ffffff !important; color: #1a1a2e !important;
-            }
-            body::before { background: rgba(255,255,255,0.92) !important; }
-            .stApp { background: transparent !important; }
-            section[data-testid="stSidebar"] {
-                background: rgba(255,255,255,0.9) !important;
-                border-left-color: rgba(255,255,255,0.3) !important;
-            }
-            .stDataFrame, div[data-testid="stDataFrame"] { background: white !important; }
-            input, textarea, select, .stSelectbox > div, .stTextInput > div {
-                background: rgba(255,255,255,0.95) !important; color: #1a1a2e !important;
-                border: 1px solid rgba(102,126,234,0.3) !important;
-            }
-            .st-bd, .st-cb { background-color: white !important; }
-            .st-emotion-cache-1y4p8pa { background: transparent !important; }
-            div[data-testid="stMetric"] { background: rgba(255,255,255,0.95) !important; }
-            .glass-card, .user-card, .student-card, .event-card, .profile-stat-card {
-                background: rgba(255,255,255,0.85) !important;
-            }
+        .stSuccess { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.2); color: #155724; border-radius: 10px; }
+        .stError { background: rgba(220,53,69,0.1); border: 1px solid rgba(220,53,69,0.2); color: #721c24; border-radius: 10px; }
+        @media (max-width: 768px) {
+            .main-header { font-size: 1.6rem; margin-top: 110px; }
+            .floating-show-btn .stButton > button { width: 50px !important; height: 50px !important; font-size: 24px !important; }
+            .help-float-container .stButton > button { right: 80px !important; padding: 10px 16px !important; font-size: 14px !important; }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -897,16 +345,6 @@ def init_data_cache():
         st.session_state.data_cache = {}
     if 'data_dirty' not in st.session_state:
         st.session_state.data_dirty = {}
-    if 'cache_stats' not in st.session_state:
-        st.session_state.cache_stats = {'hits': 0, 'misses': 0, 'last_cleanup': time.time()}
-    # Auto-invalidation: periodically clean expired cache entries
-    now = time.time()
-    if now - st.session_state.cache_stats.get('last_cleanup', 0) > 300:  # Every 5 minutes
-        cache = st.session_state.get('data_cache', {})
-        expired_keys = [k for k, v in cache.items() if now - v.get('timestamp', 0) > CACHE_TTL_SECONDS]
-        for k in expired_keys:
-            del cache[k]
-        st.session_state.cache_stats['last_cleanup'] = now
 
 
 def retry_operation(max_retries=5, base_delay=2):
@@ -935,121 +373,6 @@ def retry_operation(max_retries=5, base_delay=2):
             return None
         return wrapper
     return decorator
-
-
-# =============================================================================
-# Audit Log - Client Info (IP, location, browser, OS, device)
-# =============================================================================
-def _get_client_ip_and_location():
-    """
-    جلب عنوان IP والموقع الجغرافي باستخدام ipapi.co API المجاني.
-    """
-    try:
-        resp = requests.get("https://ipapi.co/json/", timeout=5)
-        if resp.status_code == 200:
-            data = resp.json()
-            return {
-                "ip_address": data.get("ip", ""),
-                "country": data.get("country_name", ""),
-                "city": data.get("city", "")
-            }
-    except Exception:
-        pass
-    return {"ip_address": "", "country": "", "city": ""}
-
-
-def _parse_user_agent(ua_string):
-    """
-    تحليل User-Agent لاستخراج: browser, os, device_type.
-    """
-    ua = ua_string or ""
-    result = {"browser": "", "os": "", "device_type": "", "screen_size": ""}
-
-    # Browser detection
-    browser_patterns = [
-        (r"Edge|Edg/", "Edge"),
-        (r"Chrome/", "Chrome"),
-        (r"Firefox/", "Firefox"),
-        (r"Safari/", "Safari"),
-        (r"Opera|OPR/", "Opera"),
-        (r"MSIE|Trident/", "Internet Explorer"),
-    ]
-    for pattern, name in browser_patterns:
-        if re.search(pattern, ua):
-            result["browser"] = name
-            break
-
-    # OS detection
-    os_patterns = [
-        (r"Windows NT 10\.0", "Windows 10/11"),
-        (r"Windows NT 6\.\d", "Windows"),
-        (r"Android", "Android"),
-        (r"iPhone|iPad|iOS", "iOS"),
-        (r"Mac OS X", "macOS"),
-        (r"Linux", "Linux"),
-    ]
-    for pattern, name in os_patterns:
-        if re.search(pattern, ua):
-            result["os"] = name
-            break
-
-    # Device type detection
-    if re.search(r"Mobile|Android|iPhone|iPad|iPod", ua):
-        if re.search(r"iPad", ua):
-            result["device_type"] = "Tablet"
-        else:
-            result["device_type"] = "Mobile"
-    else:
-        result["device_type"] = "Desktop"
-
-    return result
-
-
-def _get_screen_size():
-    """
-    محاولة جلب حجم الشاشة باستخدام JavaScript عبر streamlit_js_eval.
-    إذا فشل، نعيد قيمة افتراضية.
-    """
-    try:
-        # استخدم get_page_location أو get_browser_language كطريقة للحصول على معلومات
-        from streamlit_js_eval import get_page_location
-        # لا نستطيع الحصول على screen size مباشرة، لذا نعيد قيمة افتراضية
-        pass
-    except Exception:
-        pass
-    return ""
-
-
-def get_client_info():
-    """
-    تجميع معلومات العميل: IP، الموقع، المتصفح، نظام التشغيل، نوع الجهاز.
-    """
-    info = _get_client_ip_and_location()
-    
-    # محاولة الحصول على User-Agent من streamlit_js_eval
-    ua_string = ""
-    try:
-        from streamlit_js_eval import get_user_agent
-        ua_result = get_user_agent()
-        if ua_result and isinstance(ua_result, str):
-            ua_string = ua_result
-        elif ua_result and isinstance(ua_result, dict):
-            ua_string = ua_result.get("userAgent", "")
-    except Exception:
-        pass
-    
-    # إذا لم نتمكن من الحصول على User-Agent من JS، نستخدم طريقة بديلة
-    if not ua_string:
-        try:
-            # محاولة من request headers (قد لا تكون متاحة في Streamlit)
-            ua_string = st.context.headers.get("User-Agent", "") if hasattr(st, 'context') else ""
-        except Exception:
-            pass
-
-    parsed = _parse_user_agent(ua_string)
-    info.update(parsed)
-    info["screen_size"] = _get_screen_size()
-    return info
 
 
 # =============================================================================
@@ -1082,10 +405,7 @@ class Database:
         except gspread.WorksheetNotFound:
             ws = self.spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(columns), 1))
             if columns:
-                try:
-                    ws.append_row(columns)
-                except Exception:
-                    pass
+                ws.append_row(columns)
         time.sleep(0.2)
         return ws
 
@@ -1166,31 +486,6 @@ class Database:
     # --- Users ---
     def get_users(self):
         return self._sheet_to_df("Users")
-
-    def ensure_all_sheets_exist(self):
-        """Ensure all required sheets exist with proper columns."""
-        sheets_config = {
-            "Users": ["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email"],
-            "Students": ["student_id", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"],
-            "Stages": self.STAGE_COLUMNS,
-            "StageSupervisors": self.STAGE_SUPERVISOR_COLUMNS,
-            "SectionTeachers": self.SECTION_TEACHER_COLUMNS,
-            "Sections": self.SECTION_COLUMNS,
-            "Attendance": self.ATTENDANCE_COLUMNS,
-            "FollowUp": ["record_id", "student_id", "teacher_id", "followup_date", "followup_type", "notes", "regularity_status"],
-            "Quizzes": ["quiz_id", "title", "description", "created_by", "section_id", "num_questions", "time_limit_minutes", "total_marks", "expiry_date", "quiz_code", "password", "is_active"],
-            "QuizQuestions": ["question_id", "quiz_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer"],
-            "QuizResults": ["result_id", "quiz_id", "student_id", "student_name", "score", "total_marks", "start_time", "submission_time", "answers", "status"],
-            "AuditLog": AUDIT_LOG_COLUMNS,
-            "Events": self.EVENT_COLUMNS,
-            "EventRSVP": self.EVENT_RSVP_COLUMNS,
-            "EventAttendance": self.EVENT_ATTENDANCE_COLUMNS
-        }
-        for sheet_name, columns in sheets_config.items():
-            try:
-                self._get_or_create_worksheet(sheet_name, columns)
-            except Exception:
-                pass
 
     def add_user(self, user_data):
         df = self.get_users()
@@ -1689,103 +984,25 @@ class Database:
         self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
                                               "score", "total_marks", "start_time", "submission_time", "answers", "status"])
 
-    # =====================================================================
-    # Audit Log - سجل التدقيق الجديد
-    # =====================================================================
-    def get_audit_log(self):
-        """جلب جميع سجلات التدقيق من ورقة AuditLog."""
-        return self._sheet_to_df("AuditLog")
-
-    def add_audit_log(self, action, details="", user_info=None, client_info=None):
-        """
-        إضافة سجل تدقيق جديد إلى ورقة AuditLog.
-        
-        Parameters:
-        - action: نوع العملية (مثل "تسجيل دخول", "إضافة عضو", ...)
-        - details: تفاصيل إضافية عن العملية
-        - user_info: dict يحتوي على معلومات المستخدم (user_id, username, ...)
-        - client_info: dict يحتوي على معلومات العميل (ip, browser, os, ...)
-        """
-        if user_info is None:
-            user_info = st.session_state.get("user", {}) if "user" in st.session_state else {}
-        if client_info is None:
-            client_info = get_client_info()
-        
-        username = user_info.get("username", "") if isinstance(user_info, dict) else ""
-        user_id = user_info.get("user_id", "") if isinstance(user_info, dict) else ""
-        # إذا كان user_info هو مجرد user_id string
-        if isinstance(user_info, str):
-            user_id = user_info
-            username = ""
-        elif isinstance(user_info, dict) and not username and user_id:
-            # حاول الحصول على اسم المستخدم من users sheet إذا كان متاحاً
-            try:
-                if 'db_instance' in st.session_state:
-                    users_df = st.session_state.db_instance.get_users()
-                    if not users_df.empty:
-                        match = users_df[users_df.user_id == user_id]
-                        if not match.empty:
-                            username = match.iloc[0].get("username", "")
-            except Exception:
-                pass
-        
-        log_entry = {
-            "log_id": str(uuid.uuid4()),
-            "timestamp": get_cairo_now().isoformat(),
-            "username": username,
-            "user_id": user_id,
-            "action": action,
-            "details": details,
-            "ip_address": client_info.get("ip_address", ""),
-            "country": client_info.get("country", ""),
-            "city": client_info.get("city", ""),
-            "browser": client_info.get("browser", ""),
-            "os": client_info.get("os", ""),
-            "device_type": client_info.get("device_type", ""),
-            "screen_size": client_info.get("screen_size", "")
-        }
-        
-        df = self.get_audit_log()
-        if df.empty:
-            df = pd.DataFrame(columns=AUDIT_LOG_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([log_entry])], ignore_index=True)
-        self._df_to_sheet("AuditLog", df, AUDIT_LOG_COLUMNS)
-        return log_entry["log_id"]
-
-    def delete_audit_log(self, log_id):
-        """حذف سجل تدقيق معين."""
-        df = self.get_audit_log()
-        if df.empty:
-            return
-        df = df[df.log_id != log_id]
-        self._df_to_sheet("AuditLog", df, AUDIT_LOG_COLUMNS)
-
-    # =====================================================================
-    # دوال قديمة للتوافق العكسي - تشير إلى AuditLog الجديد
-    # =====================================================================
+    # --- Logs ---
     def get_logs(self):
-        """للتوافق مع الكود القديم - يحول إلى AuditLog."""
-        return self.get_audit_log()
+        return self._sheet_to_df("Logs")
 
     def add_log(self, user_id, action, details=""):
-        """للتوافق مع الكود القديم - يحول إلى AuditLog."""
-        client_info = get_client_info()
-        user_info = {"user_id": user_id, "username": ""}
-        # محاولة الحصول على اسم المستخدم
-        try:
-            users_df = self.get_users()
-            if not users_df.empty:
-                match = users_df[users_df.user_id == user_id]
-                if not match.empty:
-                    user_info["username"] = match.iloc[0].get("username", "")
-                    user_info["full_name"] = match.iloc[0].get("full_name", "")
-        except Exception:
-            pass
-        return self.add_audit_log(action, details, user_info=user_info, client_info=client_info)
+        log = {
+            "log_id": str(uuid.uuid4()), "timestamp": get_cairo_now().isoformat(),
+            "user_id": user_id, "action": action, "details": details
+        }
+        df = self.get_logs()
+        if df.empty:
+            df = pd.DataFrame(columns=["log_id", "timestamp", "user_id", "action", "details"])
+        df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
+        self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
 
     def delete_log(self, log_id):
-        """للتوافق مع الكود القديم - يحذف من AuditLog."""
-        self.delete_audit_log(log_id)
+        df = self.get_logs()
+        df = df[df.log_id != log_id]
+        self._df_to_sheet("Logs", df, ["log_id", "timestamp", "user_id", "action", "details"])
 
     # --- Events ---
     EVENT_COLUMNS = ["event_id", "event_name", "event_type", "event_date", "event_time",
@@ -2145,7 +1362,8 @@ def show_initialization(db):
             }
             admin_data["password"] = hash_password(admin_data["password"])
             db.add_user(admin_data)
-            st.success("✅ تم إنشاء مدير النظام بنجاح! الرجاء تسجيل الدخول باستخدام الحساب الافتراضي.")
+            st.success("✅ تم إنشاء مدير النظام بنجاح!")
+            st.info("**اسم المستخدم:** `admin`\n\n**كلمة المرور:** `admin123`")
             time.sleep(2)
             st.rerun()
         st.stop()
@@ -2158,7 +1376,7 @@ def show_login_page(db, jwt_secret):
     with tab1:
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم").strip()
-            password = st.text_input("كلمة المرور", type="password", placeholder="").strip()
+            password = st.text_input("كلمة المرور", type="password").strip()
             if st.form_submit_button("تسجيل الدخول", use_container_width=True):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
@@ -2193,7 +1411,7 @@ def show_login_page(db, jwt_secret):
         st.subheader("دخول الاختبار الإلكتروني")
         with st.form("student_login_form"):
             code = st.text_input("كود الاختبار", placeholder="مثال: GEN123").strip()
-            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="").strip()
+            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="مثال: QUIZ99").strip()
             if st.form_submit_button("بدء الاختبار", use_container_width=True):
                 if not code or not passwd:
                     st.error("الرجاء إدخال الكود وكلمة المرور")
@@ -2434,11 +1652,11 @@ def show_student_quiz(db):
             st.markdown("#### ⏱️ معلومات الوقت")
             col_t1, col_t2 = st.columns(2)
             with col_t1:
-                st.markdown("**بداية الامتحان:**")
-                st.markdown(format_cairo_time(st.session_state.quiz_start_time))
+                st.write("**بداية الامتحان:**")
+                st.write(format_cairo_time(st.session_state.quiz_start_time))
             with col_t2:
-                st.markdown("**نهاية الامتحان (التسليم):**")
-                st.markdown(format_cairo_time(st.session_state.quiz_submit_time))
+                st.write("**نهاية الامتحان (التسليم):**")
+                st.write(format_cairo_time(st.session_state.quiz_submit_time))
             col_btn, _ = st.columns([2, 3])
             if col_btn.button("عرض الإجابات والأخطاء", use_container_width=True, key="show_review_btn"):
                 st.session_state.show_review = True
@@ -2465,8 +1683,8 @@ def show_student_quiz(db):
                     is_correct = (correct == student_ans)
                     st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
                     col1, col2 = st.columns(2)
-                    col1.markdown(f"📝 إجابتك: {student_ans if student_ans else 'لم تجب'}")
-                    col2.markdown(f"✅ الإجابة الصحيحة: {correct}")
+                    col1.write(f"📝 إجابتك: {student_ans if student_ans else 'لم تجب'}")
+                    col2.write(f"✅ الإجابة الصحيحة: {correct}")
                     if is_correct:
                         st.success("✔️ صحيح")
                     else:
@@ -2493,23 +1711,6 @@ def show_sidebar_navigation(db):
         if not menu_items:
             st.warning("صلاحية غير معروفة")
             return None
-        
-        # Menu items with icons
-        menu_icons = {
-            "🏠 لوحة التحكم": "fas fa-home",
-            "👥 إدارة الأعضاء": "fas fa-users",
-            "🏫 إدارة المراحل الدراسية": "fas fa-school",
-            "📚 إدارة الفصول": "fas fa-book-open",
-            "📋 الحضور": "fas fa-clipboard-check",
-            "💬 الافتقاد": "fas fa-comments",
-            "📝 المسابقات والاختبارات": "fas fa-file-alt",
-            "📊 التقارير والإحصائيات": "fas fa-chart-bar",
-            "📅 إدارة الفعاليات": "fas fa-calendar-alt",
-            "📜 سجل العمليات": "fas fa-history",
-            "🔒 تغيير كلمة المرور": "fas fa-key",
-            "🏆 درجات المسابقات": "fas fa-trophy"
-        }
-        
         current_choice = st.session_state.get("menu_choice", menu_items[0])
         if current_choice not in menu_items:
             current_choice = menu_items[0]
@@ -2520,17 +1721,7 @@ def show_sidebar_navigation(db):
         st.markdown('<div class="nav-btn-container">', unsafe_allow_html=True)
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
-            icon = menu_icons.get(item, "fas fa-circle")
-            # Create button with icon using HTML
-            button_html = f"""
-            <button class="nav-btn-with-icon" onclick="this.click()">
-                <i class="{icon}" style="margin-left: 8px; width: 20px;"></i>
-                <span>{item}</span>
-            </button>
-            """
-            # Use Streamlit button but with icon in label
-            icon_label = f"{icon.split('fa-')[-1].replace(' fa-', '')}"
-            if st.button(f"{item}", key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
+            if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
                 st.session_state.show_sidebar = False
@@ -3369,7 +2560,7 @@ def show_attendance(db):
     if role == "Teacher" and section_id:
         selected_section = section_id
         section_name = sections[sections.section_id == section_id]["section_name"].values[0] if not sections.empty else section_id
-        st.markdown(f"**الفصل:** {section_name}")
+        st.write(f"**الفصل:** {section_name}")
     else:
         selected_section = st.selectbox("اختر الفصل", sections["section_id"],
                                         format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0])
@@ -3394,7 +2585,7 @@ def show_attendance(db):
         prev_status = prev.iloc[0]["status"] if not prev.empty else "حاضر"
         prev_notes = prev.iloc[0]["notes"] if not prev.empty else ""
         cols = st.columns([3, 2, 2])
-        cols[0].markdown(f"**{sname}**")
+        cols[0].write(f"**{sname}**")
         status_list = ["حاضر", "غائب", "متأخر"]
         status_index = status_list.index(prev_status) if prev_status in status_list else 0
         status = cols[1].radio("الحالة", status_list, index=status_index, key=f"att_{sid}", horizontal=True)
@@ -3750,10 +2941,10 @@ def show_quizzes(db):
                 expiry = q.get("expiry_date", "")
                 created_by = q.get("created_by", "")
                 col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
-                col1.markdown(f"**{title}**")
-                col2.markdown(f"الكود: {code}")
-                col3.markdown("حالة: " + ("🟢 نشط" if active else "🔴 مغلق"))
-                col4.markdown(f"ينتهي: {expiry}")
+                col1.write(f"**{title}**")
+                col2.write(f"الكود: {code}")
+                col3.write("حالة: " + ("🟢 نشط" if active else "🔴 مغلق"))
+                col4.write(f"ينتهي: {expiry}")
                 
                 # Check if teacher can modify this quiz
                 can_manage_quiz = True
@@ -4907,7 +4098,7 @@ def show_student_profile(db, student_id):
     
     if student.get("notes"):
         with st.expander("📝 ملاحظات"):
-            st.markdown(student.get("notes", ""))
+            st.write(student.get("notes", ""))
     
     st.markdown("---")
     
@@ -5112,91 +4303,22 @@ def show_user_profile(db, user_id):
 
 
 # =============================================================================
-# Audit Log Page - سجل التدقيق
+# Logs
 # =============================================================================
 def show_logs(db):
-    st.markdown("<h2 class='main-header'>📜 سجل التدقيق (Audit Log)</h2>", unsafe_allow_html=True)
-    logs = db.get_audit_log()
+    st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
+    logs = db.get_logs()
     if not logs.empty:
         if "timestamp" in logs.columns:
             logs["timestamp"] = pd.to_datetime(logs["timestamp"])
-        
-        # إضافة عمليات البحث والتصفية
-        st.markdown("#### 🔍 تصفية السجلات")
-        col_f1, col_f2, col_f3 = st.columns(3)
-        with col_f1:
-            # فلتر حسب المستخدم
-            user_ids = ["الكل"] + sorted(logs["user_id"].dropna().unique().tolist()) if "user_id" in logs.columns else ["الكل"]
-            if user_ids:
-                selected_user = st.selectbox("المستخدم", user_ids, format_func=lambda x: "الكل" if x == "الكل" else str(x)[:30])
-        with col_f2:
-            # فلتر حسب نوع العملية
-            actions = ["الكل"] + sorted(logs["action"].dropna().unique().tolist()) if "action" in logs.columns else ["الكل"]
-            selected_action = st.selectbox("نوع العملية", actions)
-        with col_f3:
-            # فلتر حسب التاريخ
-            date_options = ["الكل", "آخر 24 ساعة", "آخر 7 أيام", "آخر 30 يوم"]
-            selected_date_range = st.selectbox("الفترة الزمنية", date_options)
-        
-        filtered_logs = logs.copy()
-        
-        # تطبيق فلتر المستخدم
-        if selected_user != "الكل" and "user_id" in filtered_logs.columns:
-            filtered_logs = filtered_logs[filtered_logs["user_id"] == selected_user]
-        
-        # تطبيق فلتر العملية
-        if selected_action != "الكل" and "action" in filtered_logs.columns:
-            filtered_logs = filtered_logs[filtered_logs["action"] == selected_action]
-        
-        # تطبيق فلتر التاريخ
-        if selected_date_range != "الكل":
-            now = get_cairo_now()
-            if selected_date_range == "آخر 24 ساعة":
-                cutoff = now - timedelta(hours=24)
-                filtered_logs = filtered_logs[filtered_logs["timestamp"] >= cutoff]
-            elif selected_date_range == "آخر 7 أيام":
-                cutoff = now - timedelta(days=7)
-                filtered_logs = filtered_logs[filtered_logs["timestamp"] >= cutoff]
-            elif selected_date_range == "آخر 30 يوم":
-                cutoff = now - timedelta(days=30)
-                filtered_logs = filtered_logs[filtered_logs["timestamp"] >= cutoff]
-        
-        # أعمدة العرض
-        display_columns = ["timestamp", "username", "user_id", "action", "details", 
-                          "ip_address", "country", "city", "browser", "os", "device_type"]
-        available = [c for c in display_columns if c in filtered_logs.columns]
-        
-        st.markdown(f"**عدد السجلات:** {len(filtered_logs)}")
-        st.dataframe(
-            filtered_logs[available].sort_values("timestamp", ascending=False),
-            use_container_width=True,
-            column_config={
-                "timestamp": "الوقت",
-                "username": "اسم المستخدم",
-                "user_id": "المعرف",
-                "action": "العملية",
-                "details": "التفاصيل",
-                "ip_address": "IP",
-                "country": "الدولة",
-                "city": "المدينة",
-                "browser": "المتصفح",
-                "os": "نظام التشغيل",
-                "device_type": "الجهاز"
-            }
-        )
-        
-        # حذف السجلات
-        if st.session_state.user.get("role") == "System Admin" and "log_id" in filtered_logs.columns:
-            st.markdown("---")
-            st.subheader("🗑️ حذف سجل")
-            del_id = st.selectbox("اختر سجلاً لحذفه", filtered_logs["log_id"], key="del_log_sel")
+        st.dataframe(logs.sort_values("timestamp", ascending=False), use_container_width=True)
+        if "log_id" in logs.columns:
+            del_id = st.selectbox("اختر سجلاً لحذفه", logs["log_id"], key="del_log_sel")
             if st.button("حذف السجل"):
-                db.delete_audit_log(del_id)
+                db.delete_log(del_id)
                 st.success("تم الحذف")
                 time.sleep(1)
                 st.rerun()
-    else:
-        st.info("لا توجد سجلات تدقيق بعد.")
 
 
 # =============================================================================
@@ -5205,9 +4327,9 @@ def show_logs(db):
 def change_password(db):
     st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
     with st.form("change_password_form"):
-        old = st.text_input("كلمة المرور الحالية", type="password", placeholder="").strip()
-        new = st.text_input("كلمة المرور الجديدة", type="password", placeholder="").strip()
-        confirm = st.text_input("تأكيد كلمة المرور الجديدة", type="password", placeholder="").strip()
+        old = st.text_input("كلمة المرور الحالية", type="password").strip()
+        new = st.text_input("كلمة المرور الجديدة", type="password").strip()
+        confirm = st.text_input("تأكيد كلمة المرور الجديدة", type="password").strip()
         if st.form_submit_button("تغيير كلمة المرور"):
             if not old or not new or not confirm:
                 st.error("الرجاء ملء جميع الحقول")
