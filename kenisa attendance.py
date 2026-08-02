@@ -201,198 +201,41 @@ def get_stage_color(stage_name):
 # =============================================================================
 def inject_css():
     bg_data_url = f"data:image/jpeg;base64,{BG_IMAGE_BASE64}"
-    # ===== Background & Overlay - SINGLE consolidated definition (no duplicates, no overflow) =====
-    st.markdown(f"""<style id="bg-img-style">
-        html, body {{
-            margin: 0 !important;
-            padding: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            overflow-x: hidden !important;
-        }}
-        [data-testid="stAppViewContainer"] {{
-            background-image: url('{bg_data_url}') !important;
-            background-position: center center !important;
-            background-repeat: no-repeat !important;
-            background-size: cover !important;
-            background-attachment: fixed !important;
-            width: 100% !important;
-            height: 100% !important;
-            overflow-x: hidden !important;
-            position: relative !important;
-        }}
-        .stApp {{
-            background: transparent !important;
-        }}
-        /* ===== Professional Dark Overlay - covers full screen, doesn't block clicks ===== */
-        [data-testid="stAppViewContainer"]::before {{
-            content: '' !important;
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            background: rgba(0, 0, 0, 0.45) !important;
-            z-index: 0 !important;
-            pointer-events: none !important;
-        }}
-        /* Content sits above the overlay */
-        .block-container {{
-            position: relative !important;
-            z-index: 1 !important;
-        }}
-        section.main {{
-            position: relative !important;
-            z-index: 1 !important;
-        }}
-    </style>""", unsafe_allow_html=True)
+    st.markdown(f"""<style id="bg-img-style">body{{background-image:url('{bg_data_url}')!important;}}</style>""", unsafe_allow_html=True)
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
-        @import url('https://fonts.googleapis.com/icon?family=Material+Icons');
-        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
-        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
-        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Sharp:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
         @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
-
-        /* ===== Color Scheme & Direction ===== */
+        
+        /* ===== Background Image with Overlay ===== */
         html, body {
             color-scheme: light !important;
+            background-color: #ffffff !important;
             color: #1a1a2e !important;
-            direction: rtl; text-align: right;
         }
-
-        /* ===== Material Icons & Symbols - Correct Font Families ===== */
-        .material-symbols-outlined {
-            font-family: 'Material Symbols Outlined' !important;
-            font-weight: normal !important;
-            font-style: normal !important;
-            font-size: 24px !important;
-            line-height: 1 !important;
-            letter-spacing: normal !important;
-            text-transform: none !important;
-            display: inline-block !important;
-            white-space: nowrap !important;
-            word-wrap: normal !important;
-            direction: ltr !important;
-            font-feature-settings: 'liga' 1 !important;
-            font-variant-ligatures: normal !important;
-            -webkit-font-feature-settings: 'liga' !important;
-            -webkit-font-smoothing: antialiased !important;
+        body {
+            direction: rtl; text-align: right; color: #1a1a2e; overflow-x: hidden;
+            background-size: cover !important;
+            background-position: center !important;
+            background-attachment: fixed !important;
+            background-repeat: no-repeat !important;
         }
-        .material-symbols-rounded {
-            font-family: 'Material Symbols Rounded' !important;
-            font-weight: normal !important;
-            font-style: normal !important;
-            font-size: 24px !important;
-            line-height: 1 !important;
-            letter-spacing: normal !important;
-            text-transform: none !important;
-            display: inline-block !important;
-            white-space: nowrap !important;
-            word-wrap: normal !important;
-            direction: ltr !important;
-            font-feature-settings: 'liga' 1 !important;
-            font-variant-ligatures: normal !important;
-            -webkit-font-feature-settings: 'liga' !important;
-            -webkit-font-smoothing: antialiased !important;
+        body::before {
+            content: ''; position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+            background: rgba(255,255,255,0.88) !important;
+            z-index: -1; pointer-events: none;
         }
-        .material-symbols-sharp {
-            font-family: 'Material Symbols Sharp' !important;
-            font-weight: normal !important;
-            font-style: normal !important;
-            font-size: 24px !important;
-            line-height: 1 !important;
-            letter-spacing: normal !important;
-            text-transform: none !important;
-            display: inline-block !important;
-            white-space: nowrap !important;
-            word-wrap: normal !important;
-            direction: ltr !important;
-            font-feature-settings: 'liga' 1 !important;
-            font-variant-ligatures: normal !important;
-            -webkit-font-feature-settings: 'liga' !important;
-            -webkit-font-smoothing: antialiased !important;
+        .stApp {
+            background: transparent !important;
         }
-        .material-icons {
-            font-family: 'Material Icons' !important;
-            font-weight: normal !important;
-            font-style: normal !important;
-            font-size: 24px !important;
-            line-height: 1 !important;
-            letter-spacing: normal !important;
-            text-transform: none !important;
-            display: inline-block !important;
-            white-space: nowrap !important;
-            word-wrap: normal !important;
-            direction: ltr !important;
-            font-feature-settings: 'liga' 1 !important;
-            font-variant-ligatures: normal !important;
-            -webkit-font-feature-settings: 'liga' !important;
-            -webkit-font-smoothing: antialiased !important;
-        }
-        [class*="material-symbols"], [class*="material-icons"],
-        [class*="material-symbols-outlined"], [class*="material-symbols-rounded"], [class*="material-symbols-sharp"] {
-            font-feature-settings: 'liga' 1 !important;
-            font-variant-ligatures: normal !important;
-        }
-
+        
         /* ===== Glassmorphism Base ===== */
-        * { box-sizing: border-box !important; }
-        /* Apply Cairo font to all text elements (icon elements keep their own font) */
-        html, body, div, span, button, input, textarea, select, label, p, h1, h2, h3, h4, h5, h6, table, th, td, a, li, ul, ol, section, header, footer, nav, article, aside, main, form {
-            font-family: 'Cairo', sans-serif !important;
-        }
-        /* Icon elements always keep their Material font, overriding the Cairo rule above.
-           Supports Outlined, Rounded, Sharp variants plus Material Icons ligatures. */
-        .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp,
-        [class^="material-symbols"], [class*=" material-symbols"],
-        [class^="material-icons"], [class*=" material-icons"],
-        [class*="material-symbols-outlined"], [class*="material-symbols-rounded"], [class*="material-symbols-sharp"] {
-            font-family: 'Material Symbols Outlined', 'Material Symbols Rounded', 'Material Symbols Sharp', 'Material Icons', sans-serif !important;
-        }
+        * { font-family: 'Cairo', sans-serif !important; box-sizing: border-box !important; }
         
         /* ===== Hide Streamlit Elements ===== */
         header[data-testid="stHeader"] { display: none !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
-        
-        /* ===== Hide Streamlit InputInstructions (Press Enter tooltip) ===== */
-        [data-testid="InputInstructions"],
-        div[class*="InputInstructions"],
-        div[class*="input-instructions"],
-        .st-emotion-cache-q8sbsg,
-        .st-emotion-cache-q9dj5s,
-        div[kind="chatMessage"] {
-            display: none !important;
-            visibility: hidden !important;
-            height: 0px !important;
-            overflow: hidden !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-        }
-        /* Keep instructions hidden everywhere: sidebar, dialogs, forms, expanders */
-        section[data-testid="stSidebar"] [data-testid="InputInstructions"],
-        section[data-testid="stSidebar"] div[class*="InputInstructions"],
-        div[role="dialog"] [data-testid="InputInstructions"],
-        div[role="dialog"] div[class*="InputInstructions"],
-        form [data-testid="InputInstructions"],
-        form div[class*="InputInstructions"],
-        [data-testid="stExpander"] [data-testid="InputInstructions"],
-        [data-testid="stExpander"] div[class*="InputInstructions"] {
-            display: none !important;
-            visibility: hidden !important;
-            height: 0px !important;
-            overflow: hidden !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-        }
-        /* Hide the wrapper container that may hold instruction texts */
-        div[data-testid="stTextInput"] p,
-        div[data-testid="stTextArea"] p,
-        div[data-testid="stChatInput"] p {
-            display: none !important;
-        }
         
         /* ===== Animations ===== */
         @keyframes fadeInUp {
@@ -747,22 +590,10 @@ def inject_css():
             }
         }
         
-        /* ===== Hide unintended pre/code blocks from Alerts ===== */
-        div.stAlert pre, div.stAlert code,
-        [data-testid="stAlert"] pre, [data-testid="stAlert"] code {
+        /* ===== Hide unintended pre/code blocks from Markdown ===== */
+        div.stAlert pre, div.stAlert code {
             display: none !important;
-            visibility: hidden !important;
-            height: 0px !important;
-            overflow: hidden !important;
         }
-        /* Hide extra markdown/code text inside Alerts but keep the main useful text */
-        div.stAlert div.stMarkdown pre,
-        div.stAlert div.stMarkdown code {
-            display: none !important;
-            visibility: hidden !important;
-        }
-        /* Hide empty or code-only alert content - keep visible the main message */
-        div.stAlert pre + * { display: inline !important; }
         
         /* ===== Custom Scrollbar ===== */
         ::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
@@ -799,12 +630,14 @@ def inject_css():
         }
         
         /* ===== Enhanced Danger Button */        
-        div.stButton > button[kind="secondary"]:has(span) {
+        div.stButton > button:has(span:text("حذف")),
+        div[data-testid="stButton"] > button:has-text("حذف") {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
             color: white !important;
             box-shadow: 0 5px 15px rgba(245,87,108,0.4) !important;
         }
-        div.stButton > button[kind="secondary"]:has(span):hover {
+        div.stButton > button:has(span:text("حذف")):hover,
+        div[data-testid="stButton"] > button:has-text("حذف"):hover {
             box-shadow: 0 0 25px rgba(245,87,108,0.6) !important;
         }
         
@@ -816,6 +649,26 @@ def inject_css():
         }
         div.stDownloadButton > button:hover {
             box-shadow: 0 0 25px rgba(67,233,123,0.6) !important;
+        }
+        
+        /* ===== Success Button (Green) ===== */
+        .stButton > button:has-text("تسجيل") {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+            color: white !important;
+            box-shadow: 0 5px 15px rgba(40,167,69,0.4) !important;
+        }
+        .stButton > button:has-text("تسجيل"):hover {
+            box-shadow: 0 0 25px rgba(40,167,69,0.6) !important;
+        }
+        
+        /* ===== Warning Button (Orange) ===== */
+        .stButton > button:has-text("إصلاح") {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
+            color: white !important;
+            box-shadow: 0 5px 15px rgba(243,156,18,0.4) !important;
+        }
+        .stButton > button:has-text("إصلاح"):hover {
+            box-shadow: 0 0 25px rgba(243,156,18,0.6) !important;
         }
         
         /* ===== Metrics ===== */
@@ -947,68 +800,20 @@ def inject_css():
         /* ===== Content Area ===== */
         .content-area { padding: 0 0.5rem !important; }
         
-        /* ===== Premium Loading Animation ===== */
-        .stSpinner {
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
-            min-height: 100px !important;
-        }
+        /* ===== Loading Spinner ===== */
         .stSpinner > div {
-            border: none !important;
-            width: 48px !important;
-            height: 48px !important;
-            background: transparent !important;
-            position: relative !important;
-            animation: none !important;
-        }
-        .stSpinner > div::after {
-            content: '' !important;
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            border: 4px solid rgba(102,126,234,0.15) !important;
             border-top-color: #667eea !important;
-            border-radius: 50% !important;
-            animation: premiumSpin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite !important;
-            box-shadow: 0 0 15px rgba(102,126,234,0.2) !important;
+            animation: spin 1s linear infinite !important;
         }
-        .stSpinner > div::before {
-            content: '' !important;
-            position: absolute !important;
-            top: 4px !important;
-            left: 4px !important;
-            width: calc(100% - 8px) !important;
-            height: calc(100% - 8px) !important;
-            border: 3px solid transparent !important;
-            border-bottom-color: #764ba2 !important;
-            border-radius: 50% !important;
-            animation: premiumSpin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite reverse !important;
-        }
-        @keyframes premiumSpin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        /* Loading text styling */
-        .stSpinner + div, .stSpinner ~ div {
-            text-align: center !important;
-            color: #667eea !important;
-            font-weight: 600 !important;
-            font-size: 1rem !important;
-            margin-top: 0.5rem !important;
-            animation: pulse 1.5s ease-in-out infinite !important;
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         /* ===== Dark Mode Override ===== */
         @media (prefers-color-scheme: dark) {
             html, body {
                 color-scheme: light !important;
-                color: #1a1a2e !important;
+                background-color: #ffffff !important; color: #1a1a2e !important;
             }
-            /* Do NOT set background: transparent on stAppViewContainer here —
-               the background image is applied via the #bg-img-style <style> block. */
+            body::before { background: rgba(255,255,255,0.92) !important; }
             .stApp { background: transparent !important; }
             section[data-testid="stSidebar"] {
                 background: rgba(255,255,255,0.9) !important;
@@ -2716,7 +2521,15 @@ def show_sidebar_navigation(db):
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
             icon = menu_icons.get(item, "fas fa-circle")
-            # Streamlit button with emoji icon already in menu item label
+            # Create button with icon using HTML
+            button_html = f"""
+            <button class="nav-btn-with-icon" onclick="this.click()">
+                <i class="{icon}" style="margin-left: 8px; width: 20px;"></i>
+                <span>{item}</span>
+            </button>
+            """
+            # Use Streamlit button but with icon in label
+            icon_label = f"{icon.split('fa-')[-1].replace(' fa-', '')}"
             if st.button(f"{item}", key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
