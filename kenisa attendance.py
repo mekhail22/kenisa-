@@ -1,5 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
+from premium_design import get_design_css, page_header, empty_state, stat_card, info_row
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
@@ -2366,13 +2367,13 @@ def show_initialization(db):
 
 
 def show_login_page(db, jwt_secret):
-    st.markdown("<h1 class='main-header'>⛪ <br>كنيسة الشهيدة دميانة</h1>", unsafe_allow_html=True)
+    st.markdown(page_header("كنيسة الشهيدة دميانة", subtitle="نظام إدارة الكنيسة المتكامل"), unsafe_allow_html=True)
     show_initialization(db)
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
         with st.form("login_form"):
-            username = st.text_input("اسم المستخدم", placeholder="").strip()
-            password = st.text_input("كلمة المرور", type="password", placeholder="").strip()
+            username = st.text_input("اسم المستخدم", placeholder="أدخل اسم المستخدم").strip()
+            password = st.text_input("كلمة المرور", type="password", placeholder="أدخل كلمة المرور").strip()
             if st.form_submit_button("تسجيل الدخول", use_container_width=True):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
@@ -2697,54 +2698,88 @@ def show_student_quiz(db):
 # =============================================================================
 def show_sidebar_navigation(db):
     with st.sidebar:
-        st.markdown("## ⛪ كنيسة الشهيدة دميانة")
         user = st.session_state.user
-        st.markdown(f"**👤 {user.get('full_name', '')}**")
-        st.caption(f"الصلاحية: {user.get('role', '')}")
-        st.divider()
         role = user.get("role", "")
         menu_items = get_role_menu(role)
         if not menu_items:
             st.warning("صلاحية غير معروفة")
             return None
-        
-        # Menu items with icons
+
+        # ===== Premium Sidebar Header =====
+        st.markdown("""
+        <div class='sidebar-brand'>
+            <div class='brand-logo'>⛪</div>
+            <div class='brand-text'>
+                <h3>كنيسة الشهيدة دميانة</h3>
+                <small>نظام الإدارة المتكامل</small>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ===== User Card =====
+        full_name = user.get('full_name', '')
+        role_label = {
+            "System Admin": "مدير النظام",
+            "Father Account": "أب كاهن",
+            "Service Manager": "أمين الخدمة",
+            "Teacher": "مدرسة",
+            "Student": "طالبة"
+        }.get(role, role)
+        initials = get_initials(full_name)
+        st.markdown(f"""
+        <div class='sidebar-user'>
+            <div class='user-avatar-lg'>{initials}</div>
+            <div class='user-info'>
+                <strong>{full_name}</strong>
+                <span>{role_label}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ===== Collapse button =====
+        if st.button("إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
+            st.session_state.show_sidebar = False
+            st.rerun()
+
+        # ===== Menu items with Material Symbols icons =====
         menu_icons = {
-            "🏠 لوحة التحكم": "fas fa-home",
-            "👥 إدارة الأعضاء": "fas fa-users",
-            "🏫 إدارة المراحل الدراسية": "fas fa-school",
-            "📚 إدارة الفصول": "fas fa-book-open",
-            "📋 الحضور": "fas fa-clipboard-check",
-            "💬 الافتقاد": "fas fa-comments",
-            "📝 المسابقات والاختبارات": "fas fa-file-alt",
-            "📊 التقارير والإحصائيات": "fas fa-chart-bar",
-            "📅 إدارة الفعاليات": "fas fa-calendar-alt",
-            "📜 سجل العمليات": "fas fa-history",
-            "🔒 تغيير كلمة المرور": "fas fa-key",
-            "🏆 درجات المسابقات": "fas fa-trophy"
+            "🏠 لوحة التحكم": "dashboard",
+            "👥 إدارة الأعضاء": "group",
+            "🏫 إدارة المراحل الدراسية": "school",
+            "📚 إدارة الفصول": "menu_book",
+            "📋 الحضور": "fact_check",
+            "💬 الافتقاد": "forum",
+            "📝 المسابقات والاختبارات": "quiz",
+            "📊 التقارير والإحصائيات": "monitoring",
+            "📅 إدارة الفعاليات": "event",
+            "📜 سجل العمليات": "history",
+            "🔒 تغيير كلمة المرور": "lock",
+            "🏆 درجات المسابقات": "military_tech"
         }
-        
+
         current_choice = st.session_state.get("menu_choice", menu_items[0])
         if current_choice not in menu_items:
             current_choice = menu_items[0]
             st.session_state.menu_choice = current_choice
-        if st.button("✕ إخفاء القائمة", key="hide_sidebar_btn", use_container_width=True):
-            st.session_state.show_sidebar = False
-            st.rerun()
-        st.markdown('<div class="nav-btn-container">', unsafe_allow_html=True)
+
+        st.markdown('<div class="sidebar-nav nav-btn-container">', unsafe_allow_html=True)
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
-            icon = menu_icons.get(item, "fas fa-circle")
-            # Streamlit button with emoji icon already in menu item label
-            if st.button(f"{item}", key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
+            icon_name = menu_icons.get(item, "circle")
+            label = item.split(" ", 1)[1] if " " in item else item
+            btn_label = f'<span class="material-symbols-rounded" style="font-size:20px;margin-left:8px;">{icon_name}</span>{label}'
+            if st.button(btn_label, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
                 st.session_state.show_sidebar = False
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-        st.divider()
-        if st.button("🚪 تسجيل الخروج", use_container_width=True, key="logout_btn"):
+
+        # ===== Sidebar footer =====
+        st.markdown('<div class="sidebar-footer">', unsafe_allow_html=True)
+        if st.button("تسجيل الخروج", use_container_width=True, key="logout_btn"):
             logout(db)
+        st.markdown('</div>', unsafe_allow_html=True)
     return current_choice
 
 
@@ -5429,6 +5464,32 @@ def change_password(db):
                 st.session_state.user["password"] = hashed
                 db.add_log(st.session_state.user["user_id"], "تغيير كلمة المرور", "تم تغيير كلمة المرور بنجاح")
                 st.success("✅ تم تغيير كلمة المرور بنجاح!")
+
+
+# =============================================================================
+# Premium Design System Override
+# Overrides the legacy CSS injection functions. Last definition wins in Python.
+# The full design system lives in premium_design.py (tokens, buttons, cards,
+# inputs, tables, sidebar, tabs, alerts, spinners, empty states, responsive).
+# =============================================================================
+def inject_css():
+    """Premium design system — replaces legacy glassmorphism CSS entirely."""
+    st.markdown(get_design_css(BG_IMAGE_BASE64), unsafe_allow_html=True)
+
+
+def inject_user_cards_css():
+    """Design system already applies globally — no-op for backwards compat."""
+    pass
+
+
+def inject_students_cards_css():
+    """Design system already applies globally — no-op for backwards compat."""
+    pass
+
+
+def inject_events_css():
+    """Design system already applies globally — no-op for backwards compat."""
+    pass
 
 
 # =============================================================================
