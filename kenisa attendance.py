@@ -207,8 +207,7 @@ def inject_css():
             margin: 0 !important;
             padding: 0 !important;
             width: 100% !important;
-            height: 100% !important;
-            overflow-x: hidden !important;
+            min-height: 100vh !important;
         }}
         [data-testid="stAppViewContainer"] {{
             background-image: url('{bg_data_url}') !important;
@@ -217,8 +216,7 @@ def inject_css():
             background-size: cover !important;
             background-attachment: fixed !important;
             width: 100% !important;
-            height: 100% !important;
-            overflow-x: hidden !important;
+            min-height: 100vh !important;
             position: relative !important;
         }}
         .stApp {{
@@ -231,7 +229,7 @@ def inject_css():
             top: 0 !important;
             left: 0 !important;
             width: 100% !important;
-            height: 100% !important;
+            min-height: 100vh !important;
             background: rgba(0, 0, 0, 0.45) !important;
             z-index: 0 !important;
             pointer-events: none !important;
@@ -387,11 +385,32 @@ def inject_css():
             opacity: 0 !important;
             pointer-events: none !important;
         }
-        /* Hide the wrapper container that may hold instruction texts */
-        div[data-testid="stTextInput"] p,
-        div[data-testid="stTextArea"] p,
-        div[data-testid="stChatInput"] p {
-            display: none !important;
+        
+        /* ===== Form Labels & Input Text ===== */
+        [data-testid="stTextInput"] label,
+        [data-testid="stTextInput"] p:not([class*="input-instructions"]):not([data-testid="InputInstructions"]) {
+            color: #ffffff !important;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5) !important;
+        }
+        
+        /* Force-hide placeholder text */
+        input::placeholder, textarea::placeholder {
+            color: transparent !important;
+            opacity: 0 !important;
+        }
+        
+        /* Neutralize browser autofill text */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus {
+            -webkit-text-fill-color: transparent !important;
+            -webkit-box-shadow: 0 0 0px 1000px white inset !important;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+        
+        /* Ensure input text color for Streamlit text inputs */
+        input[data-testid="stTextInput"] {
+            color: #1a1a2e !important;
         }
         
         /* ===== Animations ===== */
@@ -2352,7 +2371,7 @@ def show_login_page(db, jwt_secret):
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
         with st.form("login_form"):
-            username = st.text_input("اسم المستخدم").strip()
+            username = st.text_input("اسم المستخدم", placeholder="").strip()
             password = st.text_input("كلمة المرور", type="password", placeholder="").strip()
             if st.form_submit_button("تسجيل الدخول", use_container_width=True):
                 if not username or not password:
