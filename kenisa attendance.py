@@ -75,6 +75,25 @@ def get_cairo_now():
     return datetime.now(CAIRO_TZ)
 
 
+def generate_student_code(db=None, existing_codes=None):
+    """
+    توليد كود فريد للطالبة.
+    الكود: STU + 6 أرقام عشوائية فريدة
+    """
+    used_codes = set(existing_codes or [])
+    if db is not None:
+        try:
+            students_df = db.get_students()
+            if not students_df.empty and "student_code" in students_df.columns:
+                used_codes = set(students_df["student_code"].dropna().astype(str).str.strip().tolist())
+        except Exception:
+            pass
+    while True:
+        code = "STU" + str(random.randint(100000, 999999))
+        if code not in used_codes:
+            return code
+
+
 def format_cairo_time(dt):
     if dt is None:
         return "غير متاح"
@@ -1073,7 +1092,8 @@ class Database:
         """Ensure all required sheets exist with proper columns."""
         sheets_config = {
             "Users": ["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email"],
-            "Students": ["student_id", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"],
+            "Students": ["student_id", "student_code", "password", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"],
+            "Exams": ["exam_id", "title", "description", "created_by", "stage_id", "section_id", "chapter_lesson", "exam_date", "start_date", "end_date", "duration_minutes", "total_marks", "passing_score", "is_active", "is_published", "created_at"],
             "Stages": self.STAGE_COLUMNS,
             "StageSupervisors": self.STAGE_SUPERVISOR_COLUMNS,
             "SectionTeachers": self.SECTION_TEACHER_COLUMNS,
@@ -1087,7 +1107,6 @@ class Database:
             "Events": self.EVENT_COLUMNS,
             "EventRSVP": self.EVENT_RSVP_COLUMNS,
             "EventAttendance": self.EVENT_ATTENDANCE_COLUMNS,
-            "Exams": ["exam_id", "title", "description", "created_by", "section_id", "subject", "exam_date", "duration_minutes", "total_marks", "is_active", "is_published", "created_at"],
             "ExamQuestions": ["question_id", "exam_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer", "marks"],
             "ExamResults": ["result_id", "exam_id", "student_id", "student_name", "score", "total_marks", "start_time", "submission_time", "answers", "status"],
             "ExamSubmissions": ["submission_id", "result_id", "question_id", "student_answer"],
@@ -1396,11 +1415,17 @@ class Database:
     def add_student(self, student_data):
         df = self.get_students()
         if df.empty:
-            df = pd.DataFrame(columns=["student_id", "full_name", "section_id", "teacher_id",
+            df = pd.DataFrame(columns=["student_id", "student_code", "password", "full_name", "section_id", "teacher_id",
                                        "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
         student_data["teacher_id"] = ""
+        # توليد كود فريد إذا لم يكن موجوداً
+        if not student_data.get("student_code"):
+            student_data["student_code"] = generate_student_code(self)
+        # كلمة مرور افتراضية إذا لم تكن موجودة
+        if not student_data.get("password"):
+            student_data["password"] = "1234"
         df = pd.concat([df, pd.DataFrame([student_data])], ignore_index=True)
-        self._df_to_sheet("Students", df, ["student_id", "full_name", "section_id", "teacher_id",
+        self._df_to_sheet("Students", df, ["student_id", "student_code", "password", "full_name", "section_id", "teacher_id",
                                            "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
 
     def update_student(self, student_id, updates):
@@ -1766,7 +1791,7 @@ class Database:
         self._df_to_sheet("EventAttendance", df, self.EVENT_ATTENDANCE_COLUMNS)
 
     # --- Exams ---
-    EXAM_COLUMNS = ["exam_id", "title", "description", "created_by", "section_id", "subject", "exam_date", "duration_minutes", "total_marks", "is_active", "is_published", "created_at"]
+    EXAM_COLUMNS = ["exam_id", "title", "description", "created_by", "stage_id", "section_id", "chapter_lesson", "exam_date", "start_date", "end_date", "duration_minutes", "total_marks", "passing_score", "is_active", "is_published", "created_at"]
 
     def get_exams(self):
         return self._sheet_to_df("Exams")
@@ -2480,6 +2505,13 @@ def show_login_page(db, jwt_secret):
                                 st.error("كلمة المرور غير صحيحة")
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
+        st.info("""إذا كنتِ طالبة وتريدين الدخول للامتحانات (وليس المسابقات)، فاستخدمي كود الطالبة وكلمة المرور الخاصين بك.
+        دخول الامتحانات متاح من خلال الكود الخاص بك مثل: **STU123456**""")
+        if st.button("🎯 الانتقال إلى بوابة الامتحانات", use_container_width=True, key="goto_exam_portal_btn"):
+            st.session_state.show_exam_portal = True
+            st.rerun()
+        st.markdown("---")
+        st.markdown("##### أو دخول المسابقات:")
         with st.form("student_login_form"):
             code = st.text_input("كود الاختبار", placeholder="مثال: GEN123").strip()
             passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="").strip()
@@ -4226,27 +4258,46 @@ def show_exams_management(db):
     # ============ إنشاء امتحان جديد ============
     if role in ["System Admin", "Service Manager", "Teacher"]:
         st.subheader("➕ إنشاء امتحان جديد")
+        stages = db.get_stages()
         with st.form("add_exam_form"):
             col1, col2 = st.columns(2)
             with col1:
                 title = st.text_input("عنوان الامتحان*")
-                subject = st.text_input("المادة*")
+                chapter_lesson = st.text_input("الأصحاح أو الدرس")
                 description = st.text_area("الوصف")
             with col2:
-                exam_date = st.date_input("تاريخ الامتحان", get_cairo_now().date())
+                start_date = st.date_input("تاريخ البداية", get_cairo_now().date())
+                end_date = st.date_input("تاريخ النهاية", get_cairo_now().date() + timedelta(days=7))
                 duration = st.number_input("المدة (بالدقائق)", min_value=5, max_value=240, value=45)
-            sec_options = sections["section_id"].tolist() if not sections.empty else []
-            selected_section = st.selectbox(
-                "الفصل", sec_options,
-                format_func=lambda x: "—" if not sections.empty and x not in sections["section_id"].values else (
-                    sections[sections.section_id == x]["section_name"].values[0] if not sections.empty else x
+            stage_options = stages["stage_id"].tolist() if not stages.empty else []
+            selected_stage = st.selectbox(
+                "المرحلة المستهدفة*", stage_options,
+                format_func=lambda x: "—" if not stages.empty and x not in stages["stage_id"].values else (
+                    stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x
                 )
-            ) if sec_options else ""
+            ) if stage_options else ""
+            # الفصول داخل المرحلة المختارة
+            stage_sections = sections[sections["stage_id"] == selected_stage] if not sections.empty and selected_stage else pd.DataFrame()
+            sec_options = stage_sections["section_id"].tolist() if not stage_sections.empty else []
+            all_sections_option = "ALL_SECTIONS"
+            section_choices = [all_sections_option] + sec_options
+            selected_section = st.selectbox(
+                "الفصل (اختياري - اختر كل الفصول للمرحلة بأكملها)",
+                section_choices,
+                format_func=lambda x: "كل فصول المرحلة" if x == all_sections_option else (
+                    sections[sections.section_id == x]["section_name"].values[0] if not sections.empty and x in sections["section_id"].values else x
+                )
+            ) if section_choices else all_sections_option
+            if selected_section == all_sections_option:
+                selected_section = ""
             total_marks = st.number_input("الدرجة الكلية", min_value=1, max_value=500, value=100)
+            passing_score = st.number_input("درجة النجاح", min_value=1, max_value=500, value=50)
             submitted = st.form_submit_button("إنشاء الامتحان", use_container_width=True)
             if submitted:
-                if not title or not subject:
-                    st.error("عنوان الامتحان والمادة مطلوبان")
+                if not title:
+                    st.error("عنوان الامتحان مطلوب")
+                elif not selected_stage:
+                    st.error("المرحلة المستهدفة مطلوبة")
                 else:
                     exam_id = str(uuid.uuid4())
                     db.add_exam({
@@ -4254,11 +4305,15 @@ def show_exams_management(db):
                         "title": title.strip(),
                         "description": description.strip(),
                         "created_by": user_id,
+                        "stage_id": selected_stage,
                         "section_id": selected_section,
-                        "subject": subject.strip(),
-                        "exam_date": exam_date.strftime("%Y-%m-%d"),
+                        "chapter_lesson": chapter_lesson.strip(),
+                        "exam_date": start_date.strftime("%Y-%m-%d"),
+                        "start_date": start_date.strftime("%Y-%m-%d"),
+                        "end_date": end_date.strftime("%Y-%m-%d"),
                         "duration_minutes": str(duration),
                         "total_marks": str(total_marks),
+                        "passing_score": str(passing_score),
                         "is_active": "True",
                         "is_published": "False",
                         "created_at": get_cairo_now().isoformat()
@@ -4381,7 +4436,7 @@ def show_exams_management(db):
         for _, ex in filtered_exams.iterrows():
             ex_id = ex.get("exam_id", "")
             ex_title = ex.get("title", "")
-            ex_subject = ex.get("subject", "")
+            ex_chapter = ex.get("chapter_lesson", "")
             ex_date = ex.get("exam_date", "")
             ex_duration = ex.get("duration_minutes", "")
             ex_marks = ex.get("total_marks", "")
@@ -4399,7 +4454,7 @@ def show_exams_management(db):
             # معلومات الامتحان
             col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
             col1.markdown(f"**📝 {ex_title}**")
-            col2.markdown(f"📚 {ex_subject}")
+            col2.markdown(f"📖 {ex_chapter}" if ex_chapter else "📖 —")
             col3.markdown(f"📅 {ex_date}")
             col4.markdown(f"⏱️ {ex_duration} دقيقة")
 
@@ -4458,7 +4513,7 @@ def show_exams_management(db):
 
                 # معاينة
                 if act_cols[3].button("👁️ معاينة", key=f"preview_exam_{ex_id}"):
-                    st.session_state[f"preview_exam_{ex_id}"] = True
+                    st.session_state.selected_exam_preview = ex_id
 
                 # تعديل
                 if act_cols[4].button("✏️ تعديل", key=f"edit_exam_{ex_id}"):
@@ -4479,9 +4534,8 @@ def show_exams_management(db):
                     st.rerun()
 
                 # ===== معاينة الامتحان =====
-                if st.session_state.get(f"preview_exam_{ex_id}", False):
+                if st.session_state.get("selected_exam_preview") == ex_id:
                     with st.expander(f"👁️ معاينة: {ex_title}", expanded=True):
-                        st.markdown(f"**الموضوع:** {ex_subject}")
                         st.markdown(f"**الوصف:** {ex.get('description', '') or '—'}")
                         st.markdown(f"**تاريخ الامتحان:** {ex_date}")
                         st.markdown(f"**المدة:** {ex_duration} دقيقة")
@@ -4501,7 +4555,7 @@ def show_exams_management(db):
                                 col_p1.markdown(f"**الإجابة الصحيحة:** {q.get('correct_answer', '')}")
                                 st.markdown("---")
                         if st.button("إغلاق المعاينة", key=f"close_preview_{ex_id}"):
-                            st.session_state.pop(f"preview_exam_{ex_id}", None)
+                            st.session_state.pop("selected_exam_preview", None)
                             st.rerun()
 
                 # ===== تعديل الامتحان =====
@@ -4509,7 +4563,7 @@ def show_exams_management(db):
                     with st.expander(f"✏️ تعديل: {ex_title}", expanded=True):
                         with st.form(f"edit_exam_form_{ex_id}"):
                             edit_title = st.text_input("عنوان الامتحان", value=ex_title)
-                            edit_subject = st.text_input("المادة", value=ex_subject)
+                            edit_chapter = st.text_input("الأصحاح أو الدرس", value=ex_chapter)
                             edit_desc = st.text_area("الوصف", value=ex.get("description", ""))
                             edit_date = st.date_input(
                                 "تاريخ الامتحان",
@@ -4527,7 +4581,7 @@ def show_exams_management(db):
                             if st.form_submit_button("💾 حفظ التعديلات"):
                                 db.update_exam(ex_id, {
                                     "title": edit_title.strip(),
-                                    "subject": edit_subject.strip(),
+                                    "chapter_lesson": edit_chapter.strip(),
                                     "description": edit_desc.strip(),
                                     "exam_date": edit_date.strftime("%Y-%m-%d"),
                                     "duration_minutes": str(edit_duration),
@@ -5973,26 +6027,39 @@ def show_student_exam_portal(db):
 
     # ============ حالة تسجيل الدخول ============
     if not st.session_state.get("exam_student_logged_in", False):
-        # ===== واجهة تسجيل الدخول بكود الطالبة =====
+        # ===== واجهة تسجيل الدخول بكود الطالبة وكلمة المرور =====
         st.markdown("### 🔐 تسجيل دخول الطالبة")
         with st.form("student_exam_login_form"):
-            student_code = st.text_input(
-                "كود الطالبة",
-                placeholder="أدخلي كود الطالبة الخاص بك",
-                help="الكود موجود في بطاقة الطالبة أو من مسؤولة الفصل"
-            ).strip()
+            col_l1, col_l2 = st.columns(2)
+            with col_l1:
+                student_code = st.text_input(
+                    "كود الطالبة",
+                    placeholder="أدخلي كود الطالبة الخاص بك",
+                    help="الكود موجود في بطاقة الطالبة أو من مسؤولة الفصل"
+                ).strip()
+            with col_l2:
+                student_password = st.text_input(
+                    "كلمة المرور",
+                    type="password",
+                    placeholder="أدخلي كلمة المرور",
+                    help="كلمة المرور الافتراضية: 1234"
+                ).strip()
             submitted = st.form_submit_button("دخول", use_container_width=True)
 
         if submitted:
-            if not student_code:
-                st.error("❌ من فضلك أدخلي كود الطالبة")
+            if not student_code or not student_password:
+                st.error("❌ من فضلك أدخلي كود الطالبة وكلمة المرور")
             else:
                 students_df = db.get_students()
                 if students_df.empty or "student_id" not in students_df.columns:
                     st.error("❌ لا توجد بيانات طالبات مسجلة")
                 else:
-                    # البحث عن الطالبة بالكود
-                    student_match = students_df[students_df["student_id"].astype(str).str.strip() == student_code]
+                    # البحث عن الطالبة بالكود (student_code أو student_id القديم)
+                    student_match = pd.DataFrame()
+                    if "student_code" in students_df.columns:
+                        student_match = students_df[students_df["student_code"].astype(str).str.strip() == student_code]
+                    if student_match.empty:
+                        student_match = students_df[students_df["student_id"].astype(str).str.strip() == student_code]
                     if student_match.empty:
                         # محاولة البحث بالاسم أو رقم الهاتف
                         student_match = students_df[
@@ -6008,25 +6075,38 @@ def show_student_exam_portal(db):
                         if str(student.get("status", "active")).strip().lower() == "inactive":
                             st.error("⛔ هذه الطالبة غير نشطة. تواصلي مع مسؤولة الفصل.")
                         else:
-                            st.session_state.exam_student_logged_in = True
-                            st.session_state.exam_student = student
-                            st.session_state.exam_student_id = student.get("student_id", "")
-                            st.session_state.exam_student_name = student.get("full_name", "")
-                            st.session_state.exam_student_section = student.get("section_id", "")
-                            db.add_log(
-                                student.get("student_id", ""),
-                                "دخول بوابة الامتحانات",
-                                f"دخول الطالبة {student.get('full_name', '')} إلى بوابة الامتحانات"
-                            )
-                            st.success(f"✅ مرحباً {student.get('full_name', '')}! تم تسجيل الدخول بنجاح.")
-                            time.sleep(1)
-                            st.rerun()
+                            # التحقق من كلمة المرور
+                            stored_password = str(student.get("password", "1234")).strip()
+                            if student_password != stored_password:
+                                st.error("❌ كلمة المرور غير صحيحة. جربي مرة أخرى أو تواصلي مع مسؤولة الفصل.")
+                            else:
+                                st.session_state.exam_student_logged_in = True
+                                st.session_state.exam_student = student
+                                st.session_state.exam_student_id = student.get("student_id", "")
+                                st.session_state.exam_student_name = student.get("full_name", "")
+                                st.session_state.exam_student_section = student.get("section_id", "")
+                                st.session_state.exam_student_stage = ""
+                                # تحديد مرحلة الطالبة من الفصل
+                                sections_df = db.get_sections()
+                                if not sections_df.empty and student.get("section_id"):
+                                    sec_match = sections_df[sections_df["section_id"] == student.get("section_id")]
+                                    if not sec_match.empty:
+                                        st.session_state.exam_student_stage = sec_match.iloc[0].get("stage_id", "")
+                                db.add_log(
+                                    student.get("student_id", ""),
+                                    "دخول بوابة الامتحانات",
+                                    f"دخول الطالبة {student.get('full_name', '')} إلى بوابة الامتحانات"
+                                )
+                                st.success(f"✅ مرحباً {student.get('full_name', '')}! تم تسجيل الدخول بنجاح.")
+                                time.sleep(1)
+                                st.rerun()
     else:
         # ===== واجهة الطالبة بعد تسجيل الدخول =====
         student = st.session_state.get("exam_student", {})
         student_id = st.session_state.get("exam_student_id", "")
         student_name = st.session_state.get("exam_student_name", "")
         student_section = st.session_state.get("exam_student_section", "")
+        student_stage = st.session_state.get("exam_student_stage", "")
 
         # ===== شريط ترحيب =====
         col_w1, col_w2 = st.columns([4, 1])
@@ -6104,14 +6184,24 @@ def show_student_exam_portal(db):
             if "is_published" in available_exams.columns:
                 available_exams = available_exams[available_exams["is_published"].astype(str).str.strip().str.lower() == "true"]
 
-            # تصفية حسب فصل الطالبة إذا كان محدداً
-            if student_section and "section_id" in available_exams.columns:
+            # تصفية حسب مرحلة وفصل الطالبة
+            if "stage_id" in available_exams.columns:
+                stage_mask = available_exams["stage_id"].astype(str).str.strip() == student_stage
+                if "section_id" in available_exams.columns:
+                    # الامتحان متاح إذا:
+                    # 1. المرحلة مطابقة (والفصل غير محدد = كل الفصول)
+                    # 2. أو الفصل مطابق مباشرة
+                    section_mask = available_exams["section_id"].astype(str).str.strip() == student_section
+                    available_exams = available_exams[stage_mask | section_mask]
+                else:
+                    available_exams = available_exams[stage_mask]
+            elif student_section and "section_id" in available_exams.columns:
                 section_exams = available_exams[available_exams["section_id"].astype(str).str.strip() == student_section]
                 if not section_exams.empty:
                     available_exams = section_exams
 
             if available_exams.empty:
-                st.info("لا توجد امتحانات متاحة لفصلك حالياً.")
+                st.info("لا توجد امتحانات متاحة لمرحلتك أو فصلك حالياً.")
             else:
                 # التحقق من الامتحانات التي تم أداؤها بالفعل
                 completed_exam_ids = set()
@@ -6124,7 +6214,7 @@ def show_student_exam_portal(db):
                     exam = exam_row.to_dict()
                     exam_id = exam.get("exam_id", "")
                     exam_title = exam.get("title", "امتحان بدون عنوان")
-                    exam_subject = exam.get("subject", "")
+                    exam_chapter = exam.get("chapter_lesson", "")
                     exam_date = exam.get("exam_date", "")
                     exam_duration = exam.get("duration_minutes", "")
                     exam_total_marks = exam.get("total_marks", "")
@@ -6142,8 +6232,8 @@ def show_student_exam_portal(db):
                         col_e1, col_e2, col_e3 = st.columns([3, 2, 1])
                         with col_e1:
                             st.markdown(f"### 📄 {exam_title}")
-                            if exam_subject:
-                                st.markdown(f"**المادة:** {exam_subject}")
+                            if exam_chapter:
+                                st.markdown(f"**الأصحاح / الدرس:** {exam_chapter}")
                             if exam_desc:
                                 st.markdown(f"<small style='color:#64748b;'>{exam_desc}</small>", unsafe_allow_html=True)
                         with col_e2:
@@ -7534,7 +7624,9 @@ def main():
     if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
         st.session_state.open_help_dialog = True
         st.rerun()
-    if st.session_state.get("exam_start_requested", False):
+    if st.session_state.get("show_exam_portal", False):
+        show_student_exam_portal(db)
+    elif st.session_state.get("exam_start_requested", False):
         show_exam_interface(db)
     elif st.session_state.student_quiz_started:
         show_student_quiz(db)
