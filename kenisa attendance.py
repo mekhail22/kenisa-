@@ -271,8 +271,6 @@ def get_design_css():
             background-position: center center !important;
             background-repeat: no-repeat !important;
             background-size: cover !important;
-            filter: blur(8px) !important;
-            transform: scale(1.1) !important;
             z-index: 0 !important;
         }}
         .hero-banner::after {{
@@ -357,6 +355,37 @@ def get_design_css():
             border-left: 1px solid var(--border) !important;
             border-right: none !important;
             box-shadow: -2px 0 8px rgba(0,0,0,0.05) !important;
+        }}
+        
+        /* Full screen sidebar overlay for mobile */
+        @media (max-width: 768px) {{
+            section[data-testid="stSidebar"] {{
+                position: fixed !important;
+                top: 0 !important;
+                right: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                max-width: 100vw !important;
+                max-height: 100vh !important;
+                z-index: 999999 !important;
+                border-radius: 0 !important;
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
+            }}
+            .sidebar-backdrop {{
+                position: fixed !important;
+                top: 0 !important;
+                right: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                background: rgba(0, 0, 0, 0.7) !important;
+                z-index: 999998 !important;
+            }}
+            .nav-btn-container .stButton > button {{
+                font-size: 1rem !important;
+                padding: 1rem 1.2rem !important;
+                min-height: 56px !important;
+            }}
         }}
         .sidebar-brand {{
             display: flex !important;
@@ -5171,6 +5200,11 @@ def main():
                     st.rerun()
             else:
                 st.markdown("""<style>section[data-testid="stSidebar"] { transform: translateX(0) !important; }</style>""", unsafe_allow_html=True)
+                # Add backdrop for mobile
+                st.markdown("""
+                <div class="sidebar-backdrop" onclick="document.querySelector('section[data-testid=\"stSidebar\"]').style.transform='translateX(100%)'; setTimeout(() => window.parent.postMessage({type: 'streamlit:rerun'}, '*'), 100);">
+                </div>
+                """, unsafe_allow_html=True)
                 choice = show_sidebar_navigation(db)
             if not st.session_state.show_sidebar:
                 choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
