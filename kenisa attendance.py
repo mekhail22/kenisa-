@@ -1092,7 +1092,7 @@ class Database:
         """Ensure all required sheets exist with proper columns."""
         sheets_config = {
             "Users": ["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email"],
-            "Students": ["student_id", "student_code", "password", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"],
+            "Students": ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"],
             "Exams": ["exam_id", "title", "description", "created_by", "stage_id", "section_id", "chapter_lesson", "exam_date", "start_date", "end_date", "duration_minutes", "total_marks", "passing_score", "is_active", "is_published", "created_at"],
             "Stages": self.STAGE_COLUMNS,
             "StageSupervisors": self.STAGE_SUPERVISOR_COLUMNS,
@@ -1405,7 +1405,7 @@ class Database:
             idx = students[students.student_id == sid].index
             if len(idx) > 0:
                 students.at[idx[0], "section_id"] = new_section_id
-        self._df_to_sheet("Students", students, ["student_id", "full_name", "section_id", "teacher_id",
+        self._df_to_sheet("Students", students, ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
                                                  "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
 
     # --- Students ---
@@ -1415,17 +1415,20 @@ class Database:
     def add_student(self, student_data):
         df = self.get_students()
         if df.empty:
-            df = pd.DataFrame(columns=["student_id", "student_code", "password", "full_name", "section_id", "teacher_id",
+            df = pd.DataFrame(columns=["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
                                        "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
         student_data["teacher_id"] = ""
         # توليد كود فريد إذا لم يكن موجوداً
         if not student_data.get("student_code"):
             student_data["student_code"] = generate_student_code(self)
-        # كلمة مرور افتراضية إذا لم تكن موجودة
-        if not student_data.get("password"):
-            student_data["password"] = "1234"
+        # توليد كلمة مرور تلقائياً إذا لم تكن موجودة
+        if not student_data.get("student_password"):
+            if student_data.get("password"):
+                student_data["student_password"] = student_data["password"]
+            else:
+                student_data["student_password"] = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
         df = pd.concat([df, pd.DataFrame([student_data])], ignore_index=True)
-        self._df_to_sheet("Students", df, ["student_id", "student_code", "password", "full_name", "section_id", "teacher_id",
+        self._df_to_sheet("Students", df, ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
                                            "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
 
     def update_student(self, student_id, updates):
@@ -2350,11 +2353,11 @@ def get_role_menu(role):
         "Father Account": ["🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📝 إدارة الامتحانات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
         "Service Manager": [
             "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد",
-            "🏆 درجات المسابقات", "📝 المسابقات والاختبارات", "📝 إدارة الامتحانات", "📅 إدارة الفعاليات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+            "📝 المسابقات والاختبارات", "📝 إدارة الامتحانات", "📅 إدارة الفعاليات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
         ],
         "Teacher": [
             "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد",
-            "🏆 درجات المسابقات", "📝 إدارة الامتحانات", "📅 إدارة الفعاليات", "🔒 تغيير كلمة المرور"
+            "📝 إدارة الامتحانات", "📅 إدارة الفعاليات", "🔒 تغيير كلمة المرور"
         ],
         "Student": ["🏠 لوحة التحكم", "🔔 الإشعارات", "📝 المسابقات والاختبارات", "📅 إدارة الفعاليات", "🔒 تغيير كلمة المرور"]
     }
@@ -2505,8 +2508,8 @@ def show_login_page(db, jwt_secret):
                                 st.error("كلمة المرور غير صحيحة")
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
-        st.info("""إذا كنتِ طالبة وتريدين الدخول للامتحانات (وليس المسابقات)، فاستخدمي كود الطالبة وكلمة المرور الخاصين بك.
-        دخول الامتحانات متاح من خلال الكود الخاص بك مثل: **STU123456**""")
+        st.info("""إذا كنتِ طالبة وتريدين الدخول للامتحانات، استخدمي اسمك الكامل وكلمة المرور الخاصة بك.
+        دخول الامتحانات متاح من خلال تسجيل الدخول باسم الطالبة وكلمة المرور.""")
         if st.button("🎯 الانتقال إلى بوابة الامتحانات", use_container_width=True, key="goto_exam_portal_btn"):
             st.session_state.show_exam_portal = True
             st.rerun()
@@ -3026,6 +3029,7 @@ def show_members_cards_page(db):
     users = db.get_users()
     students = db.get_students()
     sections = db.get_sections()
+    stages = db.get_stages()
 
     # Build unified members list (exclude System Admin and Father Account)
     members = []
@@ -3068,7 +3072,10 @@ def show_members_cards_page(db):
                 "address": s.get("address", ""),
                 "school": s.get("school", ""),
                 "notes": s.get("notes", ""),
-                "created_by": s.get("created_by", "")
+                "created_by": s.get("created_by", ""),
+                "student_code": s.get("student_code", ""),
+                "student_password": s.get("student_password", ""),
+                "stage_id": s.get("stage_id", "")
             })
 
     members_df = pd.DataFrame(members) if members else pd.DataFrame(columns=["member_id", "full_name", "role", "section_id", "phone", "email", "status", "type"])
@@ -3143,12 +3150,24 @@ def show_members_cards_page(db):
                 status_label = {"active": "نشط", "inactive": "غير نشط"}.get(status, "نشط")
 
                 if member_type == "student":
-                    # Student card - show only name, phone, status, section
+                    # Student card - show name, phone, status, section, student code, password
                     parent_phone = m.get("parent_phone", "")
                     birthdate = m.get("birthdate", "")
                     address = m.get("address", "")
                     school = m.get("school", "")
                     student_notes = m.get("notes", "")
+                    student_code = m.get("student_code", "")
+                    student_password = m.get("student_password", "")
+                    # الحصول على المرحلة من الفصل
+                    stage_name_card = ""
+                    if not stages.empty:
+                        sec_for_stage = sections[sections["section_id"] == sec_id] if not sections.empty and sec_id else pd.DataFrame()
+                        if not sec_for_stage.empty:
+                            stg_id = sec_for_stage.iloc[0].get("stage_id", "")
+                            if stg_id:
+                                stg_match = stages[stages["stage_id"] == stg_id]
+                                if not stg_match.empty:
+                                    stage_name_card = stg_match.iloc[0].get("stage_name", "")
                     
                     st.markdown(f"""
                     <div class='user-card' id='card-{mid}'>
@@ -3162,10 +3181,16 @@ def show_members_cards_page(db):
                             </div>
                         </div>
                         <div class='student-info-row' style='margin-top:0.8rem;'>
-                            <span>📱 {phone if phone else '—'}</span>
+                            <span>🏫 {section_name if section_name else '—'} {('| 📚 ' + stage_name_card) if stage_name_card else ''}</span>
                         </div>
                         <div class='student-info-row'>
-                            <span>🏫 {section_name if section_name else '—'}</span>
+                            <span>🆔 الكود: <strong dir='ltr'>{student_code if student_code else '—'}</strong></span>
+                        </div>
+                        <div class='student-info-row'>
+                            <span>🔑 كلمة المرور: <strong dir='ltr'>{student_password if student_password else '—'}</strong></span>
+                        </div>
+                        <div class='student-info-row'>
+                            <span>📱 {phone if phone else '—'}</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -3911,9 +3936,6 @@ def show_followup(db):
 # =============================================================================
 # Class Competition Scores
 # =============================================================================
-def show_class_competition_scores(db):
-    st.markdown(hero_header("درجات مسابقات الفصل", "🏆 متابعة درجات المسابقات للفصل"), unsafe_allow_html=True)
-    user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
     
@@ -4252,11 +4274,15 @@ def show_exams_management(db):
         st.error("🚫 غير مصرح")
         return
 
+    if role not in ["System Admin", "Service Manager"]:
+        st.error("ليس لديك صلاحية لإدارة الامتحانات.")
+        return
+
     exams = db.get_exams()
     sections = db.get_sections()
 
     # ============ إنشاء امتحان جديد ============
-    if role in ["System Admin", "Service Manager", "Teacher"]:
+    if role in ["System Admin", "Service Manager"]:
         st.subheader("➕ إنشاء امتحان جديد")
         stages = db.get_stages()
         with st.form("add_exam_form"):
@@ -4475,7 +4501,7 @@ def show_exams_management(db):
             if role == "Teacher" and ex_created_by != user_id:
                 can_manage = False
 
-            if can_manage:
+            if can_manage and role in ["System Admin", "Service Manager"]:
                 st.markdown("##### الإجراءات")
                 act_cols = st.columns(7)
 
@@ -6033,9 +6059,9 @@ def show_student_exam_portal(db):
             col_l1, col_l2 = st.columns(2)
             with col_l1:
                 student_code = st.text_input(
-                    "كود الطالبة",
-                    placeholder="أدخلي كود الطالبة الخاص بك",
-                    help="الكود موجود في بطاقة الطالبة أو من مسؤولة الفصل"
+                    "اسم الطالبة أو الكود",
+                    placeholder="أدخلي اسمك الكامل أو كود الطالبة",
+                    help="أدخلي اسمك الكامل أو الكود الموجود في بطاقة الطالبة"
                 ).strip()
             with col_l2:
                 student_password = st.text_input(
@@ -6054,21 +6080,25 @@ def show_student_exam_portal(db):
                 if students_df.empty or "student_id" not in students_df.columns:
                     st.error("❌ لا توجد بيانات طالبات مسجلة")
                 else:
-                    # البحث عن الطالبة بالكود (student_code أو student_id القديم)
+                    # البحث عن الطالبة بالاسم الكامل أو الكود
                     student_match = pd.DataFrame()
-                    if "student_code" in students_df.columns:
+                    # أولاً: البحث بالاسم الكامل
+                    if "full_name" in students_df.columns:
+                        student_match = students_df[students_df["full_name"].astype(str).str.strip() == student_code]
+                    # ثانياً: البحث بالكود
+                    if student_match.empty and "student_code" in students_df.columns:
                         student_match = students_df[students_df["student_code"].astype(str).str.strip() == student_code]
+                    # ثالثاً: البحث بالمعرف القديم
                     if student_match.empty:
                         student_match = students_df[students_df["student_id"].astype(str).str.strip() == student_code]
+                    # رابعاً: البحث برقم الهاتف
                     if student_match.empty:
-                        # محاولة البحث بالاسم أو رقم الهاتف
                         student_match = students_df[
-                            (students_df["full_name"].astype(str).str.strip() == student_code) |
                             (students_df["phone"].astype(str).str.strip() == student_code) |
                             (students_df["parent_phone"].astype(str).str.strip() == student_code)
                         ]
                     if student_match.empty:
-                        st.error("❌ كود الطالبة غير صحيح. تأكدي من الكود وحاولي مرة أخرى.")
+                        st.error("❌ اسم الطالبة أو الكود غير صحيح. تأكدي من البيانات وحاولي مرة أخرى.")
                     else:
                         student = student_match.iloc[0].to_dict()
                         # التحقق من حالة الطالبة
@@ -6076,7 +6106,7 @@ def show_student_exam_portal(db):
                             st.error("⛔ هذه الطالبة غير نشطة. تواصلي مع مسؤولة الفصل.")
                         else:
                             # التحقق من كلمة المرور
-                            stored_password = str(student.get("password", "1234")).strip()
+                            stored_password = str(student.get("student_password", student.get("password", "1234"))).strip()
                             if student_password != stored_password:
                                 st.error("❌ كلمة المرور غير صحيحة. جربي مرة أخرى أو تواصلي مع مسؤولة الفصل.")
                             else:
