@@ -207,24 +207,34 @@ def get_design_css():
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
+        /* ===== RTL Setup ===== */
+        html, body {{
+            direction: rtl !important;
+            text-align: right !important;
+        }}
+
         /* ===== Design Tokens ===== */
         :root {{
-            --primary: #1a56db;
-            --primary-dark: #1e40af;
-            --secondary: #6d28d9;
-            --bg: #f5f7fa;
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --primary-light: #dbeafe;
+            --secondary: #7c3aed;
+            --bg: #f8fafc;
             --card: #ffffff;
-            --text: #1f2937;
-            --text-muted: #6b7280;
+            --text: #0f172a;
+            --text-muted: #64748b;
             --success: #059669;
+            --success-light: #d1fae5;
             --warning: #d97706;
+            --warning-light: #fef3c7;
             --danger: #dc2626;
-            --border: #e5e7eb;
-            --radius: 12px;
-            --radius-sm: 8px;
-            --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
-            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-            --shadow-lg: 0 8px 24px rgba(0,0,0,0.1);
+            --danger-light: #fee2e2;
+            --border: #e2e8f0;
+            --radius: 16px;
+            --radius-sm: 10px;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
             --font: 'Cairo', sans-serif;
         }}
 
@@ -250,9 +260,10 @@ def get_design_css():
             content: '' !important;
             position: fixed !important;
             inset: 0 !important;
-            background: rgba(15, 23, 42, 0.55) !important;
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.75) 0%, rgba(30, 58, 138, 0.65) 100%) !important;
             z-index: 0 !important;
             pointer-events: none !important;
+            backdrop-filter: blur(2px) !important;
         }}
         .block-container, section.main {{
             position: relative !important;
@@ -268,20 +279,21 @@ def get_design_css():
         h1, h2, h3, h4, h5, h6 {{
             font-family: var(--font) !important;
             color: var(--text) !important;
-            letter-spacing: -0.02em !important;
+            letter-spacing: -0.01em !important;
         }}
         .main-header {{
-            font-size: 1.75rem !important;
+            font-size: 1.875rem !important;
             font-weight: 800 !important;
             color: #ffffff !important;
             text-align: center !important;
             margin-bottom: 1.5rem !important;
-            padding: 1rem 1.5rem !important;
-            background: rgba(255,255,255,0.12) !important;
-            backdrop-filter: blur(8px) !important;
-            border: 1px solid rgba(255,255,255,0.15) !important;
+            padding: 1.25rem 1.5rem !important;
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.85), rgba(124, 58, 237, 0.85)) !important;
+            backdrop-filter: blur(12px) !important;
+            border: 1px solid rgba(255,255,255,0.2) !important;
             border-radius: var(--radius) !important;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.2) !important;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+            box-shadow: var(--shadow-lg) !important;
         }}
 
         /* ===== Cards ===== */
@@ -298,11 +310,12 @@ def get_design_css():
             transform: translateY(-2px) !important;
         }}
 
-        /* ===== Sidebar ===== */
+        /* ===== Sidebar (RTL - Right Side) ===== */
         section[data-testid="stSidebar"] {{
-            background: rgba(255,255,255,0.95) !important;
-            backdrop-filter: blur(12px) !important;
-            border-left: 1px solid var(--border) !important;
+            background: rgba(255,255,255,0.98) !important;
+            backdrop-filter: blur(16px) !important;
+            border-right: 1px solid var(--border) !important;
+            border-left: none !important;
         }}
         .sidebar-brand {{
             display: flex !important;
@@ -312,19 +325,19 @@ def get_design_css():
             margin-bottom: 0.5rem !important;
         }}
         .brand-logo {{
-            width: 44px !important;
-            height: 44px !important;
-            border-radius: 10px !important;
+            width: 48px !important;
+            height: 48px !important;
+            border-radius: 12px !important;
             background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            font-size: 1.4rem !important;
+            font-size: 1.5rem !important;
             color: white !important;
-            box-shadow: 0 2px 8px rgba(26,86,219,0.3) !important;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
         }}
         .brand-text h3 {{
-            font-size: 1rem !important;
+            font-size: 1.05rem !important;
             font-weight: 700 !important;
             color: var(--text) !important;
             margin: 0 !important;
@@ -338,13 +351,14 @@ def get_design_css():
             align-items: center !important;
             gap: 0.75rem !important;
             padding: 0.75rem !important;
-            background: #f8fafc !important;
+            background: linear-gradient(135deg, var(--primary-light), #f3e8ff) !important;
             border-radius: var(--radius-sm) !important;
             margin-bottom: 1rem !important;
+            border: 1px solid rgba(37, 99, 235, 0.1) !important;
         }}
         .user-avatar-lg {{
-            width: 40px !important;
-            height: 40px !important;
+            width: 44px !important;
+            height: 44px !important;
             border-radius: 50% !important;
             background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
             display: flex !important;
@@ -352,15 +366,17 @@ def get_design_css():
             justify-content: center !important;
             color: white !important;
             font-weight: 700 !important;
-            font-size: 0.9rem !important;
+            font-size: 0.95rem !important;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
         }}
         .user-info {{
             display: flex !important;
             flex-direction: column !important;
         }}
         .user-info strong {{
-            font-size: 0.9rem !important;
+            font-size: 0.95rem !important;
             color: var(--text) !important;
+            font-weight: 700 !important;
         }}
         .user-info span {{
             font-size: 0.75rem !important;
@@ -377,7 +393,7 @@ def get_design_css():
             width: 100% !important;
             text-align: right !important;
             justify-content: flex-start !important;
-            padding: 0.65rem 1rem !important;
+            padding: 0.75rem 1rem !important;
             font-size: 0.9rem !important;
             font-weight: 600 !important;
             border-radius: var(--radius-sm) !important;
@@ -387,17 +403,19 @@ def get_design_css():
             transition: all 0.2s ease !important;
         }}
         .nav-btn-container .stButton > button:hover {{
-            background: rgba(26,86,219,0.06) !important;
-            border-color: rgba(26,86,219,0.2) !important;
+            background: var(--primary-light) !important;
+            border-color: var(--primary) !important;
+            transform: translateX(-4px) !important;
         }}
         .nav-btn-container .stButton > button[kind="primary"] {{
             background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
             color: white !important;
-            box-shadow: 0 2px 8px rgba(26,86,219,0.25) !important;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
+            border: none !important;
         }}
         .nav-btn-container .stButton > button[kind="primary"]:hover {{
             background: linear-gradient(135deg, var(--primary-dark), var(--secondary)) !important;
-            box-shadow: 0 4px 12px rgba(26,86,219,0.35) !important;
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4) !important;
         }}
 
         /* ===== Buttons ===== */
@@ -407,16 +425,17 @@ def get_design_css():
             font-weight: 600 !important;
             transition: all 0.2s ease !important;
             border: 1px solid var(--border) !important;
+            box-shadow: var(--shadow-sm) !important;
         }}
         .stButton > button:hover, .stDownloadButton > button:hover {{
             transform: translateY(-1px) !important;
-            box-shadow: var(--shadow-sm) !important;
+            box-shadow: var(--shadow-md) !important;
         }}
         button[kind="primary"], button[kind="primaryFormSubmit"] {{
             background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
             color: white !important;
             border: none !important;
-            box-shadow: 0 2px 8px rgba(26,86,219,0.25) !important;
+            box-shadow: var(--shadow-md) !important;
         }}
 
         /* ===== Inputs ===== */
@@ -426,10 +445,11 @@ def get_design_css():
             font-family: var(--font) !important;
             background: var(--card) !important;
             color: var(--text) !important;
+            box-shadow: var(--shadow-sm) !important;
         }}
         input:focus, textarea:focus, select:focus {{
             border-color: var(--primary) !important;
-            box-shadow: 0 0 0 3px rgba(26,86,219,0.15) !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
             outline: none !important;
         }}
         [data-testid="stTextInput"] label, [data-testid="stSelectbox"] label {{
@@ -442,19 +462,19 @@ def get_design_css():
         div[data-testid="stMetric"] {{
             background: var(--card) !important;
             border-radius: var(--radius) !important;
-            padding: 1rem !important;
+            padding: 1.25rem !important;
             border: 1px solid var(--border) !important;
             box-shadow: var(--shadow-sm) !important;
         }}
         div[data-testid="stMetric"] label {{
             color: var(--text-muted) !important;
             font-weight: 600 !important;
-            font-size: 0.8rem !important;
+            font-size: 0.85rem !important;
         }}
         div[data-testid="stMetricValue"] {{
             color: var(--primary) !important;
             font-weight: 800 !important;
-            font-size: 1.5rem !important;
+            font-size: 1.75rem !important;
         }}
 
         /* ===== Tabs ===== */
@@ -462,11 +482,11 @@ def get_design_css():
             border-radius: var(--radius-sm) !important;
             font-weight: 600 !important;
             font-size: 0.9rem !important;
-            padding: 0.5rem 1rem !important;
+            padding: 0.6rem 1.2rem !important;
         }}
         button[data-testid="stTab"][aria-selected="true"] {{
             color: var(--primary) !important;
-            border-bottom: 2px solid var(--primary) !important;
+            border-bottom: 3px solid var(--primary) !important;
         }}
 
         /* ===== Expanders ===== */
@@ -488,25 +508,25 @@ def get_design_css():
 
         /* ===== Alerts ===== */
         .stSuccess {{
-            background: #ecfdf5 !important;
+            background: var(--success-light) !important;
             border: 1px solid #a7f3d0 !important;
             color: #065f46 !important;
             border-radius: var(--radius-sm) !important;
         }}
         .stError {{
-            background: #fef2f2 !important;
+            background: var(--danger-light) !important;
             border: 1px solid #fecaca !important;
             color: #991b1b !important;
             border-radius: var(--radius-sm) !important;
         }}
         .stWarning {{
-            background: #fffbeb !important;
+            background: var(--warning-light) !important;
             border: 1px solid #fde68a !important;
             color: #92400e !important;
             border-radius: var(--radius-sm) !important;
         }}
         .stInfo {{
-            background: #eff6ff !important;
+            background: var(--primary-light) !important;
             border: 1px solid #bfdbfe !important;
             color: #1e40af !important;
             border-radius: var(--radius-sm) !important;
@@ -515,24 +535,24 @@ def get_design_css():
         /* ===== Badges ===== */
         .status-badge, .student-badge, .card-badge {{
             display: inline-block !important;
-            padding: 0.25rem 0.75rem !important;
+            padding: 0.3rem 0.8rem !important;
             border-radius: 9999px !important;
             font-size: 0.75rem !important;
             font-weight: 600 !important;
         }}
         .status-badge.active, .student-badge.active, .card-badge.active {{
-            background: #d1fae5 !important;
+            background: var(--success-light) !important;
             color: #065f46 !important;
         }}
         .status-badge.inactive, .student-badge.inactive, .card-badge.inactive {{
-            background: #f3f4f6 !important;
-            color: #4b5563 !important;
+            background: #f1f5f9 !important;
+            color: #475569 !important;
         }}
         .role-badge {{
             display: inline-block !important;
-            padding: 0.2rem 0.6rem !important;
+            padding: 0.25rem 0.7rem !important;
             border-radius: 9999px !important;
-            font-size: 0.7rem !important;
+            font-size: 0.75rem !important;
             font-weight: 600 !important;
         }}
         .role-badge.admin {{
@@ -552,7 +572,7 @@ def get_design_css():
             color: #9d174d !important;
         }}
         .role-badge.student {{
-            background: #d1fae5 !important;
+            background: var(--success-light) !important;
             color: #065f46 !important;
         }}
 
@@ -568,6 +588,7 @@ def get_design_css():
             color: white !important;
             font-size: 1.2rem !important;
             font-weight: 700 !important;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
         }}
         .student-avatar-large {{
             width: 48px !important;
@@ -581,7 +602,7 @@ def get_design_css():
             border-radius: var(--radius) !important;
             padding: 2rem !important;
             color: white !important;
-            box-shadow: 0 4px 16px rgba(26,86,219,0.2) !important;
+            box-shadow: var(--shadow-lg) !important;
             margin-bottom: 1.5rem !important;
         }}
         .profile-header h1 {{
@@ -595,19 +616,31 @@ def get_design_css():
         [data-testid="InputInstructions"] {{ display: none !important; }}
 
         /* ===== Scrollbar ===== */
-        ::-webkit-scrollbar {{ width: 6px !important; height: 6px !important; }}
+        ::-webkit-scrollbar {{ width: 8px !important; height: 8px !important; }}
         ::-webkit-scrollbar-track {{ background: transparent !important; }}
-        ::-webkit-scrollbar-thumb {{ background: #cbd5e1 !important; border-radius: 3px !important; }}
+        ::-webkit-scrollbar-thumb {{ background: #cbd5e1 !important; border-radius: 4px !important; }}
         ::-webkit-scrollbar-thumb:hover {{ background: var(--primary) !important; }}
 
         /* ===== Responsive ===== */
         @media (max-width: 768px) {{
-            .content-area {{ padding: 0.75rem !important; }}
-            .main-header {{ font-size: 1.4rem !important; padding: 0.75rem !important; }}
+            .content-area {{ padding: 1rem !important; }}
+            .main-header {{ font-size: 1.5rem !important; padding: 1rem !important; }}
             input, textarea, select, .stButton > button {{
                 font-size: 16px !important;
                 min-height: 44px !important;
             }}
+            .nav-btn-container .stButton > button {{
+                font-size: 0.85rem !important;
+                padding: 0.6rem 0.8rem !important;
+            }}
+        }}
+
+        /* ===== RTL Specific ===== */
+        .stButton > button {{
+            text-align: right !important;
+        }}
+        [data-testid="stSidebar"] .stButton > button {{
+            text-align: right !important;
         }}
     </style>
     """
@@ -2331,7 +2364,7 @@ def show_sidebar_navigation(db):
             btn_type = "primary" if item == current_choice else "secondary"
             icon_name = menu_icons.get(item, "circle")
             label = item.split(" ", 1)[1] if " " in item else item
-            btn_label = f'<span class="material-symbols-rounded" style="font-size:20px;margin-left:8px;">{icon_name}</span>{label}'
+            btn_label = f'{icon_name} {label}'
             if st.button(btn_label, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
