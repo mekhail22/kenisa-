@@ -257,8 +257,8 @@ def get_design_css():
         .hero-banner {{
             position: relative !important;
             width: 100% !important;
-            height: 280px !important;
-            border-radius: var(--radius) !important;
+            height: 240px !important;
+            border-radius: 18px !important;
             overflow: hidden !important;
             margin-bottom: 2rem !important;
             background: transparent !important;
@@ -277,33 +277,36 @@ def get_design_css():
             content: '' !important;
             position: absolute !important;
             inset: 0 !important;
-            background: rgba(0, 0, 0, 0.75) !important;
+            background: rgba(0, 0, 0, 0.65) !important;
             z-index: 1 !important;
         }}
         .hero-content {{
             position: relative !important;
             z-index: 3 !important;
-            padding: 2.5rem 2rem !important;
+            padding: 2.5rem 3.5rem !important;
             height: 100% !important;
             display: flex !important;
             flex-direction: column !important;
             justify-content: center !important;
             text-align: right !important;
+            align-items: flex-start !important;
         }}
         .hero-title {{
-            font-size: 2.2rem !important;
+            font-size: 2.1rem !important;
             font-weight: 800 !important;
             color: #ffffff !important;
             margin: 0 !important;
             text-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
             line-height: 1.3 !important;
+            font-family: 'Cairo', sans-serif !important;
         }}
         .hero-subtitle {{
-            font-size: 1.1rem !important;
+            font-size: 1.05rem !important;
             font-weight: 500 !important;
-            color: rgba(255, 255, 255, 0.95) !important;
+            color: rgba(255, 255, 255, 0.9) !important;
             margin-top: 0.5rem !important;
             text-shadow: 0 1px 4px rgba(0,0,0,0.3) !important;
+            font-family: 'Cairo', sans-serif !important;
         }}
         .block-container, section.main {{
             position: relative !important;
@@ -742,6 +745,18 @@ def page_header(title, subtitle=""):
     <div class="profile-header">
         <h1 style="margin:0; font-size:1.5rem; font-weight:800;">{title}</h1>
         {f'<p style="margin:0.5rem 0 0; opacity:0.9; font-size:0.9rem;">{subtitle}</p>' if subtitle else ''}
+    </div>
+    """
+
+
+def hero_header(title, subtitle=""):
+    """Render the reusable hero section with background image."""
+    return f"""
+    <div class="hero-banner">
+        <div class="hero-content">
+            <h1 class="hero-title">{title}</h1>
+            {f'<p class="hero-subtitle">{subtitle}</p>' if subtitle else ''}
+        </div>
     </div>
     """
 
@@ -2040,14 +2055,7 @@ def show_initialization(db):
 
 def show_login_page(db, jwt_secret):
     # Hero banner for login page
-    st.markdown(f"""
-    <div class="hero-banner">
-        <div class="hero-content">
-            <h1 class="hero-title">كنيسة الشهيدة دميانة</h1>
-            <p class="hero-subtitle">نظام إدارة الكنيسة المتكامل</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(hero_header("نظام إدارة الكنيسة", "كنيسة الشهيدة دميانة"), unsafe_allow_html=True)
     show_initialization(db)
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
@@ -2453,14 +2461,7 @@ def show_dashboard(db):
     role = user.get("role", "")
     section_id = user.get("section_id", "")
     # Hero banner for dashboard
-    st.markdown(f"""
-    <div class="hero-banner" style="height: 200px; margin-bottom: 1.5rem;">
-        <div class="hero-content">
-            <h1 class="hero-title" style="font-size: 1.8rem;">لوحة التحكم</h1>
-            <p class="hero-subtitle" style="font-size: 1rem;">مرحباً بك في نظام إدارة الكنيسة</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(hero_header("لوحة التحكم", "مرحباً بك في نظام إدارة الكنيسة"), unsafe_allow_html=True)
     if role in ["System Admin", "Service Manager"] and st.session_state.get("data_errors"):
         with st.expander("⚠️ تنبيهات هامة - أخطاء في البيانات", expanded=True):
             for err in st.session_state.data_errors:
@@ -2577,7 +2578,7 @@ def show_dashboard(db):
 # =============================================================================
 def show_members_cards_page(db):
     inject_user_cards_css()
-    st.markdown("<h2 class='main-header'>👥 إدارة الأعضاء</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("إدارة الأعضاء", "👥 إدارة جميع الأعضاء والطالبات"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
@@ -2962,7 +2963,7 @@ def show_students_cards_page(db):
 # =============================================================================
 def show_stages_page(db):
     inject_user_cards_css()
-    st.markdown("<h2 class='main-header'>🏫 إدارة المراحل الدراسية</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("إدارة المراحل الدراسية", "🏫 إدارة مراحل الدراسة والملاحظات"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     users = db.get_users()
@@ -3077,7 +3078,7 @@ def show_stages_page(db):
 # =============================================================================
 def show_sections_page(db):
     inject_user_cards_css()
-    st.markdown("<h2 class='main-header'>📚 إدارة الفصول</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("إدارة الفصول", "📚 إدارة بيانات الفصول الدراسية"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     users = db.get_users()
@@ -3264,7 +3265,7 @@ def show_attendance(db):
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
-    st.markdown("<h2 class='main-header'>📋 تسجيل الحضور</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("تسجيل الحضور", "📋 تسجيل ومتابعة حضور الطالبات"), unsafe_allow_html=True)
     
     # Service Manager can view attendance for their sections but not edit
     if role == "Service Manager":
@@ -3388,7 +3389,7 @@ def show_attendance(db):
 # Follow-up
 # =============================================================================
 def show_followup(db):
-    st.markdown("<h2 class='main-header'>💬 متابعة الافتقاد</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("متابعة الافتقاد", "💬 متابعة حالة الطالبات المنتظمات"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
@@ -3476,7 +3477,7 @@ def show_followup(db):
 # Class Competition Scores
 # =============================================================================
 def show_class_competition_scores(db):
-    st.markdown("<h2 class='main-header'>🏆 درجات مسابقات الفصل</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("درجات مسابقات الفصل", "🏆 متابعة درجات المسابقات للفصل"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
@@ -3597,7 +3598,7 @@ def show_class_competition_scores(db):
 # Quizzes
 # =============================================================================
 def show_quizzes(db):
-    st.markdown("<h2 class='main-header'>📝 المسابقات والاختبارات</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("المسابقات والاختبارات", "📝 إنشاء وإدارة الاختبارات والمسابقات"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
@@ -3877,7 +3878,7 @@ def _export_to_excel_with_charts(report_title, df, charts_list=None):
 
 def show_reports_page(db):
     """صفحة التقارير والإحصائيات المتقدمة"""
-    st.markdown("<h2 class='main-header'>📊 التقارير والإحصائيات</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("التقارير والإحصائيات", "📊 عرض التقارير والرسوم البيانية"), unsafe_allow_html=True)
     
     user = st.session_state.user
     role = user.get("role", "")
@@ -4623,7 +4624,7 @@ def show_event_actual_attendance(db, user):
 def show_events_page(db):
     """الصفحة الرئيسية لإدارة الفعاليات"""
     inject_events_css()
-    st.markdown("<h2 class='main-header'>📅 إدارة الفعاليات</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("إدارة الفعاليات", "📅 إنشاء وإدارة الفعاليات والأنشطة"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
@@ -5038,7 +5039,7 @@ def show_user_profile(db, user_id):
 # Audit Log Page - سجل التدقيق
 # =============================================================================
 def show_logs(db):
-    st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("سجل العمليات", "📜 عرض سجل العمليات والتدقيق"), unsafe_allow_html=True)
     logs = db.get_audit_log()
     if not logs.empty:
         if "timestamp" in logs.columns:
@@ -5126,7 +5127,7 @@ def show_logs(db):
 # Change Password
 # =============================================================================
 def change_password(db):
-    st.markdown("<h2 class='main-header'>🔒 تغيير كلمة المرور</h2>", unsafe_allow_html=True)
+    st.markdown(hero_header("تغيير كلمة المرور", "🔒 تحديث كلمة المرور الخاصة بك"), unsafe_allow_html=True)
     with st.form("change_password_form"):
         old = st.text_input("كلمة المرور الحالية", type="password", placeholder="").strip()
         new = st.text_input("كلمة المرور الجديدة", type="password", placeholder="").strip()
@@ -5202,7 +5203,7 @@ def main():
                 st.markdown("""<style>section[data-testid="stSidebar"] { transform: translateX(0) !important; }</style>""", unsafe_allow_html=True)
                 # Add backdrop for mobile
                 st.markdown("""
-                <div class="sidebar-backdrop" onclick="document.querySelector('section[data-testid=\"stSidebar\"]').style.transform='translateX(100%)'; setTimeout(() => window.parent.postMessage({type: 'streamlit:rerun'}, '*'), 100);">
+                <div class="sidebar-backdrop" onclick="document.querySelector('section[data-testid=\"stSidebar\"]').style.transform='translateX(100%)';">
                 </div>
                 """, unsafe_allow_html=True)
                 choice = show_sidebar_navigation(db)
