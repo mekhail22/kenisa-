@@ -1090,6 +1090,7 @@ class Database:
             "Exams": self.EXAM_COLUMNS,
             "ExamQuestions": self.EXAM_QUESTIONS_COLUMNS,
             "ExamResults": self.EXAM_RESULTS_COLUMNS,
+            "exams": self.EXAMS_SHEET_COLUMNS,
             "QuestionBank": self.QUESTION_BANK_COLUMNS,
             "Homework": self.HOMEWORK_COLUMNS,
             "Notifications": self.NOTIFICATIONS_COLUMNS,
@@ -1497,6 +1498,213 @@ class Database:
         "status", "is_published", "created_date", "archived_date", "chapter_id", "tags"
     ]
 
+    # =====================================================================
+    # Unified Exams Sheet - One Row Per Question (Data-Driven Architecture)
+    # =====================================================================
+    EXAMS_SHEET_COLUMNS = [
+        # Exam-level columns (repeated for each question row)
+        "exam_id", "exam_name", "description", "stage", "class", "chapter",
+        "exam_status", "start_date", "start_time", "end_date", "end_time",
+        "duration_minutes", "total_score", "passing_score", "allow_retake",
+        "max_attempts", "show_score", "show_correct_answers", "random_questions",
+        "random_choices", "auto_save", "require_all_answers",
+        # Question-level columns
+        "question_id", "question_order", "question_type", "question_text",
+        "question_image", "choice_a", "choice_b", "choice_c", "choice_d",
+        "correct_answer", "true_false_answer", "bible_verse", "bible_reference",
+        "explanation_after_exam", "teacher_notes", "question_score",
+        "required_question", "allow_image_upload", "max_uploaded_images",
+        "accepted_file_types"
+    ]
+
+    def get_exams_sheet(self):
+        """Get all rows from the unified exams sheet."""
+        return self._sheet_to_df("exams")
+
+    def get_exam_questions_unified(self, exam_id):
+        """Get all questions for a specific exam from the unified exams sheet."""
+        df = self.get_exams_sheet()
+        if df.empty:
+            return pd.DataFrame()
+        exam_questions = df[df.exam_id == exam_id]
+        if exam_questions.empty:
+            return pd.DataFrame()
+        # Sort by question_order
+        if "question_order" in exam_questions.columns:
+            try:
+                exam_questions = exam_questions.sort_values("question_order", key=lambda x: pd.to_numeric(x, errors='coerce'))
+            except Exception:
+                pass
+        return exam_questions
+
+    def get_exam_info_unified(self, exam_id):
+        """Get exam metadata from the first row of an exam in the unified sheet."""
+        df = self.get_exams_sheet()
+        if df.empty:
+            return {}
+        exam_rows = df[df.exam_id == exam_id]
+        if exam_rows.empty:
+            return {}
+        first_row = exam_rows.iloc[0].to_dict()
+        return {
+            "exam_id": first_row.get("exam_id", ""),
+            "exam_name": first_row.get("exam_name", ""),
+            "description": first_row.get("description", ""),
+            "stage": first_row.get("stage", ""),
+            "class": first_row.get("class", ""),
+            "chapter": first_row.get("chapter", ""),
+            "exam_status": first_row.get("exam_status", ""),
+            "start_date": first_row.get("start_date", ""),
+            "start_time": first_row.get("start_time", ""),
+            "end_date": first_row.get("end_date", ""),
+            "end_time": first_row.get("end_time", ""),
+            "duration_minutes": first_row.get("duration_minutes", ""),
+            "total_score": first_row.get("total_score", ""),
+            "passing_score": first_row.get("passing_score", ""),
+            "allow_retake": first_row.get("allow_retake", ""),
+            "max_attempts": first_row.get("max_attempts", ""),
+            "show_score": first_row.get("show_score", ""),
+            "show_correct_answers": first_row.get("show_correct_answers", ""),
+            "random_questions": first_row.get("random_questions", ""),
+            "random_choices": first_row.get("random_choices", ""),
+            "auto_save": first_row.get("auto_save", ""),
+            "require_all_answers": first_row.get("require_all_answers", "")
+        }
+
+    def add_exam_unified(self, exam_data, questions_list):
+        """Add a new exam with all its questions to the unified exams sheet."""
+        df = self.get_exams_sheet()
+        if df.empty:
+            df = pd.DataFrame(columns=self.EXAMS_SHEET_COLUMNS)
+        rows_to_add = []
+        for idx, question in enumerate(questions_list, 1):
+            row = {
+                # Exam metadata (repeated for each question)
+                "exam_id": exam_data.get("exam_id", ""),
+                "exam_name": exam_data.get("exam_name", ""),
+                "description": exam_data.get("description", ""),
+                "stage": exam_data.get("stage", ""),
+                "class": exam_data.get("class", ""),
+                "chapter": exam_data.get("chapter", ""),
+                "exam_status": exam_data.get("exam_status", "draft"),
+                "start_date": exam_data.get("start_date", ""),
+                "start_time": exam_data.get("start_time", ""),
+                "end_date": exam_data.get("end_date", ""),
+                "end_time": exam_data.get("end_time", ""),
+                "duration_minutes": exam_data.get("duration_minutes", ""),
+                "total_score": exam_data.get("total_score", ""),
+                "passing_score": exam_data.get("passing_score", ""),
+                "allow_retake": exam_data.get("allow_retake", "False"),
+                "max_attempts": exam_data.get("max_attempts", "1"),
+                "show_score": exam_data.get("show_score", "True"),
+                "show_correct_answers": exam_data.get("show_correct_answers", "True"),
+                "random_questions": exam_data.get("random_questions", "False"),
+                "random_choices": exam_data.get("random_choices", "False"),
+                "auto_save": exam_data.get("auto_save", "True"),
+                "require_all_answers": exam_data.get("require_all_answers", "False"),
+                # Question data
+                "question_id": question.get("question_id", str(uuid.uuid4())),
+                "question_order": str(idx),
+                "question_type": question.get("question_type", ""),
+                "question_text": question.get("question_text", ""),
+                "question_image": question.get("question_image", ""),
+                "choice_a": question.get("choice_a", ""),
+                "choice_b": question.get("choice_b", ""),
+                "choice_c": question.get("choice_c", ""),
+                "choice_d": question.get("choice_d", ""),
+                "correct_answer": question.get("correct_answer", ""),
+                "true_false_answer": question.get("true_false_answer", ""),
+                "bible_verse": question.get("bible_verse", ""),
+                "bible_reference": question.get("bible_reference", ""),
+                "explanation_after_exam": question.get("explanation_after_exam", ""),
+                "teacher_notes": question.get("teacher_notes", ""),
+                "question_score": question.get("question_score", "1"),
+                "required_question": question.get("required_question", "True"),
+                "allow_image_upload": question.get("allow_image_upload", "False"),
+                "max_uploaded_images": question.get("max_uploaded_images", "1"),
+                "accepted_file_types": question.get("accepted_file_types", "jpg,png")
+            }
+            rows_to_add.append(row)
+        if rows_to_add:
+            df = pd.concat([df, pd.DataFrame(rows_to_add)], ignore_index=True)
+            self._df_to_sheet("exams", df, self.EXAMS_SHEET_COLUMNS)
+
+    def update_exam_unified(self, exam_id, exam_updates, questions_list=None):
+        """Update an exam and optionally its questions in the unified exams sheet."""
+        df = self.get_exams_sheet()
+        if df.empty:
+            return False
+        exam_mask = df.exam_id == exam_id
+        if not exam_mask.any():
+            return False
+        for k, v in exam_updates.items():
+            df.loc[exam_mask, k] = self._safe_str(v)
+        if questions_list is not None:
+            first_idx = df[exam_mask].index[0]
+            exam_metadata = {col: df.at[first_idx, col] for col in self.EXAMS_SHEET_COLUMNS[:21]}
+            df = df[~exam_mask]
+            rows_to_add = []
+            for idx, question in enumerate(questions_list, 1):
+                row = exam_metadata.copy()
+                row.update({
+                    "question_id": question.get("question_id", str(uuid.uuid4())),
+                    "question_order": str(idx),
+                    "question_type": question.get("question_type", ""),
+                    "question_text": question.get("question_text", ""),
+                    "question_image": question.get("question_image", ""),
+                    "choice_a": question.get("choice_a", ""),
+                    "choice_b": question.get("choice_b", ""),
+                    "choice_c": question.get("choice_c", ""),
+                    "choice_d": question.get("choice_d", ""),
+                    "correct_answer": question.get("correct_answer", ""),
+                    "true_false_answer": question.get("true_false_answer", ""),
+                    "bible_verse": question.get("bible_verse", ""),
+                    "bible_reference": question.get("bible_reference", ""),
+                    "explanation_after_exam": question.get("explanation_after_exam", ""),
+                    "teacher_notes": question.get("teacher_notes", ""),
+                    "question_score": question.get("question_score", "1"),
+                    "required_question": question.get("required_question", "True"),
+                    "allow_image_upload": question.get("allow_image_upload", "False"),
+                    "max_uploaded_images": question.get("max_uploaded_images", "1"),
+                    "accepted_file_types": question.get("accepted_file_types", "jpg,png")
+                })
+                rows_to_add.append(row)
+            if rows_to_add:
+                df = pd.concat([df, pd.DataFrame(rows_to_add)], ignore_index=True)
+        self._df_to_sheet("exams", df, self.EXAMS_SHEET_COLUMNS)
+        return True
+
+    def delete_exam_unified(self, exam_id):
+        """Delete all rows belonging to an exam from the unified exams sheet."""
+        df = self.get_exams_sheet()
+        if df.empty:
+            return False
+        df = df[df.exam_id != exam_id]
+        self._df_to_sheet("exams", df, self.EXAMS_SHEET_COLUMNS)
+        return True
+
+    def duplicate_exam_unified(self, exam_id, new_exam_id=None):
+        """Duplicate an exam with all its questions using a new exam ID."""
+        if new_exam_id is None:
+            new_exam_id = str(uuid.uuid4())
+        df = self.get_exams_sheet()
+        if df.empty:
+            return None
+        exam_mask = df.exam_id == exam_id
+        if not exam_mask.any():
+            return None
+        exam_rows = df[exam_mask].copy()
+        new_rows = []
+        for _, row in exam_rows.iterrows():
+            new_row = row.to_dict()
+            new_row["exam_id"] = new_exam_id
+            new_row["question_id"] = str(uuid.uuid4())
+            new_rows.append(new_row)
+        if new_rows:
+            df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+            self._df_to_sheet("exams", df, self.EXAMS_SHEET_COLUMNS)
+        return new_exam_id
+
     def get_exams(self):
         return self._sheet_to_df("Exams")
 
@@ -1804,40 +2012,247 @@ class Database:
         self._df_to_sheet("EventAttendance", df, self.EVENT_ATTENDANCE_COLUMNS)
 
     # =====================================================================
-    # Exam Questions
+    # Unified Exams Sheet - One Row Per Question
     # =====================================================================
-    EXAM_QUESTIONS_COLUMNS = [
-        "question_id", "exam_id", "question_text", "question_image", "question_type",
-        "option1", "option2", "option3", "option4", "correct_answer",
-        "question_score", "bible_verse", "bible_reference", "explanation",
-        "teacher_notes", "is_required", "question_order", "chapter_id"
+    EXAMS_SHEET_COLUMNS = [
+        # Exam-level columns (repeated for each question)
+        "exam_id", "exam_name", "description", "stage", "class", "chapter",
+        "exam_status", "start_date", "start_time", "end_date", "end_time",
+        "duration_minutes", "total_score", "passing_score", "allow_retake",
+        "max_attempts", "show_score", "show_correct_answers", "random_questions",
+        "random_choices", "auto_save", "require_all_answers",
+        # Question-level columns
+        "question_id", "question_order", "question_type", "question_text",
+        "question_image", "choice_a", "choice_b", "choice_c", "choice_d",
+        "correct_answer", "true_false_answer", "bible_verse", "bible_reference",
+        "explanation_after_exam", "teacher_notes", "question_score",
+        "required_question", "allow_image_upload", "max_uploaded_images",
+        "accepted_file_types"
     ]
 
-    def get_exam_questions(self, exam_id):
-        df = self._sheet_to_df("ExamQuestions")
+    def get_exams_sheet(self):
+        """Get all rows from the unified exams sheet."""
+        return self._sheet_to_df("exams")
+
+    def get_exam_questions_unified(self, exam_id):
+        """Get all questions for a specific exam from the unified exams sheet."""
+        df = self.get_exams_sheet()
         if df.empty:
             return pd.DataFrame()
-        return df[df.exam_id == exam_id].sort_values("question_order") if "question_order" in df.columns else df[df.exam_id == exam_id]
+        exam_questions = df[df.exam_id == exam_id]
+        if exam_questions.empty:
+            return pd.DataFrame()
+        # Sort by question_order
+        if "question_order" in exam_questions.columns:
+            try:
+                exam_questions = exam_questions.sort_values("question_order", key=lambda x: pd.to_numeric(x, errors='coerce'))
+            except Exception:
+                pass
+        return exam_questions
 
-    def add_exam_question(self, q_data):
-        df = self._sheet_to_df("ExamQuestions")
+    def get_exam_info_unified(self, exam_id):
+        """Get exam metadata from the first row of an exam in the unified sheet."""
+        df = self.get_exams_sheet()
         if df.empty:
-            df = pd.DataFrame(columns=self.EXAM_QUESTIONS_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([q_data])], ignore_index=True)
-        self._df_to_sheet("ExamQuestions", df, self.EXAM_QUESTIONS_COLUMNS)
+            return {}
+        exam_rows = df[df.exam_id == exam_id]
+        if exam_rows.empty:
+            return {}
+        # Get metadata from the first row
+        first_row = exam_rows.iloc[0].to_dict()
+        return {
+            "exam_id": first_row.get("exam_id", ""),
+            "exam_name": first_row.get("exam_name", ""),
+            "description": first_row.get("description", ""),
+            "stage": first_row.get("stage", ""),
+            "class": first_row.get("class", ""),
+            "chapter": first_row.get("chapter", ""),
+            "exam_status": first_row.get("exam_status", ""),
+            "start_date": first_row.get("start_date", ""),
+            "start_time": first_row.get("start_time", ""),
+            "end_date": first_row.get("end_date", ""),
+            "end_time": first_row.get("end_time", ""),
+            "duration_minutes": first_row.get("duration_minutes", ""),
+            "total_score": first_row.get("total_score", ""),
+            "passing_score": first_row.get("passing_score", ""),
+            "allow_retake": first_row.get("allow_retake", ""),
+            "max_attempts": first_row.get("max_attempts", ""),
+            "show_score": first_row.get("show_score", ""),
+            "show_correct_answers": first_row.get("show_correct_answers", ""),
+            "random_questions": first_row.get("random_questions", ""),
+            "random_choices": first_row.get("random_choices", ""),
+            "auto_save": first_row.get("auto_save", ""),
+            "require_all_answers": first_row.get("require_all_answers", "")
+        }
 
-    def update_exam_question(self, question_id, updates):
-        df = self._sheet_to_df("ExamQuestions")
-        idx = df[df.question_id == question_id].index
-        if len(idx) > 0:
-            for k, v in updates.items():
-                df.at[idx[0], k] = self._safe_str(v)
-            self._df_to_sheet("ExamQuestions", df, self.EXAM_QUESTIONS_COLUMNS)
+    def add_exam_unified(self, exam_data, questions_list):
+        """
+        Add a new exam with all its questions to the unified exams sheet.
+        exam_data: dict with exam-level metadata
+        questions_list: list of dicts, each representing one question
+        """
+        df = self.get_exams_sheet()
+        if df.empty:
+            df = pd.DataFrame(columns=self.EXAMS_SHEET_COLUMNS)
+        
+        # Create rows for each question
+        rows_to_add = []
+        for idx, question in enumerate(questions_list, 1):
+            row = {
+                # Exam metadata (repeated for each question)
+                "exam_id": exam_data.get("exam_id", ""),
+                "exam_name": exam_data.get("exam_name", ""),
+                "description": exam_data.get("description", ""),
+                "stage": exam_data.get("stage", ""),
+                "class": exam_data.get("class", ""),
+                "chapter": exam_data.get("chapter", ""),
+                "exam_status": exam_data.get("exam_status", "draft"),
+                "start_date": exam_data.get("start_date", ""),
+                "start_time": exam_data.get("start_time", ""),
+                "end_date": exam_data.get("end_date", ""),
+                "end_time": exam_data.get("end_time", ""),
+                "duration_minutes": exam_data.get("duration_minutes", ""),
+                "total_score": exam_data.get("total_score", ""),
+                "passing_score": exam_data.get("passing_score", ""),
+                "allow_retake": exam_data.get("allow_retake", "False"),
+                "max_attempts": exam_data.get("max_attempts", "1"),
+                "show_score": exam_data.get("show_score", "True"),
+                "show_correct_answers": exam_data.get("show_correct_answers", "True"),
+                "random_questions": exam_data.get("random_questions", "False"),
+                "random_choices": exam_data.get("random_choices", "False"),
+                "auto_save": exam_data.get("auto_save", "True"),
+                "require_all_answers": exam_data.get("require_all_answers", "False"),
+                # Question data
+                "question_id": question.get("question_id", str(uuid.uuid4())),
+                "question_order": str(idx),
+                "question_type": question.get("question_type", ""),
+                "question_text": question.get("question_text", ""),
+                "question_image": question.get("question_image", ""),
+                "choice_a": question.get("choice_a", ""),
+                "choice_b": question.get("choice_b", ""),
+                "choice_c": question.get("choice_c", ""),
+                "choice_d": question.get("choice_d", ""),
+                "correct_answer": question.get("correct_answer", ""),
+                "true_false_answer": question.get("true_false_answer", ""),
+                "bible_verse": question.get("bible_verse", ""),
+                "bible_reference": question.get("bible_reference", ""),
+                "explanation_after_exam": question.get("explanation_after_exam", ""),
+                "teacher_notes": question.get("teacher_notes", ""),
+                "question_score": question.get("question_score", "1"),
+                "required_question": question.get("required_question", "True"),
+                "allow_image_upload": question.get("allow_image_upload", "False"),
+                "max_uploaded_images": question.get("max_uploaded_images", "1"),
+                "accepted_file_types": question.get("accepted_file_types", "jpg,png")
+            }
+            rows_to_add.append(row)
+        
+        if rows_to_add:
+            df = pd.concat([df, pd.DataFrame(rows_to_add)], ignore_index=True)
+            self._df_to_sheet("exams", df, self.EXAMS_SHEET_COLUMNS)
 
-    def delete_exam_question(self, question_id):
-        df = self._sheet_to_df("ExamQuestions")
-        df = df[df.question_id != question_id]
-        self._df_to_sheet("ExamQuestions", df, self.EXAM_QUESTIONS_COLUMNS)
+    def update_exam_unified(self, exam_id, exam_updates, questions_list=None):
+        """
+        Update an exam and optionally its questions in the unified exams sheet.
+        exam_updates: dict with exam-level fields to update
+        questions_list: if provided, replace all questions with this list
+        """
+        df = self.get_exams_sheet()
+        if df.empty:
+            return False
+        
+        # Get all rows for this exam
+        exam_mask = df.exam_id == exam_id
+        if not exam_mask.any():
+            return False
+        
+        # Update exam metadata on all rows
+        for k, v in exam_updates.items():
+            df.loc[exam_mask, k] = self._safe_str(v)
+        
+        # If questions_list provided, replace all questions
+        if questions_list is not None:
+            # Get the first row's exam metadata
+            first_idx = df[exam_mask].index[0]
+            exam_metadata = {col: df.at[first_idx, col] for col in self.EXAMS_SHEET_COLUMNS[:21]}
+            
+            # Remove old questions
+            df = df[~exam_mask]
+            
+            # Add new questions
+            rows_to_add = []
+            for idx, question in enumerate(questions_list, 1):
+                row = exam_metadata.copy()
+                row.update({
+                    "question_id": question.get("question_id", str(uuid.uuid4())),
+                    "question_order": str(idx),
+                    "question_type": question.get("question_type", ""),
+                    "question_text": question.get("question_text", ""),
+                    "question_image": question.get("question_image", ""),
+                    "choice_a": question.get("choice_a", ""),
+                    "choice_b": question.get("choice_b", ""),
+                    "choice_c": question.get("choice_c", ""),
+                    "choice_d": question.get("choice_d", ""),
+                    "correct_answer": question.get("correct_answer", ""),
+                    "true_false_answer": question.get("true_false_answer", ""),
+                    "bible_verse": question.get("bible_verse", ""),
+                    "bible_reference": question.get("bible_reference", ""),
+                    "explanation_after_exam": question.get("explanation_after_exam", ""),
+                    "teacher_notes": question.get("teacher_notes", ""),
+                    "question_score": question.get("question_score", "1"),
+                    "required_question": question.get("required_question", "True"),
+                    "allow_image_upload": question.get("allow_image_upload", "False"),
+                    "max_uploaded_images": question.get("max_uploaded_images", "1"),
+                    "accepted_file_types": question.get("accepted_file_types", "jpg,png")
+                })
+                rows_to_add.append(row)
+            
+            if rows_to_add:
+                df = pd.concat([df, pd.DataFrame(rows_to_add)], ignore_index=True)
+        
+        self._df_to_sheet("exams", df, self.EXAMS_SHEET_COLUMNS)
+        return True
+
+    def delete_exam_unified(self, exam_id):
+        """Delete all rows belonging to an exam from the unified exams sheet."""
+        df = self.get_exams_sheet()
+        if df.empty:
+            return False
+        df = df[df.exam_id != exam_id]
+        self._df_to_sheet("exams", df, self.EXAMS_SHEET_COLUMNS)
+        return True
+
+    def duplicate_exam_unified(self, exam_id, new_exam_id=None):
+        """
+        Duplicate an exam with all its questions using a new exam ID.
+        Returns the new exam ID.
+        """
+        if new_exam_id is None:
+            new_exam_id = str(uuid.uuid4())
+        
+        df = self.get_exams_sheet()
+        if df.empty:
+            return None
+        
+        exam_mask = df.exam_id == exam_id
+        if not exam_mask.any():
+            return None
+        
+        # Get all rows for this exam
+        exam_rows = df[exam_mask].copy()
+        
+        # Update exam_id and reset question_ids
+        new_rows = []
+        for _, row in exam_rows.iterrows():
+            new_row = row.to_dict()
+            new_row["exam_id"] = new_exam_id
+            new_row["question_id"] = str(uuid.uuid4())
+            new_rows.append(new_row)
+        
+        if new_rows:
+            df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+            self._df_to_sheet("exams", df, self.EXAMS_SHEET_COLUMNS)
+        
+        return new_exam_id
 
     # =====================================================================
     # Question Bank
