@@ -249,21 +249,63 @@ def get_design_css():
             background: transparent !important;
         }}
         [data-testid="stAppViewContainer"] {{
+            background-color: #f8fafc !important;
+            background-image: none !important;
+            min-height: 100vh !important;
+        }}
+        /* Hero Banner with Church Image */
+        .hero-banner {{
+            position: relative !important;
+            width: 100% !important;
+            height: 280px !important;
+            border-radius: var(--radius) !important;
+            overflow: hidden !important;
+            margin-bottom: 2rem !important;
+            background: transparent !important;
+        }}
+        .hero-banner::before {{
+            content: '' !important;
+            position: absolute !important;
+            inset: 0 !important;
             background-image: url('{bg_data_url}') !important;
             background-position: center center !important;
             background-repeat: no-repeat !important;
             background-size: cover !important;
-            background-attachment: fixed !important;
-            min-height: 100vh !important;
-        }}
-        [data-testid="stAppViewContainer"]::before {{
-            content: '' !important;
-            position: fixed !important;
-            inset: 0 !important;
-            background: linear-gradient(135deg, rgba(15, 23, 42, 0.75) 0%, rgba(30, 58, 138, 0.65) 100%) !important;
+            filter: blur(8px) !important;
+            transform: scale(1.1) !important;
             z-index: 0 !important;
-            pointer-events: none !important;
-            backdrop-filter: blur(2px) !important;
+        }}
+        .hero-banner::after {{
+            content: '' !important;
+            position: absolute !important;
+            inset: 0 !important;
+            background: rgba(0, 0, 0, 0.75) !important;
+            z-index: 1 !important;
+        }}
+        .hero-content {{
+            position: relative !important;
+            z-index: 3 !important;
+            padding: 2.5rem 2rem !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            text-align: right !important;
+        }}
+        .hero-title {{
+            font-size: 2.2rem !important;
+            font-weight: 800 !important;
+            color: #ffffff !important;
+            margin: 0 !important;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+            line-height: 1.3 !important;
+        }}
+        .hero-subtitle {{
+            font-size: 1.1rem !important;
+            font-weight: 500 !important;
+            color: rgba(255, 255, 255, 0.95) !important;
+            margin-top: 0.5rem !important;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.3) !important;
         }}
         .block-container, section.main {{
             position: relative !important;
@@ -282,18 +324,17 @@ def get_design_css():
             letter-spacing: -0.01em !important;
         }}
         .main-header {{
-            font-size: 1.875rem !important;
+            font-size: 1.75rem !important;
             font-weight: 800 !important;
-            color: #ffffff !important;
-            text-align: center !important;
+            color: var(--primary) !important;
+            text-align: right !important;
             margin-bottom: 1.5rem !important;
-            padding: 1.25rem 1.5rem !important;
-            background: linear-gradient(135deg, rgba(37, 99, 235, 0.85), rgba(124, 58, 237, 0.85)) !important;
-            backdrop-filter: blur(12px) !important;
-            border: 1px solid rgba(255,255,255,0.2) !important;
+            padding: 1rem 1.5rem !important;
+            background: var(--card) !important;
+            border: 1px solid var(--border) !important;
             border-radius: var(--radius) !important;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
-            box-shadow: var(--shadow-lg) !important;
+            box-shadow: var(--shadow-md) !important;
+            border-right: 4px solid var(--primary) !important;
         }}
 
         /* ===== Cards ===== */
@@ -312,10 +353,10 @@ def get_design_css():
 
         /* ===== Sidebar (RTL - Right Side) ===== */
         section[data-testid="stSidebar"] {{
-            background: rgba(255,255,255,0.98) !important;
-            backdrop-filter: blur(16px) !important;
-            border-right: 1px solid var(--border) !important;
-            border-left: none !important;
+            background: #ffffff !important;
+            border-left: 1px solid var(--border) !important;
+            border-right: none !important;
+            box-shadow: -2px 0 8px rgba(0,0,0,0.05) !important;
         }}
         .sidebar-brand {{
             display: flex !important;
@@ -325,25 +366,25 @@ def get_design_css():
             margin-bottom: 0.5rem !important;
         }}
         .brand-logo {{
-            width: 48px !important;
-            height: 48px !important;
+            width: 44px !important;
+            height: 44px !important;
             border-radius: 12px !important;
             background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            font-size: 1.5rem !important;
+            font-size: 1.4rem !important;
             color: white !important;
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
         }}
         .brand-text h3 {{
-            font-size: 1.05rem !important;
+            font-size: 0.95rem !important;
             font-weight: 700 !important;
             color: var(--text) !important;
             margin: 0 !important;
         }}
         .brand-text small {{
-            font-size: 0.75rem !important;
+            font-size: 0.7rem !important;
             color: var(--text-muted) !important;
         }}
         .sidebar-user {{
@@ -351,14 +392,14 @@ def get_design_css():
             align-items: center !important;
             gap: 0.75rem !important;
             padding: 0.75rem !important;
-            background: linear-gradient(135deg, var(--primary-light), #f3e8ff) !important;
+            background: #f8fafc !important;
             border-radius: var(--radius-sm) !important;
             margin-bottom: 1rem !important;
-            border: 1px solid rgba(37, 99, 235, 0.1) !important;
+            border: 1px solid var(--border) !important;
         }}
         .user-avatar-lg {{
-            width: 44px !important;
-            height: 44px !important;
+            width: 40px !important;
+            height: 40px !important;
             border-radius: 50% !important;
             background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
             display: flex !important;
@@ -366,15 +407,15 @@ def get_design_css():
             justify-content: center !important;
             color: white !important;
             font-weight: 700 !important;
-            font-size: 0.95rem !important;
-            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
+            font-size: 0.9rem !important;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2) !important;
         }}
         .user-info {{
             display: flex !important;
             flex-direction: column !important;
         }}
         .user-info strong {{
-            font-size: 0.95rem !important;
+            font-size: 0.9rem !important;
             color: var(--text) !important;
             font-weight: 700 !important;
         }}
@@ -393,7 +434,7 @@ def get_design_css():
             width: 100% !important;
             text-align: right !important;
             justify-content: flex-start !important;
-            padding: 0.75rem 1rem !important;
+            padding: 0.85rem 1rem !important;
             font-size: 0.9rem !important;
             font-weight: 600 !important;
             border-radius: var(--radius-sm) !important;
@@ -401,6 +442,7 @@ def get_design_css():
             color: var(--text) !important;
             border: 1px solid transparent !important;
             transition: all 0.2s ease !important;
+            font-family: var(--font) !important;
         }}
         .nav-btn-container .stButton > button:hover {{
             background: var(--primary-light) !important;
@@ -464,17 +506,20 @@ def get_design_css():
             border-radius: var(--radius) !important;
             padding: 1.25rem !important;
             border: 1px solid var(--border) !important;
-            box-shadow: var(--shadow-sm) !important;
+            box-shadow: var(--shadow-md) !important;
+            text-align: right !important;
         }}
         div[data-testid="stMetric"] label {{
             color: var(--text-muted) !important;
             font-weight: 600 !important;
             font-size: 0.85rem !important;
+            text-align: right !important;
         }}
         div[data-testid="stMetricValue"] {{
             color: var(--primary) !important;
             font-weight: 800 !important;
             font-size: 1.75rem !important;
+            text-align: right !important;
         }}
 
         /* ===== Tabs ===== */
@@ -503,7 +548,8 @@ def get_design_css():
             background: var(--card) !important;
             border-radius: var(--radius) !important;
             border: 1px solid var(--border) !important;
-            box-shadow: var(--shadow-sm) !important;
+            box-shadow: var(--shadow-md) !important;
+            direction: rtl !important;
         }}
 
         /* ===== Alerts ===== */
@@ -1964,7 +2010,15 @@ def show_initialization(db):
 
 
 def show_login_page(db, jwt_secret):
-    st.markdown(page_header("كنيسة الشهيدة دميانة", subtitle="نظام إدارة الكنيسة المتكامل"), unsafe_allow_html=True)
+    # Hero banner for login page
+    st.markdown(f"""
+    <div class="hero-banner">
+        <div class="hero-content">
+            <h1 class="hero-title">كنيسة الشهيدة دميانة</h1>
+            <p class="hero-subtitle">نظام إدارة الكنيسة المتكامل</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     show_initialization(db)
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 دخول الطالبات للاختبار"])
     with tab1:
@@ -2338,22 +2392,7 @@ def show_sidebar_navigation(db):
             st.session_state.show_sidebar = False
             st.rerun()
 
-        # ===== Menu items with Material Symbols icons =====
-        menu_icons = {
-            "🏠 لوحة التحكم": "dashboard",
-            "👥 إدارة الأعضاء": "group",
-            "🏫 إدارة المراحل الدراسية": "school",
-            "📚 إدارة الفصول": "menu_book",
-            "📋 الحضور": "fact_check",
-            "💬 الافتقاد": "forum",
-            "📝 المسابقات والاختبارات": "quiz",
-            "📊 التقارير والإحصائيات": "monitoring",
-            "📅 إدارة الفعاليات": "event",
-            "📜 سجل العمليات": "history",
-            "🔒 تغيير كلمة المرور": "lock",
-            "🏆 درجات المسابقات": "military_tech"
-        }
-
+        # ===== Menu items with Arabic icons only =====
         current_choice = st.session_state.get("menu_choice", menu_items[0])
         if current_choice not in menu_items:
             current_choice = menu_items[0]
@@ -2362,10 +2401,7 @@ def show_sidebar_navigation(db):
         st.markdown('<div class="sidebar-nav nav-btn-container">', unsafe_allow_html=True)
         for item in menu_items:
             btn_type = "primary" if item == current_choice else "secondary"
-            icon_name = menu_icons.get(item, "circle")
-            label = item.split(" ", 1)[1] if " " in item else item
-            btn_label = f'{icon_name} {label}'
-            if st.button(btn_label, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
+            if st.button(item, key=f"nav_btn_{item}", use_container_width=True, type=btn_type):
                 if item != current_choice:
                     st.session_state.menu_choice = item
                 st.session_state.show_sidebar = False
@@ -2387,7 +2423,15 @@ def show_dashboard(db):
     user = st.session_state.user
     role = user.get("role", "")
     section_id = user.get("section_id", "")
-    st.markdown("<h2 class='main-header'>📊 لوحة التحكم</h2>", unsafe_allow_html=True)
+    # Hero banner for dashboard
+    st.markdown(f"""
+    <div class="hero-banner" style="height: 200px; margin-bottom: 1.5rem;">
+        <div class="hero-content">
+            <h1 class="hero-title" style="font-size: 1.8rem;">لوحة التحكم</h1>
+            <p class="hero-subtitle" style="font-size: 1rem;">مرحباً بك في نظام إدارة الكنيسة</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     if role in ["System Admin", "Service Manager"] and st.session_state.get("data_errors"):
         with st.expander("⚠️ تنبيهات هامة - أخطاء في البيانات", expanded=True):
             for err in st.session_state.data_errors:
@@ -2417,11 +2461,36 @@ def show_dashboard(db):
     present_today = len(attendance[(attendance.date == today_str) & (attendance.status == "حاضر")]) if not attendance.empty and "status" in attendance.columns else 0
     absent_today = len(attendance[(attendance.date == today_str) & (attendance.status == "غائب")]) if not attendance.empty and "status" in attendance.columns else 0
     need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty and "regularity_status" in followup.columns else 0
+    # Statistics cards with improved styling
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("عدد الطالبات", total_students)
-    col2.metric("الحضور اليوم", present_today)
-    col3.metric("الغياب اليوم", absent_today)
-    col4.metric("منقطعات", need_follow)
+    with col1:
+        st.markdown(f"""
+        <div style="background: white; padding: 1.5rem; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: right;">
+            <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem;">عدد الطالبات</div>
+            <div style="font-size: 2rem; font-weight: 800; color: #2563eb;">{total_students}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+        <div style="background: white; padding: 1.5rem; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: right;">
+            <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem;">الحضور اليوم</div>
+            <div style="font-size: 2rem; font-weight: 800; color: #059669;">{present_today}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"""
+        <div style="background: white; padding: 1.5rem; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: right;">
+            <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem;">الغياب اليوم</div>
+            <div style="font-size: 2rem; font-weight: 800; color: #dc2626;">{absent_today}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"""
+        <div style="background: white; padding: 1.5rem; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: right;">
+            <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem;">منقطعات</div>
+            <div style="font-size: 2rem; font-weight: 800; color: #d97706;">{need_follow}</div>
+        </div>
+        """, unsafe_allow_html=True)
     st.markdown("#### 📈 الحضور الأسبوعي")
     if not attendance.empty and "date" in attendance.columns and "status" in attendance.columns:
         last_week = get_cairo_now().replace(tzinfo=None) - timedelta(days=7)
@@ -2554,10 +2623,10 @@ def show_members_cards_page(db):
     # Filters
     col1, col2, col3 = st.columns(3)
     with col1:
-        role_options = ["الكل", "Student", "Service Manager", "Teacher"]
+        role_options = ["الكل", "طالبة", "أمين خدمة", "مدرسة"]
         role_filter = st.selectbox("نوع العضو", role_options)
     with col2:
-        status_options = ["الكل", "active", "inactive"]
+        status_options = ["الكل", "نشط", "غير نشط"]
         status_filter = st.selectbox("الحالة", status_options)
     with col3:
         section_options = ["الكل"] + sections["section_id"].tolist() if not sections.empty else ["الكل"]
@@ -2570,10 +2639,14 @@ def show_members_cards_page(db):
             if col in filtered.columns:
                 mask |= filtered[col].astype(str).str.contains(search_term, na=False, case=False)
         filtered = filtered[mask]
+    # Translate Arabic filter values back to English for database filtering
+    role_filter_map = {"الكل": "الكل", "طالبة": "Student", "أمين خدمة": "Service Manager", "مدرسة": "Teacher"}
+    status_filter_map = {"الكل": "الكل", "نشط": "active", "غير نشط": "inactive"}
+    
     if role_filter != "الكل" and not filtered.empty and "role" in filtered.columns:
-        filtered = filtered[filtered["role"] == role_filter]
+        filtered = filtered[filtered["role"] == role_filter_map.get(role_filter, role_filter)]
     if status_filter != "الكل" and not filtered.empty and "status" in filtered.columns:
-        filtered = filtered[filtered["status"] == status_filter]
+        filtered = filtered[filtered["status"] == status_filter_map.get(status_filter, status_filter)]
     if section_filter != "الكل" and not filtered.empty and "section_id" in filtered.columns:
         filtered = filtered[filtered["section_id"] == section_filter]
 
@@ -2601,7 +2674,7 @@ def show_members_cards_page(db):
                     if not sec_match.empty:
                         section_name = sec_match.iloc[0].get("section_name", "")
 
-                role_label = {"Service Manager": "أمين خدمة", "Teacher": "مدرسة", "Student": "طالبة"}.get(member_role, member_role)
+                role_label = {"Service Manager": "أمين خدمة", "Teacher": "مدرسة", "Student": "طالبة", "System Admin": "مدير نظام"}.get(member_role, member_role)
                 status_label = {"active": "نشط", "inactive": "غير نشط"}.get(status, "نشط")
 
                 if member_type == "student":
@@ -4936,7 +5009,7 @@ def show_user_profile(db, user_id):
 # Audit Log Page - سجل التدقيق
 # =============================================================================
 def show_logs(db):
-    st.markdown("<h2 class='main-header'>📜 سجل التدقيق (Audit Log)</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 class='main-header'>📜 سجل العمليات</h2>", unsafe_allow_html=True)
     logs = db.get_audit_log()
     if not logs.empty:
         if "timestamp" in logs.columns:
