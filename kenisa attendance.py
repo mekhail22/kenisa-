@@ -78,7 +78,8 @@ def get_cairo_now():
 def generate_student_code(db=None, existing_codes=None):
     """
     توليد كود فريد للطالبة.
-    الكود: STU + 6 أرقام عشوائية فريدة
+    الكود: STU + 6 أرقام متسلسلة مع أصفار(left padding)
+    مثال: STU000001, STU000002, STU000003
     """
     used_codes = set(existing_codes or [])
     if db is not None:
@@ -88,10 +89,21 @@ def generate_student_code(db=None, existing_codes=None):
                 used_codes = set(students_df["student_code"].dropna().astype(str).str.strip().tolist())
         except Exception:
             pass
-    while True:
-        code = "STU" + str(random.randint(100000, 999999))
-        if code not in used_codes:
-            return code
+    
+    # استخراج الأرقام من الأكواد الموجودة
+    max_num = 0
+    for code in used_codes:
+        code_str = str(code).strip()
+        if code_str.startswith("STU") and len(code_str) == 9:
+            try:
+                num = int(code_str[3:])
+                max_num = max(max_num, num)
+            except ValueError:
+                pass
+    
+    # توليد كود جديد بالرقم التالي
+    next_num = max_num + 1
+    return f"STU{next_num:06d}"
 
 
 def format_cairo_time(dt):
@@ -1260,6 +1272,34 @@ class Database:
                 migrated += 1
         return migrated
 
+    def migrate_student_codes_and_passwords(self):
+        """
+        Migration: ensure all students have student_code and student_password.
+        Returns: (migrated_count, message)
+        """
+        students = self.get_students()
+        if students.empty:
+            return 0, "لا توجد طالبات"
+        
+        updated = False
+        count = 0
+        for idx, row in students.iterrows():
+            updates = {}
+            if not row.get("student_code"):
+                updates["student_code"] = generate_student_code(self)
+            if not row.get("student_password"):
+                updates["student_password"] = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            if updates:
+                for k, v in updates.items():
+                    students.at[idx, k] = v
+                count += 1
+                updated = True
+        
+        if updated:
+            self._df_to_sheet("Students", students, ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
+                                                     "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
+        return count, f"تم تحديث {count} طالبة"
+
     def get_stages_for_supervisor(self, supervisor_id):
         df = self.get_stage_supervisors()
         if df.empty:
@@ -1426,7 +1466,7 @@ class Database:
             if student_data.get("password"):
                 student_data["student_password"] = student_data["password"]
             else:
-                student_data["student_password"] = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
+                student_data["student_password"] = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
         df = pd.concat([df, pd.DataFrame([student_data])], ignore_index=True)
         self._df_to_sheet("Students", df, ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
                                            "phone", "parent_phone", "birthdate", "address", "notes", "school", "status"])
@@ -3025,6 +3065,14 @@ def show_members_cards_page(db):
     if role not in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
         st.error("🚫 غير مصرح")
         return
+
+    # تشغيل الترحيل التلقائي لكود وكلمة مرور الطالبات
+    try:
+        migrated_count, migrate_msg = db.migrate_student_codes_and_passwords()
+        if migrated_count and migrated_count > 0:
+            st.success(f"✅ {migrate_msg}")
+    except Exception:
+        pass
 
     users = db.get_users()
     students = db.get_students()
