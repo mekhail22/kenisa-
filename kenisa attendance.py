@@ -27,6 +27,8 @@ from io import BytesIO
 import plotly.graph_objects as go
 import plotly.io as pio
 import re
+import qrcode
+from PIL import Image, ImageDraw, ImageFont
 
 # Auto-load background image as base64 from image1.jpg
 _BG_IMG_PATH = os.path.join(os.path.dirname(__file__), "image1.jpg")
@@ -1528,6 +1530,41 @@ class Database:
         df = df[df.record_id != record_id]
         self._df_to_sheet("Attendance", df, self.ATTENDANCE_COLUMNS)
 
+    def record_qr_attendance(self, student_id, student_name, section_id, stage_id, recorded_by_user_id):
+        """
+        Record attendance via QR scan.
+        Returns (success, message)
+        """
+        try:
+            record_id = str(uuid.uuid4())
+            now = get_cairo_now()
+            today = now.strftime("%Y-%m-%d")
+            current_time = now.strftime("%H:%M:%S")
+            
+            new_record = {
+                "record_id": record_id,
+                "date": today,
+                "time": current_time,
+                "user_id": student_id,
+                "name": student_name,
+                "role": "Student",
+                "section_id": section_id,
+                "stage_id": stage_id,
+                "status": "حاضر",
+                "notes": "تسجيل حضور عبر QR Code",
+                "recorded_by": recorded_by_user_id,
+                "attendance_method": "QR_SCAN"
+            }
+            
+            df = self.get_attendance()
+            if df.empty:
+                df = pd.DataFrame(columns=self.ATTENDANCE_COLUMNS)
+            df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
+            self._df_to_sheet("Attendance", df, self.ATTENDANCE_COLUMNS)
+            return True, "تم تسجيل الحضور بنجاح"
+        except Exception as e:
+            return False, f"خطأ: {str(e)}"
+
     # --- FollowUp ---
     def get_followup(self):
         return self._sheet_to_df("FollowUp")
@@ -2386,17 +2423,17 @@ def get_role_menu(role):
     menus = {
         "System Admin": [
             "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "🏫 إدارة المراحل الدراسية", "📚 إدارة الفصول",
-            "📋 الحضور", "💬 الافتقاد",
+            "📋 الحضور", "💬 الافتقاد", "📷 ماسح QR",
             "📝 المسابقات والاختبارات", "📝 إدارة الامتحانات", "📊 التقارير والإحصائيات",
             "📅 إدارة الفعاليات", "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
         ],
         "Father Account": ["🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📝 إدارة الامتحانات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
         "Service Manager": [
-            "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد",
+            "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد", "📷 ماسح QR",
             "📝 المسابقات والاختبارات", "📝 إدارة الامتحانات", "📅 إدارة الفعاليات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
         ],
         "Teacher": [
-            "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد",
+            "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد", "📷 ماسح QR",
             "📝 إدارة الامتحانات", "📅 إدارة الفعاليات", "🔒 تغيير كلمة المرور"
         ],
         "Student": ["🏠 لوحة التحكم", "🔔 الإشعارات", "📝 المسابقات والاختبارات", "📅 إدارة الفعاليات", "🔒 تغيير كلمة المرور"]
@@ -2450,6 +2487,41 @@ def clear_quiz_session_keys():
     for key in quiz_keys:
         if key in st.session_state:
             del st.session_state[key]
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+def get_initials(name: str) -> str:
+    """Get initials from a name (first letters of first 2 words)."""
+    if not name or not isinstance(name, str):
+        return "؟"
+    parts = name.strip().split()
+    if len(parts) >= 2:
+        return f"{parts[0][0]}{parts[1][0]}".upper()
+    elif len(parts) == 1:
+        return parts[0][:2].upper()
+    return "؟"
+
+
+def get_role_css_class(role: str) -> str:
+    """Get CSS class for role badge."""
+    role_map = {
+        "System Admin": "admin",
+        "Father Account": "priest",
+        "Service Manager": "leader",
+        "Teacher": "teacher",
+        "Student": "student"
+    }
+    return role_map.get(role, "admin")
+
+
+def get_status_css_class(status: str) -> str:
+    """Get CSS class for status badge."""
+    if not status:
+        return "inactive"
+    status_str = str(status).strip().lower()
+    return "active" if status_str == "active" else "inactive"
 
 
 # =============================================================================
@@ -2604,7 +2676,8 @@ def show_login_page(db, jwt_secret):
                                         st.session_state.show_review = False
                                         st.rerun()
                                 except Exception as e:
-                                    st.error
+                                    st.error(f"خطأ: {e}")
+                                    st.rerun()
         return 0
 
 
@@ -3182,6 +3255,41 @@ def show_members_cards_page(db):
     st.markdown(f"<p style='text-align:left; color:#666;'>عدد الأعضاء: {len(filtered)}</p>", unsafe_allow_html=True)
 
     if not filtered.empty:
+        # Bulk QR download button for admins
+        if role == "System Admin":
+            st.markdown("### 📷 بطاقات QR للحضور")
+            if st.button("📥 تحميل بطاقات QR للفصل", use_container_width=True, key="bulk_qr_btn"):
+                # Generate QR codes for all students in filtered results
+                students_for_qr = []
+                for _, m in filtered.iterrows():
+                    if m.get("type") == "student":
+                        students_for_qr.append({
+                            "full_name": m.get("full_name", ""),
+                            "student_code": m.get("student_code", ""),
+                            "student_password": m.get("student_password", ""),
+                            "section_id": m.get("section_id", "")
+                        })
+                
+                if students_for_qr:
+                    # Get section name
+                    section_name = ""
+                    if section_filter != "الكل" and not sections.empty:
+                        sec_match = sections[sections.section_id == section_filter]
+                        if not sec_match.empty:
+                            section_name = sec_match.iloc[0].get("section_name", "")
+                    
+                    # Generate A4 QR page
+                    qr_page_bytes = generate_a4_qr_printable_page(students_for_qr[:6], section_name)
+                    st.download_button(
+                        label="💾 تحميل صفحة A4 ببطاقات QR",
+                        data=qr_page_bytes,
+                        file_name=f"QR_cards_{section_name or 'students'}_{get_cairo_now().strftime('%Y-%m-%d')}.png",
+                        mime="image/png",
+                        use_container_width=True,
+                        key="download_qr_a4"
+                    )
+            st.markdown("---")
+        
         cols = st.columns(3)
         for idx, (_, m) in enumerate(filtered.iterrows()):
             col = cols[idx % 3]
@@ -3251,6 +3359,22 @@ def show_members_cards_page(db):
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+                    
+                    # QR download button for student card
+                    if student_code:
+                        qr_bytes = generate_student_id_card({
+                            "full_name": full_name,
+                            "student_code": student_code,
+                            "student_password": student_password
+                        }, section_name)
+                        st.download_button(
+                            label="📷 تحميل بطاقة QR",
+                            data=qr_bytes,
+                            file_name=f"QR_{full_name}_{student_code}.png",
+                            mime="image/png",
+                            use_container_width=True,
+                            key=f"qr_dl_{mid}"
+                        )
                 else:
                     # User card - show name, phone, section
                     email = m.get("email", "")
@@ -5599,22 +5723,443 @@ def show_events_page(db):
 
 
 # =============================================================================
+# QR Code Helper Functions
+# ==============================================================================
+def generate_qr_image(data: str, size: int = 250) -> Image.Image:
+    """Generate PIL Image QR code from string data."""
+    qr = qrcode.QRCode(version=3, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=2)
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#2563eb", back_color="white").convert("RGB")
+    img = img.resize((size, size))
+    return img
+
+
+def generate_student_id_card(student: dict, section_name: str) -> bytes:
+    """
+    Generate a vertical student ID card (600x900) as PNG bytes.
+    Contains: header, name, code, section, QR code, footer.
+    """
+    width, height = 600, 900
+    img = Image.new('RGB', (width, height), color='white')
+    draw = ImageDraw.Draw(img)
+    
+    # Try to load Arabic font, fallback to default
+    try:
+        font_title = ImageFont.truetype("Cairo-Bold.ttf", 36)
+        font_name = ImageFont.truetype("Cairo-Bold.ttf", 48)
+        font_info = ImageFont.truetype("Cairo-Regular.ttf", 28)
+        font_footer = ImageFont.truetype("Cairo-Bold.ttf", 24)
+    except Exception:
+        try:
+            font_title = ImageFont.truetype("arial.ttf", 36)
+            font_name = ImageFont.truetype("arial.ttf", 48)
+            font_info = ImageFont.truetype("arial.ttf", 28)
+            font_footer = ImageFont.truetype("arial.ttf", 24)
+        except Exception:
+            font_title = ImageFont.load_default()
+            font_name = ImageFont.load_default()
+            font_info = ImageFont.load_default()
+            font_footer = ImageFont.load_default()
+    
+    # Header - Church name
+    header_height = 120
+    draw.rectangle([0, 0, width, header_height], fill="#2563eb")
+    header_text = "كنيسة الشهيدة دميانة"
+    bbox = draw.textbbox((0, 0), header_text, font=font_title)
+    text_width = bbox[2] - bbox[0]
+    draw.text(((width - text_width) // 2, 40), header_text, fill="white", font=font_title)
+    
+    # Student Name
+    full_name = student.get("full_name", "غير معروف")
+    y_pos = 160
+    draw.text((width // 2, y_pos), full_name, fill="#0f172a", font=font_name, anchor="mm")
+    
+    # Student Code
+    y_pos = 260
+    student_code = student.get("student_code", "")
+    code_text = f"الكود: {student_code}"
+    draw.text((width // 2, y_pos), code_text, fill="#64748b", font=font_info, anchor="mm")
+    
+    # Section Name
+    y_pos = 320
+    section_text = f"الفصل: {section_name if section_name else 'غير محدد'}"
+    draw.text((width // 2, y_pos), section_text, fill="#64748b", font=font_info, anchor="mm")
+    
+    # QR Code
+    qr_data = f"SCODE:{student.get('student_code', '')}|PWD:{student.get('student_password', '')}"
+    qr_img = generate_qr_image(qr_data, size=250)
+    qr_y = 400
+    img.paste(qr_img, ((width - 250) // 2, qr_y))
+    
+    # Footer
+    footer_y = 820
+    draw.rectangle([0, footer_y, width, height], fill="#7c3aed")
+    footer_text = "نظام الحضور الذكي"
+    bbox = draw.textbbox((0, 0), footer_text, font=font_footer)
+    text_width = bbox[2] - bbox[0]
+    draw.text(((width - text_width) // 2, footer_y + 45), footer_text, fill="white", font=font_footer)
+    
+    # Convert to bytes
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def generate_a4_qr_printable_page(students_list: list, section_name: str) -> bytes:
+    """
+    Generate A4 landscape page (3508x2480px @ 300dpi) with 6 student QR cards arranged in 2x3 grid.
+    Each cell: student name, section name, QR code (300x300).
+    Return PNG bytes.
+    """
+    # A4 landscape at 300dpi: 3508x2480
+    width, height = 3508, 2480
+    img = Image.new('RGB', (width, height), color='white')
+    draw = ImageDraw.Draw(img)
+    
+    # Try to load fonts
+    try:
+        font_name = ImageFont.truetype("Cairo-Bold.ttf", 60)
+        font_section = ImageFont.truetype("Cairo-Regular.ttf", 48)
+    except Exception:
+        try:
+            font_name = ImageFont.truetype("arial.ttf", 60)
+            font_section = ImageFont.truetype("arial.ttf", 48)
+        except Exception:
+            font_name = ImageFont.load_default()
+            font_section = ImageFont.load_default()
+    
+    # Calculate grid: 2 columns x 3 rows
+    cols, rows = 2, 3
+    cell_width = width // cols
+    cell_height = height // rows
+    
+    for idx, student in enumerate(students_list[:6]):
+        row = idx // cols
+        col = idx % cols
+        
+        x_offset = col * cell_width
+        y_offset = row * cell_height
+        
+        # Draw cell border
+        draw.rectangle([x_offset + 20, y_offset + 20, x_offset + cell_width - 20, y_offset + cell_height - 20], 
+                      outline="#e2e8f0", width=5)
+        
+        # Student Name
+        full_name = student.get("full_name", "غير معروف")
+        y_pos = y_offset + 60
+        bbox = draw.textbbox((0, 0), full_name, font=font_name)
+        text_width = bbox[2] - bbox[0]
+        draw.text((x_offset + (cell_width - text_width) // 2, y_pos), full_name, fill="#0f172a", font=font_name)
+        
+        # Section Name
+        y_pos = y_pos + 80
+        section_text = section_name if section_name else "غير محدد"
+        bbox = draw.textbbox((0, 0), section_text, font=font_section)
+        text_width = bbox[2] - bbox[0]
+        draw.text((x_offset + (cell_width - text_width) // 2, y_pos), section_text, fill="#64748b", font=font_section)
+        
+        # QR Code
+        qr_data = f"SCODE:{student.get('student_code', '')}|PWD:{student.get('student_password', '')}"
+        qr_img = generate_qr_image(qr_data, size=300)
+        qr_x = x_offset + (cell_width - 300) // 2
+        qr_y = y_pos + 100
+        img.paste(qr_img, (qr_x, qr_y))
+    
+    # Convert to bytes
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
+    """
+    Process QR scan data and record attendance.
+    Returns dict with success status and message.
+    """
+    import re
+    pattern = r"SCODE:(.*?)\|PWD:(.*)"
+    match = re.search(pattern, scanned_raw)
+    
+    if not match:
+        return {"success": False, "message": "❌ كود QR غير صالح"}
+    
+    parsed_code = match.group(1).strip()
+    parsed_pwd = match.group(2).strip()
+    
+    # Lookup student
+    students = db.get_students()
+    if students.empty:
+        return {"success": False, "message": "❌ لا توجد بيانات طالبات"}
+    
+    student_match = students[
+        (students["student_code"].astype(str).str.strip() == parsed_code) &
+        (students["student_password"].astype(str).str.strip() == parsed_pwd)
+    ]
+    
+    if student_match.empty:
+        return {"success": False, "message": "❌ كود غير صالح أو كلمة مرور خاطئة"}
+    
+    student = student_match.iloc[0].to_dict()
+    student_id = student.get("student_id", "")
+    student_name = student.get("full_name", "")
+    section_id = student.get("section_id", "")
+    student_status = str(student.get("status", "active")).strip().lower()
+    
+    if student_status != "active":
+        return {"success": False, "message": f"⛔ الطالبة {student_name} غير نشطة", "student": student}
+    
+    # Get stage_id from section
+    stage_id = ""
+    sections = db.get_sections()
+    if not sections.empty and section_id:
+        sec_match = sections[sections["section_id"] == section_id]
+        if not sec_match.empty:
+            stage_id = sec_match.iloc[0].get("stage_id", "")
+    
+    # Check for duplicate attendance today
+    today = get_cairo_now().strftime("%Y-%m-%d")
+    existing = db.get_attendance_by_date_user(today, student_id)
+    if not existing.empty:
+        qr_attendance = existing[existing["attendance_method"] == "QR_SCAN"]
+        if not qr_attendance.empty:
+            return {"success": False, "message": "⚠️ تم تسجيل الحضور مسبقاً اليوم", "student": student}
+    
+    # Record attendance
+    success, msg = db.record_qr_attendance(student_id, student_name, section_id, stage_id, recorded_by_user_id)
+    
+    if success:
+        # Get section name for message
+        section_name = ""
+        if not sections.empty and section_id:
+            sec_match = sections[sections["section_id"] == section_id]
+            if not sec_match.empty:
+                section_name = sec_match.iloc[0].get("section_name", "")
+        
+        # Add audit log
+        db.add_log(recorded_by_user_id, "تسجيل حضور QR", 
+                   f"الطالبة: {student_name} | الفصل: {section_name}")
+        
+        return {
+            "success": True, 
+            "message": f"✅ تم تسجيل حضور {student_name} | الفصل: {section_name}",
+            "student": student
+        }
+    else:
+        return {"success": False, "message": "❌ فشل في تسجيل الحضور", "student": student}
+
+
+# =============================================================================
+# QR Scanner Page
+# ==============================================================================
+def show_qr_scanner_page(db):
+    """QR Code Scanner page for attendance."""
+    inject_css()
+    st.markdown(hero_header("ماسح QR Code", "📷 مسح حضور الطالبات"), unsafe_allow_html=True)
+    
+    user = st.session_state.user
+    role = user.get("role", "")
+    user_id = user.get("user_id", "")
+    
+    # Check permissions
+    if role not in ["System Admin", "Service Manager", "Teacher"]:
+        st.error("🚫 غير مصرح لك بالوصول إلى هذه الصفحة")
+        return
+    
+    # Initialize scan history
+    if "scan_history" not in st.session_state:
+        st.session_state.scan_history = []
+    
+    # Scan history sidebar
+    with st.sidebar:
+        st.markdown("### 📋 سجل المسح")
+        if st.session_state.scan_history:
+            for scan in st.session_state.scan_history[-10:]:
+                st.markdown(f"- {scan}")
+        else:
+            st.info("لا توجد عمليات مسح بعد")
+    
+    # Check for scanned data from URL params
+    scanned = st.query_params.get("qr_scan", "")
+    if scanned:
+        st.query_params.clear()
+        result = process_qr_scan(db, scanned, user_id)
+        if result["success"]:
+            st.success(result["message"])
+            st.balloons()
+            st.session_state.scan_history.append(result["message"])
+        else:
+            st.warning(result["message"])
+            if "student" in result:
+                st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
+        st.rerun()
+    
+    # QR Scanner HTML
+    scanner_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="UTF-8">
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <style>
+    body { 
+        direction: rtl; 
+        font-family: 'Cairo', sans-serif; 
+        background: #f8fafc; 
+        margin: 0; 
+        text-align: center;
+    }
+    #cam-wrapper { 
+        position: relative; 
+        display: inline-block; 
+        border-radius: 16px; 
+        overflow: hidden; 
+        border: 3px solid #2563eb; 
+        max-width: 100%; 
+        box-shadow: 0 10px 25px rgba(37, 99, 235, 0.3);
+    }
+    #video { 
+        width: 100%; 
+        max-width: 500px; 
+        display: block; 
+        background: #000; 
+    }
+    #overlay { 
+        position: absolute; 
+        top: 0; 
+        left: 0; 
+        width: 100%; 
+        height: 100%; 
+        pointer-events: none; 
+    }
+    .scan-frame { 
+        position: absolute; 
+        top: 50%; 
+        left: 50%; 
+        transform: translate(-50%, -50%); 
+        width: 220px; 
+        height: 220px; 
+        border: 3px dashed #28a745; 
+        border-radius: 12px; 
+        box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
+    }
+    #status { 
+        position: absolute; 
+        top: 12px; 
+        right: 12px; 
+        background: rgba(0,0,0,0.75); 
+        color: #fff; 
+        padding: 8px 16px; 
+        border-radius: 20px; 
+        font-weight: 700; 
+        font-size: 14px;
+        font-family: 'Cairo', sans-serif;
+    }
+    </style>
+    </head>
+    <body>
+    <div id="start-screen" style="text-align:center; padding:40px;">
+        <h2 style="color:#2563eb;">📷 تشغيل الكاميرا</h2>
+        <button onclick="startCam()" style="background:linear-gradient(135deg,#2563eb,#7c3aed);color:white;border:none;padding:14px 36px;border-radius:12px;font-size:18px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif;">▶️ تشغيل</button>
+        <p style="color:#999;font-size:13px;">المتصفح سيطلب إذن الكاميرا</p>
+    </div>
+    <div id="scanner" style="display:none; text-align:center;">
+        <div id="cam-wrapper">
+            <video id="video" playsinline autoplay muted></video>
+            <div id="overlay"><div class="scan-frame"></div></div>
+            <div id="status">🔍 جاري البحث...</div>
+        </div>
+    </div>
+    <script>
+    const video = document.getElementById('video');
+    const status = document.getElementById('status');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    let lastScan = '';
+    let cooldown = false;
+
+    async function startCam() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+            });
+            video.srcObject = stream;
+            await video.play();
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('scanner').style.display = 'block';
+            status.textContent = '📷 جاري المسح...';
+            status.style.background = 'rgba(37,99,235,0.9)';
+            loop();
+        } catch(e) { 
+            alert('خطأ في الكاميرا: ' + e.message); 
+        }
+    }
+
+    function loop() {
+        if (!cooldown && video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
+            if (code && code.data && code.data !== lastScan) {
+                lastScan = code.data;
+                cooldown = true;
+                status.textContent = '✅ تم المسح!';
+                status.style.background = 'rgba(40,167,69,0.9)';
+                const url = new URL(window.parent.location);
+                url.searchParams.set('qr_scan', code.data);
+                window.parent.history.replaceState({}, '', url);
+                setTimeout(() => { window.parent.location.reload(); }, 700);
+                setTimeout(() => { cooldown = false; lastScan = ''; status.textContent = '📷 جاري المسح...'; }, 3500);
+                return;
+            }
+        }
+        requestAnimationFrame(loop);
+    }
+    if (navigator.permissions) {
+        navigator.permissions.query({ name: 'camera' }).then(p => { 
+            if (p.state === 'granted') startCam(); 
+        });
+    }
+    </script>
+    </body>
+    </html>
+    """
+    
+    st.components.v1.html(scanner_html, height=600, scrolling=False)
+    
+    # Manual fallback input
+    st.markdown("---")
+    st.markdown("### أو أدخل كود الطالبة يدوياً")
+    manual_code = st.text_input("كود الطالبة", placeholder="مثال: STU000001").strip()
+    if st.button("🔍 بحث وتسجيل حضور", use_container_width=True):
+        if not manual_code:
+            st.error("يرجى إدخال كود الطالبة")
+        else:
+            # Create a fake QR scan data
+            students = db.get_students()
+            if not students.empty:
+                student_match = students[students["student_code"].astype(str).str.strip() == manual_code]
+                if not student_match.empty:
+                    student = student_match.iloc[0].to_dict()
+                    student_pwd = student.get("student_password", "")
+                    fake_qr = f"SCODE:{manual_code}|PWD:{student_pwd}"
+                    result = process_qr_scan(db, fake_qr, user_id)
+                    if result["success"]:
+                        st.success(result["message"])
+                        st.session_state.scan_history.append(result["message"])
+                    else:
+                        st.warning(result["message"])
+                else:
+                    st.error("❌ كود الطالبة غير موجود")
+
+
+# =============================================================================
 # User Card Helpers
 # ==============================================================================
-def get_role_css_class(role):
-    role_map = {"System Admin": "admin", "Father Account": "priest", "Service Manager": "leader", "Teacher": "teacher", "Student": "student"}
-    return role_map.get(role, "")
-
-def get_status_css_class(status):
-    return "active" if status in ["active", ""] else str(status).lower()
-
-def get_initials(name):
-    if not name or pd.isna(name):
-        return "❓"
-    parts = str(name).strip().split()
-    if len(parts) >= 2:
-        return parts[0][0] + parts[1][0]
-    return parts[0][0] if parts[0] else "❓"
 
 def render_user_card(user, sections_df=None, stages_df=None, is_selected=False, db=None):
     user_id = user.get("user_id", "")
@@ -7818,6 +8363,8 @@ def main():
                     show_logs(db)
                 else:
                     st.error("🚫 غير مصرح")
+            elif choice == "📷 ماسح QR":
+                show_qr_scanner_page(db)
             elif choice == "🔒 تغيير كلمة المرور":
                 change_password(db)
             st.markdown("</div>", unsafe_allow_html=True)
@@ -7828,3 +8375,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+        
