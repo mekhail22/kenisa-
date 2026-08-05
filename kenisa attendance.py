@@ -2548,64 +2548,72 @@ def show_login_page(db, jwt_secret):
                                 st.error("كلمة المرور غير صحيحة")
     with tab2:
         st.subheader("دخول الاختبار الإلكتروني")
-        st.info("""إذا كنتِ طالبة وتريدين الدخول للامتحانات، استخدمي اسمك الكامل وكلمة المرور الخاصة بك.
-        دخول الامتحانات متاح من خلال تسجيل الدخول باسم الطالبة وكلمة المرور.""")
+        st.info("إذا كنتِ طالبة وتريدين الدخول للامتحانات، استخدمي كود الطالبة وكلمة المرور الخاصة بك.")
         if st.button("🎯 الانتقال إلى بوابة الامتحانات", use_container_width=True, key="goto_exam_portal_btn"):
             st.session_state.show_exam_portal = True
             st.rerun()
         st.markdown("---")
         st.markdown("##### أو دخول المسابقات:")
         with st.form("student_login_form"):
-            code = st.text_input("كود الاختبار", placeholder="مثال: GEN123").strip()
-            passwd = st.text_input("كلمة مرور الاختبار", type="password", placeholder="").strip()
+            code = st.text_input("كود الطالبة", placeholder="مثال: STU000001").strip()
+            passwd = st.text_input("كلمة مرور الطالبة", type="password", placeholder="").strip()
             if st.form_submit_button("بدء الاختبار", use_container_width=True):
                 if not code or not passwd:
-                    st.error("الرجاء إدخال الكود وكلمة المرور")
+                    st.error("الرجاء إدخال كود الطالبة وكلمة المرور")
                 else:
-                    with st.spinner("جاري التحقق من الكود..."):
-                        quizzes = db.get_quizzes()
-                        quiz = quizzes[(quizzes.quiz_code == code) & (quizzes.password == passwd)]
-                        if quiz.empty:
-                            st.error("كود أو كلمة مرور خاطئة")
+                    with st.spinner("جاري التحقق..."):
+                        students = db.get_students()
+                        student_match = students[(students.student_code == code) & (students.student_password == passwd)]
+                        if student_match.empty:
+                            st.error("كود الطالبة أو كلمة المرور غير صحيحة")
                         else:
-                            quiz = quiz.iloc[0].to_dict()
-                            try:
-                                expiry_naive = pd.to_datetime(quiz.get("expiry_date", "")).to_pydatetime()
-                                expiry = expiry_naive.replace(tzinfo=CAIRO_TZ)
-                                if expiry < get_cairo_now():
-                                    st.error("انتهت صلاحية هذا الاختبار")
-                                    db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
-                                elif quiz.get("is_active", "True") == "False":
-                                    st.error("هذا الاختبار غير نشط حالياً")
-                                else:
-                                    st.session_state.student_quiz = quiz
-                                    st.session_state.student_quiz_started = True
-                                    st.session_state.quiz_phase = "enter_name"
-                                    st.session_state.student_name = ""
-                                    st.session_state.student_id = ""
-                                    st.session_state.quiz_start_time = None
-                                    st.session_state.quiz_end_time = None
-                                    st.session_state.quiz_submit_time = None
-                                    st.session_state.quiz_token = None
-                                    st.session_state.quiz_answers = {}
-                                    st.session_state.quiz_submitted = False
-                                    st.session_state.last_score = 0
-                                    st.session_state.current_attempt_id = None
-                                    st.session_state.last_saved_answers_str = ""
-                                    st.session_state.quiz_questions = None
-                                    st.session_state.show_review = False
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"خطأ في التحقق من الاختبار: {str(e)}")
+                            student = student_match.iloc[0].to_dict()
+                            student_section = student.get("section_id", "")
+                            student_name = student.get("full_name", "")
+                            student_id = student.get("student_id", "")
+                            quizzes = db.get_quizzes()
+                            available_quizzes = quizzes[quizzes.section_id == student_section] if not quizzes.empty and student_section else pd.DataFrame()
+                            if available_quizzes.empty:
+                                st.error("لا توجد اختبارات متاحة لفصلك حالياً")
+                            else:
+                                quiz = available_quizzes.iloc[0].to_dict()
+                                try:
+                                    expiry_naive = pd.to_datetime(quiz.get("expiry_date", "")).to_pydatetime()
+                                    expiry = expiry_naive.replace(tzinfo=CAIRO_TZ)
+                                    if expiry < get_cairo_now():
+                                        st.error("انتهت صلاحية هذا الاختبار")
+                                        db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
+                                    elif quiz.get("is_active", "True") == "False":
+                                        st.error("هذا الاختبار غير نشط حالياً")
+                                    else:
+                                        st.session_state.student_quiz = quiz
+                                        st.session_state.student_quiz_started = True
+                                        st.session_state.quiz_phase = "enter_name"
+                                        st.session_state.student_name = student_name
+                                        st.session_state.student_id = student_id
+                                        st.session_state.quiz_start_time = None
+                                        st.session_state.quiz_end_time = None
+                                        st.session_state.quiz_submit_time = None
+                                        st.session_state.quiz_token = None
+                                        st.session_state.quiz_answers = {}
+                                        st.session_state.quiz_submitted = False
+                                        st.session_state.last_score = 0
+                                        st.session_state.current_attempt_id = None
+                                        st.session_state.last_saved_answers_str = ""
+                                        st.session_state.quiz_questions = None
+                                        st.session_state.show_review = False
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error
+        return 0
 
 
-# =============================================================================
-# Student Quiz Interface
-# =============================================================================
 def grade_attempt(db, quiz_id, answers_dict):
+    """Grade a quiz attempt and return the score."""
     questions = db.get_quiz_questions(quiz_id)
     if questions.empty:
         return 0
+    
     correct_count = 0
     for _, q_row in questions.iterrows():
         q = q_row.to_dict()
@@ -2661,9 +2669,10 @@ def show_student_quiz(db):
             sections_df = db.get_sections()
             section_name = ""
             if not sections_df.empty and sec_id:
-                sec_name = sections_df[sections_df.section_id == sec_id]["section_name"].values
-                section_name = sec_name[0] if len(sec_name) > 0 else "لم يتم تعيين فصل"
-            else:
+                sec_match = sections_df[sections_df.section_id == sec_id]
+                if not sec_match.empty:
+                    section_name = sec_match.iloc[0].get("section_name", "")
+            if not section_name:
                 section_name = "لم يتم تعيين فصل"
             st.info(f"أنتِ في فصل: **{section_name}**")
         st.markdown("---")
@@ -4707,6 +4716,11 @@ def show_exams_management(db):
         if not sections.empty and "section_id" in results.columns:
             results = results.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
             results.rename(columns={"section_name": "الفصل"}, inplace=True)
+            # Convert section_id to section_name for display
+            if "section_id" in results.columns and "الفصل" in results.columns:
+                results["section_id_display"] = results["الفصل"].fillna(results["section_id"])
+                results.drop(columns=["section_id"], inplace=True)
+                results.rename(columns={"section_id_display": "section_id"}, inplace=True)
 
         if results.empty:
             st.info("لا توجد نتائج مطابقة.")
@@ -5088,7 +5102,7 @@ def show_reports_page(db):
                     left_on="الفصل", right_on="section_id", how="left"
                 )
                 report_df["الفصل"] = report_df["section_name"].fillna(report_df["الفصل"])
-                report_df = report_df.drop(columns=["section_id"], errors="ignore")
+                report_df = report_df.drop(columns=["section_id", "section_name"], errors="ignore")
             
             st.success(f"✅ تم إضافة {len(new_students)} أعضاء جدد في آخر 30 يوم")
             
@@ -5923,7 +5937,7 @@ def show_user_profile(db, user_id):
             st.markdown(f"**📧 البريد:** {user.get('email', '—')}")
         with info_cols[1]:
             st.markdown(f"**🎭 الدور:** {role_label}")
-            st.markdown(f"**📚 الفصل:** {section_name or '—'}")
+            st.markdown(f"**🏫 الفصل:** {section_name or '—'}")
             st.markdown(f"**📌 الحالة:** {status_label}")
             st.markdown(f"**🆔 المعرف:** {user.get('user_id', '')}")
     with st.expander("📜 سجل النشاطات"):
@@ -6189,12 +6203,20 @@ def show_student_exam_portal(db):
         # ===== شريط ترحيب =====
         col_w1, col_w2 = st.columns([4, 1])
         with col_w1:
+            # Get section name from section_id
+            sections_df = db.get_sections()
+            section_name_display = student_section
+            if not sections_df.empty and student_section:
+                sec_match = sections_df[sections_df["section_id"] == student_section]
+                if not sec_match.empty:
+                    section_name_display = sec_match.iloc[0].get("section_name", student_section)
+            
             st.markdown(
                 f"""
                 <div class="profile-header" style="padding:1.5rem 2rem;">
                     <h1 style="margin:0; font-size:1.4rem; font-weight:800;">👋 مرحباً {student_name}</h1>
                     <p style="margin:0.5rem 0 0; opacity:0.9; font-size:0.9rem;">
-                        🆔 {student_id} | 🏫 الفصل: {student_section or 'غير محدد'}
+                        🆔 {student_id} | 🏫 الفصل: {section_name_display or 'غير محدد'}
                     </p>
                 </div>
                 """,
