@@ -5886,7 +5886,8 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
     """
     import re
     print("=" * 60)
-    print("[DEBUG] process_qr_scan called")
+    print("🔹 QR Received 🔹")
+    print(f"[DEBUG] process_qr_scan called")
     print(f"[DEBUG] scanned_raw: {scanned_raw}")
     print(f"[DEBUG] recorded_by_user_id: {recorded_by_user_id}")
     
@@ -5910,11 +5911,16 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
     
     print(f"[DEBUG] Total students: {len(students)}")
     
+    # Handle NaN in student_code and student_password
+    codes_clean = students["student_code"].fillna("").astype(str).str.strip()
+    pwds_clean = students["student_password"].fillna("").astype(str).str.strip()
+    
     student_match = students[
-        (students["student_code"].astype(str).str.strip() == parsed_code) &
-        (students["student_password"].astype(str).str.strip() == parsed_pwd)
+        (codes_clean == parsed_code) &
+        (pwds_clean == parsed_pwd)
     ]
     
+    print("🔹 Student Found 🔹")
     print(f"[DEBUG] Student match found: {not student_match.empty}")
     
     if student_match.empty:
@@ -5955,10 +5961,16 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
             print("[DEBUG] ⚠️ Already recorded today")
             return {"success": False, "message": "⚠️ تم تسجيل الحضور مسبقاً اليوم", "student": student}
     
+    print("🔹 Password Matched 🔹")
+    print("🔹 Attendance Writing 🔹")
+    
     # Record attendance
     print(f"[DEBUG] Calling record_qr_attendance(student_id={student_id}, student_name={student_name}, section_id={section_id}, stage_id={stage_id}, recorded_by={recorded_by_user_id})")
     success, msg = db.record_qr_attendance(student_id, student_name, section_id, stage_id, recorded_by_user_id)
     print(f"[DEBUG] record_qr_attendance result: success={success}, msg={msg}")
+    
+    if success:
+        print("🔹 Attendance Saved 🔹")
     
     if success:
         # Get section name for message
@@ -6196,11 +6208,13 @@ def show_qr_scanner_page(db):
                 cooldown = true;
                 status.textContent = '✅ تم المسح!';
                 status.style.background = 'rgba(40,167,69,0.9)';
-                // Send scanned data to Streamlit without reloading
-                if (window.parent.Streamlit) {
-                    window.parent.Streamlit.setComponentValue(code.data);
-                }
-                setTimeout(() => { cooldown = false; lastScan = ''; status.textContent = '📷 جاري المسح...'; }, 3500);
+                // Send scanned data to Streamlit via query params (reloads page)
+                var encoded = encodeURIComponent(code.data);
+                var url = window.parent.location.href;
+                // Remove existing qr_scan param if present
+                url = url.replace(/[?&]qr_scan=[^&]*/g, '');
+                var sep = url.includes('?') ? '&' : '?';
+                window.parent.location.href = url + sep + 'qr_scan=' + encoded;
                 return;
             }
         }
@@ -6787,23 +6801,63 @@ def show_student_exam_portal(db):
                 if students_df.empty or "student_id" not in students_df.columns:
                     st.error("❌ لا توجد بيانات طالبات مسجلة")
                 else:
+                    # ===== DEBUG: طباعة القيم للتحقق =====
+                    print("=" * 60)
+                    print("[DEBUG] بوابة الامتحانات - تسجيل الدخول")
+                    print(f"[DEBUG] student_code (input): '{student_code}' (type: {type(student_code).__name__})")
+                    print(f"[DEBUG] student_password (input): '{student_password}' (type: {type(student_password).__name__})")
+                    print(f"[DEBUG] Students columns: {list(students_df.columns)}")
+                    if "student_code" in students_df.columns:
+                        print(f"[DEBUG] student_code dtype: {students_df['student_code'].dtype}")
+                        print(f"[DEBUG] student_code NaN count: {students_df['student_code'].isna().sum()}")
+                        print(f"[DEBUG] student_code sample: {students_df['student_code'].head(3).tolist()}")
+                    if "student_password" in students_df.columns:
+                        print(f"[DEBUG] student_password dtype: {students_df['student_password'].dtype}")
+                        print(f"[DEBUG] student_password NaN count: {students_df['student_password'].isna().sum()}")
+                        print(f"[DEBUG] student_password empty count: {(students_df['student_password'].astype(str).str.strip() == '').sum()}")
+                        print(f"[DEBUG] student_password sample: {students_df['student_password'].head(3).tolist()}")
+                    # ===== نهاية DEBUG =====
+                    
                     # البحث عن الطالبة بالكود فقط
                     student_match = pd.DataFrame()
                     if "student_code" in students_df.columns:
-                        student_match = students_df[students_df["student_code"].astype(str).str.strip() == student_code.strip()]
+                        # معالجة NaN قبل المقارنة
+                        codes_clean = students_df["student_code"].fillna("").astype(str).str.strip()
+                        student_match = students_df[codes_clean == student_code.strip()]
+                    
+                    print(f"[DEBUG] student_match found: {not student_match.empty}")
                     
                     if student_match.empty:
                         st.error("❌ كود الطالبة غير صحيح. تأكدي من البيانات وحاولي مرة أخرى.")
                     else:
                         student = student_match.iloc[0].to_dict()
+                        # ===== DEBUG: طباعة بيانات الطالبة =====
+                        print(f"[DEBUG] Student found: {student.get('full_name', '')}")
+                        print(f"[DEBUG] student_code in DF: '{student.get('student_code', '')}'")
+                        raw_pwd = student.get("student_password", student.get("password", "1234"))
+                        print(f"[DEBUG] student_password in DF: '{raw_pwd}' (type: {type(raw_pwd).__name__})")
+                        if raw_pwd is None or (isinstance(raw_pwd, float) and pd.isna(raw_pwd)):
+                            print("[DEBUG] ⚠️ student_password is None or NaN!")
+                        # ===== نهاية DEBUG =====
+                        
                         # التحقق من حالة الطالبة
                         if str(student.get("status", "active")).strip().lower() == "inactive":
                             st.error("⛔ هذه الطالبة غير نشطة. تواصلي مع مسؤولة الفصل.")
                         else:
                             # التحقق من كلمة المرور
                             stored_password = student.get("student_password", student.get("password", "1234"))
+                            # معالجة NaN و None
+                            if stored_password is None or (isinstance(stored_password, float) and pd.isna(stored_password)):
+                                stored_password = ""
+                            stored_password_str = str(stored_password).strip()
+                            input_password_str = str(student_password).strip()
+                            
+                            print(f"[DEBUG] stored_password_str: '{stored_password_str}'")
+                            print(f"[DEBUG] input_password_str: '{input_password_str}'")
+                            print(f"[DEBUG] Password match: {input_password_str == stored_password_str}")
+                            
                             # Student passwords are stored as plain text, compare directly
-                            if student_password.strip() != str(stored_password).strip():
+                            if input_password_str != stored_password_str:
                                 st.error("❌ كلمة المرور غير صحيحة. جربي مرة أخرى أو تواصلي مع مسؤولة الفصل.")
                             else:
                                 st.session_state.exam_student_logged_in = True
