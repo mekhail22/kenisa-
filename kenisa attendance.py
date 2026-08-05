@@ -5981,7 +5981,7 @@ def show_qr_scanner_page(db):
         else:
             st.info("لا توجد عمليات مسح بعد")
     
-    # Check for scanned data from URL params
+    # Check for scanned data from QR component
     scanned = st.query_params.get("qr_scan", "")
     if scanned:
         st.query_params.clear()
@@ -6118,10 +6118,10 @@ def show_qr_scanner_page(db):
                 cooldown = true;
                 status.textContent = '✅ تم المسح!';
                 status.style.background = 'rgba(40,167,69,0.9)';
-                const url = new URL(window.parent.location);
-                url.searchParams.set('qr_scan', code.data);
-                window.parent.history.replaceState({}, '', url);
-                setTimeout(() => { window.parent.location.reload(); }, 700);
+                // Send scanned data to Streamlit without reloading
+                if (window.parent.Streamlit) {
+                    window.parent.Streamlit.setComponentValue(code.data);
+                }
                 setTimeout(() => { cooldown = false; lastScan = ''; status.textContent = '📷 جاري المسح...'; }, 3500);
                 return;
             }
@@ -6138,7 +6138,22 @@ def show_qr_scanner_page(db):
     </html>
     """
     
-    st.components.v1.html(scanner_html, height=600, scrolling=False)
+    # QR Scanner component with value callback
+    scanned_value = st.components.v1.html(scanner_html, height=600, scrolling=False)
+    
+    # Process scanned value from component (without reload)
+    if scanned_value and isinstance(scanned_value, str) and scanned_value.startswith("SCODE:"):
+        result = process_qr_scan(db, scanned_value, user_id)
+        if result["success"]:
+            st.session_state.last_scan_result = result
+            st.session_state.last_scan_success = True
+            st.session_state.scan_history.append(result["message"])
+            st.rerun()
+        else:
+            st.session_state.last_scan_result = result
+            st.session_state.last_scan_success = False
+            st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
+            st.rerun()
     
     # Manual fallback input
     st.markdown("---")
@@ -6710,8 +6725,8 @@ def show_student_exam_portal(db):
                             st.error("⛔ هذه الطالبة غير نشطة. تواصلي مع مسؤولة الفصل.")
                         else:
                             # التحقق من كلمة المرور
-                            stored_password = str(student.get("student_password", student.get("password", "1234"))).strip()
-                            if student_password != stored_password:
+                            stored_password = student.get("student_password", student.get("password", "1234"))
+                            if not verify_password(student_password, str(stored_password)):
                                 st.error("❌ كلمة المرور غير صحيحة. جربي مرة أخرى أو تواصلي مع مسؤولة الفصل.")
                             else:
                                 st.session_state.exam_student_logged_in = True
