@@ -5987,14 +5987,23 @@ def show_qr_scanner_page(db):
         st.query_params.clear()
         result = process_qr_scan(db, scanned, user_id)
         if result["success"]:
-            st.success(result["message"])
-            st.balloons()
+            st.session_state.last_scan_result = result
+            st.session_state.last_scan_success = True
             st.session_state.scan_history.append(result["message"])
         else:
-            st.warning(result["message"])
+            st.session_state.last_scan_result = result
+            st.session_state.last_scan_success = False
             if "student" in result:
                 st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
-        st.rerun()
+    
+    # Display last scan result (stays visible after scan)
+    if "last_scan_result" in st.session_state:
+        result = st.session_state.last_scan_result
+        if st.session_state.last_scan_success:
+            st.success(result["message"])
+            st.balloons()
+        else:
+            st.warning(result["message"])
     
     # QR Scanner HTML
     scanner_html = """
@@ -6687,25 +6696,13 @@ def show_student_exam_portal(db):
                 if students_df.empty or "student_id" not in students_df.columns:
                     st.error("❌ لا توجد بيانات طالبات مسجلة")
                 else:
-                    # البحث عن الطالبة بالاسم الكامل أو الكود
+                    # البحث عن الطالبة بالكود فقط
                     student_match = pd.DataFrame()
-                    # أولاً: البحث بالاسم الكامل
-                    if "full_name" in students_df.columns:
-                        student_match = students_df[students_df["full_name"].astype(str).str.strip() == student_code]
-                    # ثانياً: البحث بالكود
-                    if student_match.empty and "student_code" in students_df.columns:
-                        student_match = students_df[students_df["student_code"].astype(str).str.strip() == student_code]
-                    # ثالثاً: البحث بالمعرف القديم
+                    if "student_code" in students_df.columns:
+                        student_match = students_df[students_df["student_code"].astype(str).str.strip() == student_code.strip()]
+                    
                     if student_match.empty:
-                        student_match = students_df[students_df["student_id"].astype(str).str.strip() == student_code]
-                    # رابعاً: البحث برقم الهاتف
-                    if student_match.empty:
-                        student_match = students_df[
-                            (students_df["phone"].astype(str).str.strip() == student_code) |
-                            (students_df["parent_phone"].astype(str).str.strip() == student_code)
-                        ]
-                    if student_match.empty:
-                        st.error("❌ اسم الطالبة أو الكود غير صحيح. تأكدي من البيانات وحاولي مرة أخرى.")
+                        st.error("❌ كود الطالبة غير صحيح. تأكدي من البيانات وحاولي مرة أخرى.")
                     else:
                         student = student_match.iloc[0].to_dict()
                         # التحقق من حالة الطالبة
@@ -8375,4 +8372,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
