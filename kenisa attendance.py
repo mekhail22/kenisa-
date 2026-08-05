@@ -2618,66 +2618,71 @@ def show_login_page(db, jwt_secret):
                             else:
                                 db.add_log(user.get("user_id", ""), "محاولة دخول فاشلة", "كلمة مرور خاطئة")
                                 st.error("كلمة المرور غير صحيحة")
-    with tab2:
-        st.subheader("دخول الاختبار الإلكتروني")
-        st.info("إذا كنتِ طالبة وتريدين الدخول للامتحانات، استخدمي كود الطالبة وكلمة المرور الخاصة بك.")
-        if st.button("🎯 الانتقال إلى بوابة الامتحانات", use_container_width=True, key="goto_exam_portal_btn"):
-            st.session_state.show_exam_portal = True
-            st.rerun()
-        st.markdown("---")
-        st.markdown("##### أو دخول المسابقات:")
-        with st.form("student_login_form"):
-            code = st.text_input("كود الطالبة", placeholder="مثال: STU000001").strip()
-            passwd = st.text_input("كلمة مرور الطالبة", type="password", placeholder="").strip()
-            if st.form_submit_button("بدء الاختبار", use_container_width=True):
-                if not code or not passwd:
-                    st.error("الرجاء إدخال كود الطالبة وكلمة المرور")
-                else:
-                    with st.spinner("جاري التحقق..."):
-                        students = db.get_students()
-                        student_match = students[(students.student_code == code) & (students.student_password == passwd)]
-                        if student_match.empty:
-                            st.error("كود الطالبة أو كلمة المرور غير صحيحة")
-                        else:
-                            student = student_match.iloc[0].to_dict()
-                            student_section = student.get("section_id", "")
-                            student_name = student.get("full_name", "")
-                            student_id = student.get("student_id", "")
-                            quizzes = db.get_quizzes()
-                            available_quizzes = quizzes[quizzes.section_id == student_section] if not quizzes.empty and student_section else pd.DataFrame()
-                            if available_quizzes.empty:
-                                st.error("لا توجد اختبارات متاحة لفصلك حالياً")
+        with tab2:
+            st.subheader("دخول الاختبار الإلكتروني")
+            st.info("إذا كنتِ طالبة وتريدين الدخول للامتحانات، استخدمي كود الطالبة وكلمة المرور الخاصة بك.")
+            if st.button("🎯 الانتقال إلى بوابة الامتحانات", use_container_width=True, key="goto_exam_portal_btn"):
+                st.session_state.show_exam_portal = True
+                st.rerun()
+            st.markdown("---")
+            st.markdown("##### أو دخول المسابقات:")
+            with st.form("student_login_form"):
+                code = st.text_input("كود الطالبة", placeholder="مثال: STU000001").strip()
+                passwd = st.text_input("كلمة مرور الطالبة", type="password", placeholder="").strip()
+                if st.form_submit_button("بدء الاختبار", use_container_width=True):
+                    if not code or not passwd:
+                        st.error("الرجاء إدخال كود الطالبة وكلمة المرور")
+                    else:
+                        with st.spinner("جاري التحقق..."):
+                            students = db.get_students()
+                            # Debug: Show what we're comparing
+                            # Passwords are stored as plain text, so compare directly
+                            student_match = students[
+                                (students.student_code.astype(str).str.strip() == code) & 
+                                (students.student_password.astype(str).str.strip() == passwd)
+                            ]
+                            if student_match.empty:
+                                st.error("كود الطالبة أو كلمة المرور غير صحيحة")
                             else:
-                                quiz = available_quizzes.iloc[0].to_dict()
-                                try:
-                                    expiry_naive = pd.to_datetime(quiz.get("expiry_date", "")).to_pydatetime()
-                                    expiry = expiry_naive.replace(tzinfo=CAIRO_TZ)
-                                    if expiry < get_cairo_now():
-                                        st.error("انتهت صلاحية هذا الاختبار")
-                                        db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
-                                    elif quiz.get("is_active", "True") == "False":
-                                        st.error("هذا الاختبار غير نشط حالياً")
-                                    else:
-                                        st.session_state.student_quiz = quiz
-                                        st.session_state.student_quiz_started = True
-                                        st.session_state.quiz_phase = "enter_name"
-                                        st.session_state.student_name = student_name
-                                        st.session_state.student_id = student_id
-                                        st.session_state.quiz_start_time = None
-                                        st.session_state.quiz_end_time = None
-                                        st.session_state.quiz_submit_time = None
-                                        st.session_state.quiz_token = None
-                                        st.session_state.quiz_answers = {}
-                                        st.session_state.quiz_submitted = False
-                                        st.session_state.last_score = 0
-                                        st.session_state.current_attempt_id = None
-                                        st.session_state.last_saved_answers_str = ""
-                                        st.session_state.quiz_questions = None
-                                        st.session_state.show_review = False
+                                student = student_match.iloc[0].to_dict()
+                                student_section = student.get("section_id", "")
+                                student_name = student.get("full_name", "")
+                                student_id = student.get("student_id", "")
+                                quizzes = db.get_quizzes()
+                                available_quizzes = quizzes[quizzes.section_id == student_section] if not quizzes.empty and student_section else pd.DataFrame()
+                                if available_quizzes.empty:
+                                    st.error("لا توجد اختبارات متاحة لفصلك حالياً")
+                                else:
+                                    quiz = available_quizzes.iloc[0].to_dict()
+                                    try:
+                                        expiry_naive = pd.to_datetime(quiz.get("expiry_date", "")).to_pydatetime()
+                                        expiry = expiry_naive.replace(tzinfo=CAIRO_TZ)
+                                        if expiry < get_cairo_now():
+                                            st.error("انتهت صلاحية هذا الاختبار")
+                                            db.update_quiz(quiz["quiz_id"], {"is_active": "False"})
+                                        elif quiz.get("is_active", "True") == "False":
+                                            st.error("هذا الاختبار غير نشط حالياً")
+                                        else:
+                                            st.session_state.student_quiz = quiz
+                                            st.session_state.student_quiz_started = True
+                                            st.session_state.quiz_phase = "enter_name"
+                                            st.session_state.student_name = student_name
+                                            st.session_state.student_id = student_id
+                                            st.session_state.quiz_start_time = None
+                                            st.session_state.quiz_end_time = None
+                                            st.session_state.quiz_submit_time = None
+                                            st.session_state.quiz_token = None
+                                            st.session_state.quiz_answers = {}
+                                            st.session_state.quiz_submitted = False
+                                            st.session_state.last_score = 0
+                                            st.session_state.current_attempt_id = None
+                                            st.session_state.last_saved_answers_str = ""
+                                            st.session_state.quiz_questions = None
+                                            st.session_state.show_review = False
+                                            st.rerun()
+                                    except Exception as e:
+                                        st.error(f"خطأ: {e}")
                                         st.rerun()
-                                except Exception as e:
-                                    st.error(f"خطأ: {e}")
-                                    st.rerun()
         return 0
 
 
@@ -5880,26 +5885,40 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
     Returns dict with success status and message.
     """
     import re
+    print("=" * 60)
+    print("[DEBUG] process_qr_scan called")
+    print(f"[DEBUG] scanned_raw: {scanned_raw}")
+    print(f"[DEBUG] recorded_by_user_id: {recorded_by_user_id}")
+    
     pattern = r"SCODE:(.*?)\|PWD:(.*)"
     match = re.search(pattern, scanned_raw)
     
     if not match:
+        print("[DEBUG] ❌ QR pattern not matched")
         return {"success": False, "message": "❌ كود QR غير صالح"}
     
     parsed_code = match.group(1).strip()
     parsed_pwd = match.group(2).strip()
+    print(f"[DEBUG] parsed_code: {parsed_code}")
+    print(f"[DEBUG] parsed_pwd: {parsed_pwd}")
     
     # Lookup student
     students = db.get_students()
     if students.empty:
+        print("[DEBUG] ❌ No students data")
         return {"success": False, "message": "❌ لا توجد بيانات طالبات"}
+    
+    print(f"[DEBUG] Total students: {len(students)}")
     
     student_match = students[
         (students["student_code"].astype(str).str.strip() == parsed_code) &
         (students["student_password"].astype(str).str.strip() == parsed_pwd)
     ]
     
+    print(f"[DEBUG] Student match found: {not student_match.empty}")
+    
     if student_match.empty:
+        print("[DEBUG] ❌ Student not found with code and password")
         return {"success": False, "message": "❌ كود غير صالح أو كلمة مرور خاطئة"}
     
     student = student_match.iloc[0].to_dict()
@@ -5908,7 +5927,13 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
     section_id = student.get("section_id", "")
     student_status = str(student.get("status", "active")).strip().lower()
     
+    print(f"[DEBUG] student_id: {student_id}")
+    print(f"[DEBUG] student_name: {student_name}")
+    print(f"[DEBUG] section_id: {section_id}")
+    print(f"[DEBUG] student_status: {student_status}")
+    
     if student_status != "active":
+        print(f"[DEBUG] ❌ Student not active: {student_status}")
         return {"success": False, "message": f"⛔ الطالبة {student_name} غير نشطة", "student": student}
     
     # Get stage_id from section
@@ -5919,16 +5944,21 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
         if not sec_match.empty:
             stage_id = sec_match.iloc[0].get("stage_id", "")
     
+    print(f"[DEBUG] stage_id: {stage_id}")
+    
     # Check for duplicate attendance today
     today = get_cairo_now().strftime("%Y-%m-%d")
     existing = db.get_attendance_by_date_user(today, student_id)
     if not existing.empty:
         qr_attendance = existing[existing["attendance_method"] == "QR_SCAN"]
         if not qr_attendance.empty:
+            print("[DEBUG] ⚠️ Already recorded today")
             return {"success": False, "message": "⚠️ تم تسجيل الحضور مسبقاً اليوم", "student": student}
     
     # Record attendance
+    print(f"[DEBUG] Calling record_qr_attendance(student_id={student_id}, student_name={student_name}, section_id={section_id}, stage_id={stage_id}, recorded_by={recorded_by_user_id})")
     success, msg = db.record_qr_attendance(student_id, student_name, section_id, stage_id, recorded_by_user_id)
+    print(f"[DEBUG] record_qr_attendance result: success={success}, msg={msg}")
     
     if success:
         # Get section name for message
@@ -5938,17 +5968,34 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
             if not sec_match.empty:
                 section_name = sec_match.iloc[0].get("section_name", "")
         
+        # Get stage name
+        stage_name = ""
+        stages = db.get_stages()
+        if not stages.empty and stage_id:
+            stg_match = stages[stages["stage_id"] == stage_id]
+            if not stg_match.empty:
+                stage_name = stg_match.iloc[0].get("stage_name", "")
+        
         # Add audit log
         db.add_log(recorded_by_user_id, "تسجيل حضور QR", 
                    f"الطالبة: {student_name} | الفصل: {section_name}")
         
+        print(f"[DEBUG] ✅ Attendance recorded successfully for {student_name}")
+        print("=" * 60)
+        
         return {
             "success": True, 
             "message": f"✅ تم تسجيل حضور {student_name} | الفصل: {section_name}",
-            "student": student
+            "student": student,
+            "student_name": student_name,
+            "section_name": section_name,
+            "stage_name": stage_name,
+            "time": get_cairo_now().strftime("%Y-%m-%d %I:%M:%S %p")
         }
     else:
-        return {"success": False, "message": "❌ فشل في تسجيل الحضور", "student": student}
+        print(f"[DEBUG] ❌ Failed to record attendance: {msg}")
+        print("=" * 60)
+        return {"success": False, "message": f"❌ فشل في تسجيل الحضور: {msg}", "student": student}
 
 
 # =============================================================================
@@ -5996,12 +6043,43 @@ def show_qr_scanner_page(db):
             if "student" in result:
                 st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
     
-    # Display last scan result (stays visible after scan)
+    # Display last scan result (stays visible after scan) with a big green card
     if "last_scan_result" in st.session_state:
         result = st.session_state.last_scan_result
         if st.session_state.last_scan_success:
-            st.success(result["message"])
-            st.balloons()
+            student_name_display = result.get("student_name", "...")
+            section_name_display = result.get("section_name", "...")
+            stage_name_display = result.get("stage_name", "...")
+            time_display = result.get("time", get_cairo_now().strftime("%Y-%m-%d %I:%M:%S %p"))
+            
+            st.markdown(
+                f"""
+                <div style="background:linear-gradient(135deg,#059669,#10b981); border-radius:20px; padding:2.5rem; 
+                     box-shadow:0 10px 30px rgba(5,150,105,0.3); text-align:center; margin-bottom:1.5rem; color:white;">
+                    <div style="font-size:3.5rem; margin-bottom:0.5rem;">✅</div>
+                    <h2 style="color:white; font-size:1.8rem; font-weight:800; margin:0.5rem 0;">تم تسجيل الحضور بنجاح</h2>
+                    <div style="background:rgba(255,255,255,0.15); border-radius:15px; padding:1.5rem; margin-top:1.5rem; text-align:right;">
+                        <div style="font-size:1.2rem; margin-bottom:0.8rem; display:flex; justify-content:space-between;">
+                            <span style="opacity:0.9; font-weight:700;">اسم الطالبة:</span>
+                            <span style="font-weight:800; font-size:1.3rem;">{student_name_display}</span>
+                        </div>
+                        <div style="font-size:1.2rem; margin-bottom:0.8rem; display:flex; justify-content:space-between;">
+                            <span style="opacity:0.9; font-weight:700;">الفصل:</span>
+                            <span style="font-weight:800;">{section_name_display}</span>
+                        </div>
+                        <div style="font-size:1.2rem; margin-bottom:0.8rem; display:flex; justify-content:space-between;">
+                            <span style="opacity:0.9; font-weight:700;">المرحلة:</span>
+                            <span style="font-weight:800;">{stage_name_display}</span>
+                        </div>
+                        <div style="font-size:1.2rem; display:flex; justify-content:space-between;">
+                            <span style="opacity:0.9; font-weight:700;">الوقت:</span>
+                            <span style="font-weight:800; direction:ltr; unicode-bidi:embed;">{time_display}</span>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
         else:
             st.warning(result["message"])
     
@@ -6148,12 +6226,10 @@ def show_qr_scanner_page(db):
             st.session_state.last_scan_result = result
             st.session_state.last_scan_success = True
             st.session_state.scan_history.append(result["message"])
-            st.rerun()
         else:
             st.session_state.last_scan_result = result
             st.session_state.last_scan_success = False
             st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
-            st.rerun()
     
     # Manual fallback input
     st.markdown("---")
@@ -6726,7 +6802,8 @@ def show_student_exam_portal(db):
                         else:
                             # التحقق من كلمة المرور
                             stored_password = student.get("student_password", student.get("password", "1234"))
-                            if not verify_password(student_password, str(stored_password)):
+                            # Student passwords are stored as plain text, compare directly
+                            if student_password.strip() != str(stored_password).strip():
                                 st.error("❌ كلمة المرور غير صحيحة. جربي مرة أخرى أو تواصلي مع مسؤولة الفصل.")
                             else:
                                 st.session_state.exam_student_logged_in = True
@@ -7620,7 +7697,7 @@ def show_exam_dashboard(db):
             )
             display["full_name"] = display["full_name"].fillna(display.get("student_name", ""))
             display.rename(columns={"full_name": "اسم الطالبة", "section_id": "الفصل"}, inplace=True)
-
+ 
         # تحديد الأعمدة المعروضة
         display_cols = []
         if "اسم الطالبة" in display.columns:
