@@ -1533,12 +1533,19 @@ class Database:
     def record_qr_attendance(self, student_id, student_name, section_id, stage_id, recorded_by_user_id):
         """
         Record attendance via QR scan.
-        Returns (success, message)
+        Returns dict with success status and message.
         """
         try:
+            # Check for duplicate attendance today via QR_SCAN
+            today = get_cairo_now().strftime("%Y-%m-%d")
+            existing = self.get_attendance_by_date_user(today, student_id)
+            if not existing.empty:
+                qr_records = existing[existing.get("attendance_method", "") == "QR_SCAN"]
+                if not qr_records.empty:
+                    return {"success": False, "message": "⚠️ تم تسجيل حضور هذه الطالبة اليوم بالفعل"}
+            
             record_id = str(uuid.uuid4())
             now = get_cairo_now()
-            today = now.strftime("%Y-%m-%d")
             current_time = now.strftime("%H:%M:%S")
             
             new_record = {
@@ -1551,7 +1558,7 @@ class Database:
                 "section_id": section_id,
                 "stage_id": stage_id,
                 "status": "حاضر",
-                "notes": "تسجيل حضور عبر QR Code",
+                "notes": "تسجيل عبر QR",
                 "recorded_by": recorded_by_user_id,
                 "attendance_method": "QR_SCAN"
             }
@@ -1561,9 +1568,9 @@ class Database:
                 df = pd.DataFrame(columns=self.ATTENDANCE_COLUMNS)
             df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
             self._df_to_sheet("Attendance", df, self.ATTENDANCE_COLUMNS)
-            return True, "تم تسجيل الحضور بنجاح"
+            return {"success": True, "message": "تم تسجيل الحضور بنجاح"}
         except Exception as e:
-            return False, f"خطأ: {str(e)}"
+            return {"success": False, "message": f"❌ فشل الاتصال بـ Google Sheets: {str(e)}"}
 
     # --- FollowUp ---
     def get_followup(self):
@@ -5966,7 +5973,9 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
     
     # Record attendance
     print(f"[DEBUG] Calling record_qr_attendance(student_id={student_id}, student_name={student_name}, section_id={section_id}, stage_id={stage_id}, recorded_by={recorded_by_user_id})")
-    success, msg = db.record_qr_attendance(student_id, student_name, section_id, stage_id, recorded_by_user_id)
+    record_result = db.record_qr_attendance(student_id, student_name, section_id, stage_id, recorded_by_user_id)
+    success = record_result.get("success", False)
+    msg = record_result.get("message", "")
     print(f"[DEBUG] record_qr_attendance result: success={success}, msg={msg}")
     
     if success:
@@ -6040,9 +6049,10 @@ def show_qr_scanner_page(db):
         else:
             st.info("لا توجد عمليات مسح بعد")
     
-    # Check for scanned data from QR component
+    # Check for scanned data from QR component (backward compatibility for query params)
     scanned = st.query_params.get("qr_scan", "")
-    if scanned:
+    if scanned and not st.session_state.get("qr_processed", False):
+        st.session_state.qr_processed = True
         st.query_params.clear()
         result = process_qr_scan(db, scanned, user_id)
         if result["success"]:
@@ -6053,6 +6063,21 @@ def show_qr_scanner_page(db):
             st.session_state.last_scan_result = result
             st.session_state.last_scan_success = False
             if "student" in result:
+                st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
+    
+    # Process scanned value from component (without reload) - with duplicate prevention
+    if "qr_scanned_data" in st.session_state and st.session_state.qr_scanned_data:
+        scanned_data = st.session_state.qr_scanned_data
+        if not st.session_state.get("qr_scanned_processed", False):
+            st.session_state.qr_scanned_processed = True
+            result = process_qr_scan(db, scanned_data, user_id)
+            if result["success"]:
+                st.session_state.last_scan_result = result
+                st.session_state.last_scan_success = True
+                st.session_state.scan_history.append(result["message"])
+            else:
+                st.session_state.last_scan_result = result
+                st.session_state.last_scan_success = False
                 st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
     
     # Display last scan result (stays visible after scan) with a big green card
@@ -6208,13 +6233,10 @@ def show_qr_scanner_page(db):
                 cooldown = true;
                 status.textContent = '✅ تم المسح!';
                 status.style.background = 'rgba(40,167,69,0.9)';
-                // Send scanned data to Streamlit via query params (reloads page)
-                var encoded = encodeURIComponent(code.data);
-                var url = window.parent.location.href;
-                // Remove existing qr_scan param if present
-                url = url.replace(/[?&]qr_scan=[^&]*/g, '');
-                var sep = url.includes('?') ? '&' : '?';
-                window.parent.location.href = url + sep + 'qr_scan=' + encoded;
+                // Send scanned data to Streamlit via postMessage (no page reload)
+                parent.postMessage(code.data, '*');
+                // Allow scanning again after a short cooldown
+                setTimeout(function() { cooldown = false; }, 3000);
                 return;
             }
         }
@@ -6780,9 +6802,9 @@ def show_student_exam_portal(db):
             col_l1, col_l2 = st.columns(2)
             with col_l1:
                 student_code = st.text_input(
-                    "اسم الطالبة أو الكود",
-                    placeholder="أدخلي اسمك الكامل أو كود الطالبة",
-                    help="أدخلي اسمك الكامل أو الكود الموجود في بطاقة الطالبة"
+                    "كود الطالبة",
+                    placeholder="مثال: STU000001",
+                    help="أدخلي كود الطالبة الموجود في بطاقة الطالبة"
                 ).strip()
             with col_l2:
                 student_password = st.text_input(
