@@ -814,6 +814,139 @@ def stat_card(label, value, icon="📊"):
     """
 
 
+
+def under_development_page(title, subtitle, message, button_label="العودة إلى لوحة التحكم", button_key=None, features=None):
+    """
+    Render a premium Arabic 'Under Development' page with RTL support, Cairo font, soft animations, and Bootstrap 5 styling.
+    
+    Args:
+        title: Main title for the page
+        subtitle: Subtitle below the title
+        message: Main message/description
+        button_label: Label for the back button
+        button_key: Unique key for the button
+        features: List of feature strings to display as bullets (optional)
+    """
+    inject_css()
+    st.markdown(hero_header(title, subtitle), unsafe_allow_html=True)
+
+    # Build features HTML if provided
+    features_html = ""
+    if features and isinstance(features, list):
+        features_html = "<ul style='text-align: right; line-height: 2;'>"
+        for feat in features:
+            features_html += f"<li>✅ {feat}</li>"
+        features_html += "</ul>"
+    
+    # Replace message with features if provided
+    if features_html:
+        message = features_html
+
+    # Custom styles for the under-development page
+    st.markdown("""
+    <style>
+        .under-dev-container {
+            max-width: 700px;
+            margin: 2rem auto;
+            text-align: center;
+            padding: 2.5rem 2rem;
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.08);
+            border: 1px solid #e2e8f0;
+            animation: fadeInUp 0.8s ease-out;
+            direction: rtl;
+            font-family: 'Cairo', sans-serif;
+        }
+        .under-dev-icon {
+            font-size: 5rem;
+            margin-bottom: 1.2rem;
+            animation: pulse 2s infinite;
+        }
+        .under-dev-title {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+        }
+        .under-dev-subtitle {
+            font-size: 1.2rem;
+            color: #475569;
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+            line-height: 1.7;
+        }
+        .under-dev-message {
+            font-size: 1rem;
+            color: #64748b;
+            margin-bottom: 2rem;
+            line-height: 1.8;
+            background: #f8fafc;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            border-right: 4px solid #2563eb;
+            text-align: right;
+        }
+        .under-dev-message ul {
+            margin: 0;
+            padding-right: 1.5rem;
+        }
+        .under-dev-message li {
+            margin-bottom: 0.5rem;
+        }
+        .under-dev-btn {
+            background: linear-gradient(135deg, #2563eb, #7c3aed);
+            color: white;
+            border: none;
+            padding: 0.9rem 2.2rem;
+            font-size: 1rem;
+            font-weight: 700;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(37,99,235,0.3);
+            transition: all 0.3s ease;
+            font-family: 'Cairo', sans-serif;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .under-dev-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px rgba(37,99,235,0.4);
+        }
+        @keyframes fadeInUp {
+            from { opacity:0; transform:translateY(30px); }
+            to { opacity:1; transform:translateY(0); }
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        @media (max-width: 768px) {
+            .under-dev-container { margin: 1rem; padding: 1.5rem 1rem; }
+            .under-dev-icon { font-size: 3.5rem; }
+            .under-dev-title { font-size: 1.5rem; }
+            .under-dev-subtitle { font-size: 1rem; }
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div class="under-dev-container">
+        <div class="under-dev-icon">🚧</div>
+        <div class="under-dev-title">{title}</div>
+        <div class="under-dev-subtitle">{subtitle}</div>
+        <div class="under-dev-message">{message}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button(button_label, use_container_width=True, key=button_key or "under_dev_back"):
+        st.session_state.show_exam_portal = False
+        st.rerun()
+
+
+
 def info_row(label, value):
     """Render an info row."""
     return f"""
@@ -6039,274 +6172,20 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
 # See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE A: QR CODE ATTENDANCE SYSTEM"
 # =============================================================================
 def show_qr_scanner_page(db):
-    """QR Code Scanner page for attendance."""
-    inject_css()
-    st.markdown(hero_header("ماسح QR Code", "📷 مسح حضور الطالبات"), unsafe_allow_html=True)
-    
-    user = st.session_state.user
-    role = user.get("role", "")
-    user_id = user.get("user_id", "")
-    
-    # Check permissions
-    if role not in ["System Admin", "Service Manager", "Teacher"]:
-        st.error("🚫 غير مصرح لك بالوصول إلى هذه الصفحة")
-        return
-    
-    # Initialize scan history
-    if "scan_history" not in st.session_state:
-        st.session_state.scan_history = []
-    
-    # Scan history sidebar
-    with st.sidebar:
-        st.markdown("### 📋 سجل المسح")
-        if st.session_state.scan_history:
-            for scan in st.session_state.scan_history[-10:]:
-                st.markdown(f"- {scan}")
-        else:
-            st.info("لا توجد عمليات مسح بعد")
-    
-    # Check for scanned data from QR component (backward compatibility for query params)
-    scanned = st.query_params.get("qr_scan", "")
-    if scanned and not st.session_state.get("qr_processed", False):
-        st.session_state.qr_processed = True
-        st.query_params.clear()
-        result = process_qr_scan(db, scanned, user_id)
-        if result["success"]:
-            st.session_state.last_scan_result = result
-            st.session_state.last_scan_success = True
-            st.session_state.scan_history.append(result["message"])
-        else:
-            st.session_state.last_scan_result = result
-            st.session_state.last_scan_success = False
-            if "student" in result:
-                st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
-    
-    # Process scanned value from component (without reload) - with duplicate prevention
-    if "qr_scanned_data" in st.session_state and st.session_state.qr_scanned_data:
-        scanned_data = st.session_state.qr_scanned_data
-        if not st.session_state.get("qr_scanned_processed", False):
-            st.session_state.qr_scanned_processed = True
-            result = process_qr_scan(db, scanned_data, user_id)
-            if result["success"]:
-                st.session_state.last_scan_result = result
-                st.session_state.last_scan_success = True
-                st.session_state.scan_history.append(result["message"])
-            else:
-                st.session_state.last_scan_result = result
-                st.session_state.last_scan_success = False
-                st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
-    
-    # Display last scan result (stays visible after scan) with a big green card
-    if "last_scan_result" in st.session_state:
-        result = st.session_state.last_scan_result
-        if st.session_state.last_scan_success:
-            student_name_display = result.get("student_name", "...")
-            section_name_display = result.get("section_name", "...")
-            stage_name_display = result.get("stage_name", "...")
-            time_display = result.get("time", get_cairo_now().strftime("%Y-%m-%d %I:%M:%S %p"))
-            
-            st.markdown(
-                f"""
-                <div style="background:linear-gradient(135deg,#059669,#10b981); border-radius:20px; padding:2.5rem; 
-                     box-shadow:0 10px 30px rgba(5,150,105,0.3); text-align:center; margin-bottom:1.5rem; color:white;">
-                    <div style="font-size:3.5rem; margin-bottom:0.5rem;">✅</div>
-                    <h2 style="color:white; font-size:1.8rem; font-weight:800; margin:0.5rem 0;">تم تسجيل الحضور بنجاح</h2>
-                    <div style="background:rgba(255,255,255,0.15); border-radius:15px; padding:1.5rem; margin-top:1.5rem; text-align:right;">
-                        <div style="font-size:1.2rem; margin-bottom:0.8rem; display:flex; justify-content:space-between;">
-                            <span style="opacity:0.9; font-weight:700;">اسم الطالبة:</span>
-                            <span style="font-weight:800; font-size:1.3rem;">{student_name_display}</span>
-                        </div>
-                        <div style="font-size:1.2rem; margin-bottom:0.8rem; display:flex; justify-content:space-between;">
-                            <span style="opacity:0.9; font-weight:700;">الفصل:</span>
-                            <span style="font-weight:800;">{section_name_display}</span>
-                        </div>
-                        <div style="font-size:1.2rem; margin-bottom:0.8rem; display:flex; justify-content:space-between;">
-                            <span style="opacity:0.9; font-weight:700;">المرحلة:</span>
-                            <span style="font-weight:800;">{stage_name_display}</span>
-                        </div>
-                        <div style="font-size:1.2rem; display:flex; justify-content:space-between;">
-                            <span style="opacity:0.9; font-weight:700;">الوقت:</span>
-                            <span style="font-weight:800; direction:ltr; unicode-bidi:embed;">{time_display}</span>
-                        </div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        else:
-            st.warning(result["message"])
-    
-    # QR Scanner HTML
-    scanner_html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="UTF-8">
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <style>
-    body { 
-        direction: rtl; 
-        font-family: 'Cairo', sans-serif; 
-        background: #f8fafc; 
-        margin: 0; 
-        text-align: center;
-    }
-    #cam-wrapper { 
-        position: relative; 
-        display: inline-block; 
-        border-radius: 16px; 
-        overflow: hidden; 
-        border: 3px solid #2563eb; 
-        max-width: 100%; 
-        box-shadow: 0 10px 25px rgba(37, 99, 235, 0.3);
-    }
-    #video { 
-        width: 100%; 
-        max-width: 500px; 
-        display: block; 
-        background: #000; 
-    }
-    #overlay { 
-        position: absolute; 
-        top: 0; 
-        left: 0; 
-        width: 100%; 
-        height: 100%; 
-        pointer-events: none; 
-    }
-    .scan-frame { 
-        position: absolute; 
-        top: 50%; 
-        left: 50%; 
-        transform: translate(-50%, -50%); 
-        width: 220px; 
-        height: 220px; 
-        border: 3px dashed #28a745; 
-        border-radius: 12px; 
-        box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
-    }
-    #status { 
-        position: absolute; 
-        top: 12px; 
-        right: 12px; 
-        background: rgba(0,0,0,0.75); 
-        color: #fff; 
-        padding: 8px 16px; 
-        border-radius: 20px; 
-        font-weight: 700; 
-        font-size: 14px;
-        font-family: 'Cairo', sans-serif;
-    }
-    </style>
-    </head>
-    <body>
-    <div id="start-screen" style="text-align:center; padding:40px;">
-        <h2 style="color:#2563eb;">📷 تشغيل الكاميرا</h2>
-        <button onclick="startCam()" style="background:linear-gradient(135deg,#2563eb,#7c3aed);color:white;border:none;padding:14px 36px;border-radius:12px;font-size:18px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif;">▶️ تشغيل</button>
-        <p style="color:#999;font-size:13px;">المتصفح سيطلب إذن الكاميرا</p>
-    </div>
-    <div id="scanner" style="display:none; text-align:center;">
-        <div id="cam-wrapper">
-            <video id="video" playsinline autoplay muted></video>
-            <div id="overlay"><div class="scan-frame"></div></div>
-            <div id="status">🔍 جاري البحث...</div>
-        </div>
-    </div>
-    <script>
-    const video = document.getElementById('video');
-    const status = document.getElementById('status');
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    let lastScan = '';
-    let cooldown = false;
-
-    async function startCam() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
-            });
-            video.srcObject = stream;
-            await video.play();
-            document.getElementById('start-screen').style.display = 'none';
-            document.getElementById('scanner').style.display = 'block';
-            status.textContent = '📷 جاري المسح...';
-            status.style.background = 'rgba(37,99,235,0.9)';
-            loop();
-        } catch(e) { 
-            alert('خطأ في الكاميرا: ' + e.message); 
-        }
-    }
-
-    function loop() {
-        if (!cooldown && video.readyState === video.HAVE_ENOUGH_DATA) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
-            if (code && code.data && code.data !== lastScan) {
-                lastScan = code.data;
-                cooldown = true;
-                status.textContent = '✅ تم المسح!';
-                status.style.background = 'rgba(40,167,69,0.9)';
-                // Send scanned data to Streamlit via postMessage (no page reload)
-                parent.postMessage(code.data, '*');
-                // Allow scanning again after a short cooldown
-                setTimeout(function() { cooldown = false; }, 3000);
-                return;
-            }
-        }
-        requestAnimationFrame(loop);
-    }
-    if (navigator.permissions) {
-        navigator.permissions.query({ name: 'camera' }).then(p => { 
-            if (p.state === 'granted') startCam(); 
-        });
-    }
-    </script>
-    </body>
-    </html>
-    """
-    
-    # QR Scanner component with value callback
-    scanned_value = st.components.v1.html(scanner_html, height=600, scrolling=False)
-    
-    # Process scanned value from component (without reload)
-    if scanned_value and isinstance(scanned_value, str) and scanned_value.startswith("SCODE:"):
-        result = process_qr_scan(db, scanned_value, user_id)
-        if result["success"]:
-            st.session_state.last_scan_result = result
-            st.session_state.last_scan_success = True
-            st.session_state.scan_history.append(result["message"])
-        else:
-            st.session_state.last_scan_result = result
-            st.session_state.last_scan_success = False
-            st.session_state.scan_history.append(f"❌ {result.get('message', 'خطأ')}")
-    
-    # Manual fallback input
-    st.markdown("---")
-    st.markdown("### أو أدخل كود الطالبة يدوياً")
-    manual_code = st.text_input("كود الطالبة", placeholder="مثال: STU000001").strip()
-    if st.button("🔍 بحث وتسجيل حضور", use_container_width=True):
-        if not manual_code:
-            st.error("يرجى إدخال كود الطالبة")
-        else:
-            # Create a fake QR scan data
-            students = db.get_students()
-            if not students.empty:
-                student_match = students[students["student_code"].astype(str).str.strip() == manual_code]
-                if not student_match.empty:
-                    student = student_match.iloc[0].to_dict()
-                    student_pwd = student.get("student_password", "")
-                    fake_qr = f"SCODE:{manual_code}|PWD:{student_pwd}"
-                    result = process_qr_scan(db, fake_qr, user_id)
-                    if result["success"]:
-                        st.success(result["message"])
-                        st.session_state.scan_history.append(result["message"])
-                    else:
-                        st.warning(result["message"])
-                else:
-                    st.error("❌ كود الطالبة غير موجود")
+    """QR Code Scanner page - Under Development."""
+    under_development_page(
+        title="ماسح QR Code",
+        subtitle="📷 نظام الحضور الذكي",
+        message="نعمل حاليًا على تطوير نظام الحضور عبر QR Code المتكامل الذي سيضم:<br><br>"
+                "✅ مسح QR Code لكشف هوية الطالبة<br>"
+                "✅ تسجيل الحضور تلقائياً<br>"
+                "✅ دعم الكاميرا الأمامية والخلفية<br>"
+                "✅ سجل عمليات المسح<br>"
+                "✅ تقارير الحضور التفصيلية<br><br>"
+                "سيتم إطلاق الميزة قريبًا بإذن الله. شكرًا لصبركم.",
+        button_label="العودة إلى لوحة التحكم",
+        button_key="qr_under_dev_back"
+    )
 
 
 # =============================================================================
@@ -6804,341 +6683,23 @@ def change_password(db):
 # =============================================================================
 def show_student_exam_portal(db):
     """
-    بوابة امتحانات الطالبات:
-    - تسجيل الدخول بكود الطالبة
-    - عرض الامتحانات المتاحة
-    - الإحصائيات
-    - متابعة الإصحاحات
-    - زر بدء الامتحان
+    بوابة امتحانات الطالبات - قيد التطوير
     """
-    st.markdown(hero_header("بوابة الامتحانات", "📝 دخول الطالبات للامتحانات"), unsafe_allow_html=True)
-
-    # ============ حالة تسجيل الدخول ============
-    if not st.session_state.get("exam_student_logged_in", False):
-        # ===== واجهة تسجيل الدخول بكود الطالبة وكلمة المرور =====
-        st.markdown("### 🔐 تسجيل دخول الطالبة")
-        with st.form("student_exam_login_form"):
-            col_l1, col_l2 = st.columns(2)
-            with col_l1:
-                student_code = st.text_input(
-                    "كود الطالبة",
-                    placeholder="مثال: STU000001",
-                    help="أدخلي كود الطالبة الموجود في بطاقة الطالبة"
-                ).strip()
-            with col_l2:
-                student_password = st.text_input(
-                    "كلمة المرور",
-                    type="password",
-                    placeholder="أدخلي كلمة المرور",
-                    help="كلمة المرور الافتراضية: 1234"
-                ).strip()
-            submitted = st.form_submit_button("دخول", use_container_width=True)
-
-        if submitted:
-            if not student_code or not student_password:
-                st.error("❌ من فضلك أدخلي كود الطالبة وكلمة المرور")
-            else:
-                students_df = db.get_students()
-                if students_df.empty or "student_id" not in students_df.columns:
-                    st.error("❌ لا توجد بيانات طالبات مسجلة")
-                else:
-                    # ===== DEBUG: طباعة القيم للتحقق =====
-                    print("=" * 60)
-                    print("[DEBUG] بوابة الامتحانات - تسجيل الدخول")
-                    print(f"[DEBUG] student_code (input): '{student_code}' (type: {type(student_code).__name__})")
-                    print(f"[DEBUG] student_password (input): '{student_password}' (type: {type(student_password).__name__})")
-                    print(f"[DEBUG] Students columns: {list(students_df.columns)}")
-                    if "student_code" in students_df.columns:
-                        print(f"[DEBUG] student_code dtype: {students_df['student_code'].dtype}")
-                        print(f"[DEBUG] student_code NaN count: {students_df['student_code'].isna().sum()}")
-                        print(f"[DEBUG] student_code sample: {students_df['student_code'].head(3).tolist()}")
-                    if "student_password" in students_df.columns:
-                        print(f"[DEBUG] student_password dtype: {students_df['student_password'].dtype}")
-                        print(f"[DEBUG] student_password NaN count: {students_df['student_password'].isna().sum()}")
-                        print(f"[DEBUG] student_password empty count: {(students_df['student_password'].astype(str).str.strip() == '').sum()}")
-                        print(f"[DEBUG] student_password sample: {students_df['student_password'].head(3).tolist()}")
-                    # ===== نهاية DEBUG =====
-                    
-                    # البحث عن الطالبة بالكود فقط
-                    student_match = pd.DataFrame()
-                    if "student_code" in students_df.columns:
-                        # معالجة NaN قبل المقارنة
-                        codes_clean = students_df["student_code"].fillna("").astype(str).str.strip()
-                        student_match = students_df[codes_clean == student_code.strip()]
-                    
-                    print(f"[DEBUG] student_match found: {not student_match.empty}")
-                    
-                    if student_match.empty:
-                        st.error("❌ كود الطالبة غير صحيح. تأكدي من البيانات وحاولي مرة أخرى.")
-                    else:
-                        student = student_match.iloc[0].to_dict()
-                        # ===== DEBUG: طباعة بيانات الطالبة =====
-                        print(f"[DEBUG] Student found: {student.get('full_name', '')}")
-                        print(f"[DEBUG] student_code in DF: '{student.get('student_code', '')}'")
-                        raw_pwd = student.get("student_password", student.get("password", "1234"))
-                        print(f"[DEBUG] student_password in DF: '{raw_pwd}' (type: {type(raw_pwd).__name__})")
-                        if raw_pwd is None or (isinstance(raw_pwd, float) and pd.isna(raw_pwd)):
-                            print("[DEBUG] ⚠️ student_password is None or NaN!")
-                        # ===== نهاية DEBUG =====
-                        
-                        # التحقق من حالة الطالبة
-                        if str(student.get("status", "active")).strip().lower() == "inactive":
-                            st.error("⛔ هذه الطالبة غير نشطة. تواصلي مع مسؤولة الفصل.")
-                        else:
-                            # التحقق من كلمة المرور
-                            stored_password = student.get("student_password", student.get("password", "1234"))
-                            # معالجة NaN و None
-                            if stored_password is None or (isinstance(stored_password, float) and pd.isna(stored_password)):
-                                stored_password = ""
-                            stored_password_str = str(stored_password).strip()
-                            input_password_str = str(student_password).strip()
-                            
-                            print(f"[DEBUG] stored_password_str: '{stored_password_str}'")
-                            print(f"[DEBUG] input_password_str: '{input_password_str}'")
-                            print(f"[DEBUG] Password match: {input_password_str == stored_password_str}")
-                            
-                            # Student passwords are stored as plain text, compare directly
-                            if input_password_str != stored_password_str:
-                                st.error("❌ كلمة المرور غير صحيحة. جربي مرة أخرى أو تواصلي مع مسؤولة الفصل.")
-                            else:
-                                st.session_state.exam_student_logged_in = True
-                                st.session_state.exam_student = student
-                                st.session_state.exam_student_id = student.get("student_id", "")
-                                st.session_state.exam_student_name = student.get("full_name", "")
-                                st.session_state.exam_student_section = student.get("section_id", "")
-                                st.session_state.exam_student_stage = ""
-                                # تحديد مرحلة الطالبة من الفصل
-                                sections_df = db.get_sections()
-                                if not sections_df.empty and student.get("section_id"):
-                                    sec_match = sections_df[sections_df["section_id"] == student.get("section_id")]
-                                    if not sec_match.empty:
-                                        st.session_state.exam_student_stage = sec_match.iloc[0].get("stage_id", "")
-                                db.add_log(
-                                    student.get("student_id", ""),
-                                    "دخول بوابة الامتحانات",
-                                    f"دخول الطالبة {student.get('full_name', '')} إلى بوابة الامتحانات"
-                                )
-                                st.success(f"✅ مرحباً {student.get('full_name', '')}! تم تسجيل الدخول بنجاح.")
-                                time.sleep(1)
-                                st.rerun()
-    else:
-        # ===== واجهة الطالبة بعد تسجيل الدخول =====
-        student = st.session_state.get("exam_student", {})
-        student_id = st.session_state.get("exam_student_id", "")
-        student_name = st.session_state.get("exam_student_name", "")
-        student_section = st.session_state.get("exam_student_section", "")
-        student_stage = st.session_state.get("exam_student_stage", "")
-
-        # ===== شريط ترحيب =====
-        col_w1, col_w2 = st.columns([4, 1])
-        with col_w1:
-            # Get section name from section_id
-            sections_df = db.get_sections()
-            section_name_display = student_section
-            if not sections_df.empty and student_section:
-                sec_match = sections_df[sections_df["section_id"] == student_section]
-                if not sec_match.empty:
-                    section_name_display = sec_match.iloc[0].get("section_name", student_section)
-            
-            st.markdown(
-                f"""
-                <div class="profile-header" style="padding:1.5rem 2rem;">
-                    <h1 style="margin:0; font-size:1.4rem; font-weight:800;">👋 مرحباً {student_name}</h1>
-                    <p style="margin:0.5rem 0 0; opacity:0.9; font-size:0.9rem;">
-                        🆔 {student_id} | 🏫 الفصل: {section_name_display or 'غير محدد'}
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        with col_w2:
-            if st.button("🚪 تسجيل خروج", use_container_width=True):
-                db.add_log(student_id, "خروج من بوابة الامتحانات", f"خروج الطالبة {student_name}")
-                st.session_state.exam_student_logged_in = False
-                st.session_state.exam_student = None
-                st.session_state.exam_student_id = ""
-                st.session_state.exam_student_name = ""
-                st.session_state.exam_student_section = ""
-                st.rerun()
-
-        # ===== جلب البيانات =====
-        exams_df = db.get_exams()
-        results_df = db.get_exam_results()
-        questions_df = db.get_exam_questions()
-
-        # ===== الإحصائيات =====
-        st.markdown("### 📊 إحصائياتي")
-        stats = db.get_student_exam_stats(student_id)
-
-        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-        with col_s1:
-            st.metric("📝 إجمالي الامتحانات", stats.get("total_exams", 0))
-        with col_s2:
-            st.metric("✅ امتحانات مكتملة", stats.get("completed_exams", 0))
-        with col_s3:
-            st.metric("📈 متوسط الدرجات", f"{stats.get('average_score', 0)}%")
-        with col_s4:
-            st.metric("🏆 أعلى درجة", f"{stats.get('highest_score', 0)}%")
-
-        # ===== متابعة الإصحاحات =====
-        st.markdown("### 📖 متابعة الإصحاحات")
-        chapter_tracking = db.get_chapter_tracking()
-        if chapter_tracking.empty:
-            st.info("لا توجد بيانات إصحاحات متاحة حالياً.")
-        else:
-            # عرض تقدم الإصحاحات
-            for _, row in chapter_tracking.iterrows():
-                chapter_type = row.get("chapter_type", "")
-                total_q = row.get("total_questions", 0)
-                completion = row.get("completion_rate", 0)
-                col_c1, col_c2 = st.columns([3, 1])
-                with col_c1:
-                    st.markdown(f"**{chapter_type}**")
-                    st.progress(min(float(completion) / 100, 1.0))
-                with col_c2:
-                    st.markdown(f"<div style='text-align:center; font-weight:700; color:#2563eb;'>{completion}%</div>", unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # ===== الامتحانات المتاحة =====
-        st.markdown("### 📝 الامتحانات المتاحة")
-
-        if exams_df.empty:
-            st.info("لا توجد امتحانات متاحة حالياً.")
-        else:
-            # تصفية الامتحانات النشطة والمنشورة
-            available_exams = exams_df.copy()
-            if "is_active" in available_exams.columns:
-                available_exams = available_exams[available_exams["is_active"].astype(str).str.strip().str.lower() == "true"]
-            if "is_published" in available_exams.columns:
-                available_exams = available_exams[available_exams["is_published"].astype(str).str.strip().str.lower() == "true"]
-
-            # تصفية حسب مرحلة وفصل الطالبة
-            if "stage_id" in available_exams.columns:
-                stage_mask = available_exams["stage_id"].astype(str).str.strip() == student_stage
-                if "section_id" in available_exams.columns:
-                    # الامتحان متاح إذا:
-                    # 1. المرحلة مطابقة (والفصل غير محدد = كل الفصول)
-                    # 2. أو الفصل مطابق مباشرة
-                    section_mask = available_exams["section_id"].astype(str).str.strip() == student_section
-                    available_exams = available_exams[stage_mask | section_mask]
-                else:
-                    available_exams = available_exams[stage_mask]
-            elif student_section and "section_id" in available_exams.columns:
-                section_exams = available_exams[available_exams["section_id"].astype(str).str.strip() == student_section]
-                if not section_exams.empty:
-                    available_exams = section_exams
-
-            if available_exams.empty:
-                st.info("لا توجد امتحانات متاحة لمرحلتك أو فصلك حالياً.")
-            else:
-                # التحقق من الامتحانات التي تم أداؤها بالفعل
-                completed_exam_ids = set()
-                if not results_df.empty and "student_id" in results_df.columns:
-                    student_results = results_df[results_df["student_id"] == student_id]
-                    if not student_results.empty and "exam_id" in student_results.columns:
-                        completed_exam_ids = set(student_results[student_results["status"] == "submitted"]["exam_id"].tolist())
-
-                for _, exam_row in available_exams.iterrows():
-                    exam = exam_row.to_dict()
-                    exam_id = exam.get("exam_id", "")
-                    exam_title = exam.get("title", "امتحان بدون عنوان")
-                    exam_chapter = exam.get("chapter_lesson", "")
-                    exam_date = exam.get("exam_date", "")
-                    exam_duration = exam.get("duration_minutes", "")
-                    exam_total_marks = exam.get("total_marks", "")
-                    exam_desc = exam.get("description", "")
-
-                    # عدد الأسئلة
-                    num_questions = 0
-                    if not questions_df.empty and "exam_id" in questions_df.columns:
-                        num_questions = len(questions_df[questions_df["exam_id"] == exam_id])
-
-                    already_done = exam_id in completed_exam_ids
-
-                    # بطاقة الامتحان
-                    with st.container(border=True):
-                        col_e1, col_e2, col_e3 = st.columns([3, 2, 1])
-                        with col_e1:
-                            st.markdown(f"### 📄 {exam_title}")
-                            if exam_chapter:
-                                st.markdown(f"**الأصحاح / الدرس:** {exam_chapter}")
-                            if exam_desc:
-                                st.markdown(f"<small style='color:#64748b;'>{exam_desc}</small>", unsafe_allow_html=True)
-                        with col_e2:
-                            st.markdown(f"**📅 التاريخ:** {exam_date or 'غير محدد'}")
-                            st.markdown(f"**⏱️ المدة:** {exam_duration or '—'} دقيقة")
-                            st.markdown(f"**📊 الدرجة:** {exam_total_marks or '—'}")
-                            st.markdown(f"**❓ الأسئلة:** {num_questions}")
-                        with col_e3:
-                            if already_done:
-                                st.markdown(
-                                    "<div style='text-align:center; padding:0.5rem; background:#d1fae5; border-radius:10px; color:#065f46; font-weight:700;'>✅ تم الأداء</div>",
-                                    unsafe_allow_html=True
-                                )
-                            else:
-                                if num_questions == 0:
-                                    st.markdown(
-                                        "<div style='text-align:center; padding:0.5rem; background:#fef3c7; border-radius:10px; color:#92400e; font-weight:700;'>⚠️ لا توجد أسئلة</div>",
-                                        unsafe_allow_html=True
-                                    )
-                                else:
-                                    if st.button("🚀 بدء الامتحان", key=f"start_exam_{exam_id}", use_container_width=True):
-                                        # حفظ حالة الامتحان المختار
-                                        st.session_state.selected_exam_id = exam_id
-                                        st.session_state.selected_exam_title = exam_title
-                                        st.session_state.selected_exam_duration = exam_duration
-                                        st.session_state.selected_exam_total_marks = exam_total_marks
-                                        st.session_state.exam_start_requested = True
-                                        db.add_log(
-                                            student_id,
-                                            "بدء امتحان",
-                                            f"الطالبة {student_name} بدأت امتحان: {exam_title}"
-                                        )
-                                        st.success(f"✅ تم اختيار امتحان: {exam_title}")
-                                        st.info("🚀 سيتم فتح واجهة الامتحان قريباً...")
-
-        # ===== سجل نتائجي =====
-        st.markdown("### 📋 سجل نتائجي")
-        if results_df.empty or "student_id" not in results_df.columns:
-            st.info("لا توجد نتائج مسجلة بعد.")
-        else:
-            my_results = results_df[results_df["student_id"] == student_id]
-            if my_results.empty:
-                st.info("لم تقومي بأداء أي امتحان بعد.")
-            else:
-                # دمج أسماء الامتحانات
-                if not exams_df.empty and "exam_id" in exams_df.columns:
-                    my_results = my_results.merge(
-                        exams_df[["exam_id", "title"]],
-                        on="exam_id", how="left"
-                    )
-                    my_results.rename(columns={"title": "الامتحان"}, inplace=True)
-
-                display_cols = []
-                if "الامتحان" in my_results.columns:
-                    display_cols.append("الامتحان")
-                if "score" in my_results.columns:
-                    display_cols.append("الدرجة")
-                if "total_marks" in my_results.columns:
-                    display_cols.append("الدرجة الكلية")
-                if "status" in my_results.columns:
-                    display_cols.append("الحالة")
-                if "submission_time" in my_results.columns:
-                    display_cols.append("وقت التسليم")
-
-                if display_cols:
-                    st.dataframe(
-                        my_results[display_cols].sort_values("submission_time", ascending=False),
-                        use_container_width=True,
-                        column_config={
-                            "الامتحان": "الامتحان",
-                            "score": "الدرجة",
-                            "total_marks": "الدرجة الكلية",
-                            "status": "الحالة",
-                            "submission_time": "وقت التسليم"
-                        }
-                    )
+    under_development_page(
+        title="بوابة الامتحانات",
+        subtitle="📝 نظام الامتحانات الإلكتروني",
+        message="نعمل حاليًا على تطوير نظام امتحانات إلكتروني متكامل يضم:<br><br>"
+                "✅ إنشاء وإدارة الامتحانات<br>"
+                "✅ بنك أسئلة متعدد الأنواع<br>"
+                "✅ جدولة الامتحانات<br>"
+                "✅ التصحيح التلقائي الفوري<br>"
+                "✅ شهادات ونتائج تفاعلية<br>"
+                "✅ منع الغش ومراقبة الوقت<br><br>"
+                "سيتم إطلاق الميزة قريبًا بإذن الله. شكرًا لصبركم.",
+        button_label="العودة إلى لوحة التحكم",
+        button_key="exam_under_dev_back"
+    )
+    return
 
 
 # =============================================================================
