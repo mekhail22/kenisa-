@@ -4454,7 +4454,13 @@ def show_quizzes(db):
 
 
 # =============================================================================
-# Exams Management
+# PHASE 2 — EXAMS PORTAL (Future Feature — NOT yet active)
+# =============================================================================
+# This module is RESERVED for Phase 2 implementation.
+# The scaffolding (Database methods, sheet columns, menu wiring) is in place,
+# but the full Exams Portal features (question bank, scheduling, essay/manual
+# grading, certificates, anti-cheating, analytics) are NOT yet implemented.
+# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
 def show_exams_management(db):
     st.markdown(hero_header("إدارة الامتحانات", "📝 إنشاء وإدارة الامتحانات وأسئلتها"), unsafe_allow_html=True)
@@ -5735,8 +5741,15 @@ def show_events_page(db):
 
 
 # =============================================================================
-# QR Code Helper Functions
-# ==============================================================================
+# PHASE 2 — QR CODE ATTENDANCE SYSTEM (Future Feature — NOT yet active)
+# =============================================================================
+# This module is RESERVED for Phase 2 implementation.
+# The scaffolding (record_qr_attendance, generate_qr_image, generate_student_id_card,
+# generate_a4_qr_printable_page, process_qr_scan, show_qr_scanner_page) is in place,
+# but the full QR attendance system features (encrypted JWT tokens, opening/closing
+# times, sound feedback, dashboard widgets, advanced reports) are NOT yet implemented.
+# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE A: QR CODE ATTENDANCE SYSTEM"
+# =============================================================================
 def generate_qr_image(data: str, size: int = 250) -> Image.Image:
     """Generate PIL Image QR code from string data."""
     qr = qrcode.QRCode(version=3, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=2)
@@ -6020,8 +6033,11 @@ def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
 
 
 # =============================================================================
-# QR Scanner Page
-# ==============================================================================
+# PHASE 2 — QR CODE ATTENDANCE SYSTEM (Future Feature — NOT yet active)
+# =============================================================================
+# This module is RESERVED for Phase 2 implementation.
+# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE A: QR CODE ATTENDANCE SYSTEM"
+# =============================================================================
 def show_qr_scanner_page(db):
     """QR Code Scanner page for attendance."""
     inject_css()
@@ -6781,7 +6797,10 @@ def change_password(db):
 
 
 # =============================================================================
-# Student Exam Portal - بوابة امتحانات الطالبات
+# PHASE 2 — EXAMS PORTAL (Future Feature — NOT yet active)
+# =============================================================================
+# This module is RESERVED for Phase 2 implementation.
+# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
 def show_student_exam_portal(db):
     """
@@ -7123,7 +7142,10 @@ def show_student_exam_portal(db):
 
 
 # =============================================================================
-# Student Exam Interface - واجهة أداء الامتحان
+# PHASE 2 — EXAMS PORTAL (Future Feature — NOT yet active)
+# =============================================================================
+# This module is RESERVED for Phase 2 implementation.
+# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
 def show_exam_interface(db):
     """
@@ -7431,7 +7453,10 @@ def show_exam_interface(db):
 
 
 # =============================================================================
-# Exam Submission & Results - تسليم الامتحان وعرض النتائج
+# PHASE 2 — EXAMS PORTAL (Future Feature — NOT yet active)
+# =============================================================================
+# This module is RESERVED for Phase 2 implementation.
+# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
 def _submit_exam(db, exam_id, student_id, student_name, answers, attempt_id=None, start_time=None, end_time=None):
     """
@@ -7590,7 +7615,10 @@ def show_exam_results(db, result):
 
 
 # =============================================================================
-# Exam Dashboard - لوحة تحكم الامتحانات
+# PHASE 2 — EXAMS PORTAL (Future Feature — NOT yet active)
+# =============================================================================
+# This module is RESERVED for Phase 2 implementation.
+# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
 def show_exam_dashboard(db):
     """
