@@ -2759,8 +2759,8 @@ def show_login_page(db, jwt_secret):
                                 db.add_log(user.get("user_id", ""), "محاولة دخول فاشلة", "كلمة مرور خاطئة")
                                 st.error("كلمة المرور غير صحيحة")
         with tab2:
-            st.subheader("دخول الاختبار الإلكتروني")
-            st.info("إذا كنتِ طالبة وتريدين الدخول للامتحانات، استخدمي كود الطالبة وكلمة المرور الخاصة بك.")
+st.subheader("دخول بوابة الامتحانات")
+st.info("إذا كنتِ طالبة وتريدين الدخول إلى بوابة الامتحانات، استخدمي كود الطالبة وكلمة المرور الخاصة بك.")
             if st.button("🎯 الانتقال إلى بوابة الامتحانات", use_container_width=True, key="goto_exam_portal_btn"):
                 st.session_state.show_exam_portal = True
                 st.rerun()
