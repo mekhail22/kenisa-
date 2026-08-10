@@ -3338,7 +3338,7 @@ def show_student_dashboard(db):
     # ===== شريط جانبي للطالبة =====
     if st.session_state.show_student_sidebar:
         with st.sidebar:
-        st.markdown("""
+            st.markdown("""
         <div class='sidebar-brand'>
             <div class='brand-logo'>⛪</div>
             <div class='brand-text'>
