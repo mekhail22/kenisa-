@@ -3270,7 +3270,7 @@ def show_student_quiz_interface(db):
 # Student Dashboard (تسجيل دخول الطالبات)
 # =============================================================================
 def show_student_dashboard(db):
-    """لوحة تحكم الطالبة الشخصية."""
+    """لوحة تحكم الطالبة الشخصية مع تصميم Sidebar احترافي."""
     student = st.session_state.get("current_student")
     if not student:
         st.session_state.student_logged_in = False
@@ -3291,104 +3291,424 @@ def show_student_dashboard(db):
     student = student_row.iloc[0].to_dict()
     st.session_state.current_student = student
 
-    # ===== إضافة CSS للقائمة القابلة للطي والشاشة الكاملة =====
+    # ===== CSS للـSidebar الاحترافي مع RTL =====
     st.markdown("""
     <style>
-    /* إخفاء القائمة الافتراضية وجعلها قابلة للفتح/الإغلاق */
+    /* Hide default Streamlit sidebar completely for student dashboard */
     section[data-testid="stSidebar"] {
-        transition: transform 0.3s ease-in-out !important;
+        display: none !important;
     }
-    /* زر القائمة العلوي */
-    .menu-toggle-btn {
+    
+    /* Student Dashboard Layout */
+    .student-dashboard-container {
+        display: flex !important;
+        min-height: 100vh !important;
+        direction: rtl !important;
+    }
+    
+    /* Professional Sidebar */
+    .student-sidebar {
         position: fixed !important;
-        top: 1rem !important;
-        right: 1rem !important;
-        z-index: 999999 !important;
+        top: 0 !important;
+        right: 0 !important;
+        width: 260px !important;
+        height: 100vh !important;
+        background: #ffffff !important;
+        border-left: 1px solid #e2e8f0 !important;
+        box-shadow: -2px 0 8px rgba(0,0,0,0.05) !important;
+        z-index: 9999 !important;
+        overflow-y: auto !important;
+        transition: transform 0.3s ease-in-out !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+    
+    .student-sidebar.hidden {
+        transform: translateX(100%) !important;
+    }
+    
+    /* Sidebar Header */
+    .sidebar-header {
+        padding: 1.5rem 1rem !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
+        color: white !important;
+    }
+    
+    .sidebar-header h3 {
+        margin: 0 !important;
+        font-size: 1rem !important;
+        font-weight: 700 !important;
+        color: white !important;
+        font-family: 'Cairo', sans-serif !important;
+    }
+    
+    .sidebar-header small {
+        display: block !important;
+        margin-top: 0.25rem !important;
+        font-size: 0.75rem !important;
+        opacity: 0.9 !important;
+        color: white !important;
+    }
+    
+    /* User Card in Sidebar */
+    .sidebar-user-card {
+        padding: 1rem !important;
+        margin: 1rem !important;
+        background: #f8fafc !important;
+        border-radius: 12px !important;
+        border: 1px solid #e2e8f0 !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 0.75rem !important;
+    }
+    
+    .user-avatar {
+        width: 48px !important;
+        height: 48px !important;
+        border-radius: 50% !important;
+        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        color: white !important;
+        font-weight: 700 !important;
+        font-size: 1rem !important;
+        flex-shrink: 0 !important;
+    }
+    
+    .user-details {
+        flex: 1 !important;
+        min-width: 0 !important;
+    }
+    
+    .user-details strong {
+        display: block !important;
+        font-size: 0.9rem !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+        margin-bottom: 0.25rem !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    
+    .user-details span {
+        font-size: 0.75rem !important;
+        color: #64748b !important;
+    }
+    
+    /* Navigation Menu */
+    .sidebar-nav {
+        flex: 1 !important;
+        padding: 0.5rem !important;
+        overflow-y: auto !important;
+    }
+    
+    .nav-item {
+        display: flex !important;
+        align-items: center !important;
+        gap: 0.75rem !important;
+        width: 100% !important;
+        padding: 0.85rem 1rem !important;
+        margin-bottom: 0.5rem !important;
+        background: transparent !important;
+        color: #0f172a !important;
+        border: 1px solid transparent !important;
+        border-radius: 10px !important;
+        font-size: 0.9rem !important;
+        font-weight: 600 !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        font-family: 'Cairo', sans-serif !important;
+        text-align: right !important;
+    }
+    
+    .nav-item:hover {
+        background: #dbeafe !important;
+        border-color: #2563eb !important;
+        transform: translateX(-4px) !important;
+    }
+    
+    .nav-item.active {
         background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
         color: white !important;
         border: none !important;
-        border-radius: 12px !important;
-        padding: 0.6rem 1.2rem !important;
-        font-weight: 700 !important;
-        font-family: 'Cairo', sans-serif !important;
         box-shadow: 0 4px 12px rgba(37,99,235,0.3) !important;
+    }
+    
+    /* Sidebar Footer */
+    .sidebar-footer {
+        padding: 1rem !important;
+        border-top: 1px solid #e2e8f0 !important;
+        margin-top: auto !important;
+    }
+    
+    .logout-btn {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
+        padding: 0.85rem !important;
+        background: #fee2e2 !important;
+        color: #dc2626 !important;
+        border: 1px solid #fecaca !important;
+        border-radius: 10px !important;
+        font-size: 0.9rem !important;
+        font-weight: 600 !important;
         cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        font-family: 'Cairo', sans-serif !important;
     }
-    .menu-toggle-btn:hover {
-        background: linear-gradient(135deg, #1d4ed8, #6d28d9) !important;
+    
+    .logout-btn:hover {
+        background: #dc2626 !important;
+        color: white !important;
     }
-    /* جعل المحتوى يملأ الشاشة */
-    .block-container, section.main {
-        padding-top: 2rem !important;
-        max-width: 100% !important;
+    
+    /* Mobile Header */
+    .mobile-header {
+        display: none !important;
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        left: 0 !important;
+        height: 60px !important;
+        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
+        color: white !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        padding: 0 1rem !important;
+        z-index: 9998 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+    }
+    
+    .mobile-header h2 {
+        margin: 0 !important;
+        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+        color: white !important;
+    }
+    
+    .menu-toggle {
+        background: white !important;
+        color: #2563eb !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.5rem 1rem !important;
+        font-size: 1.2rem !important;
+        font-weight: 700 !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 0.5rem !important;
+    }
+    
+    /* Main Content */
+    .main-content {
+        flex: 1 !important;
+        margin-right: 260px !important;
+        padding: 2rem !important;
+        min-height: 100vh !important;
+        background: #f8fafc !important;
+    }
+    
+    /* Mobile Overlay */
+    .sidebar-overlay {
+        display: none !important;
+        position: fixed !important;
+        inset: 0 !important;
+        background: rgba(0,0,0,0.5) !important;
+        z-index: 9997 !important;
+    }
+    
+    .sidebar-overlay.show {
+        display: block !important;
+    }
+    
+    /* Close Button */
+    .close-sidebar-btn {
+        position: absolute !important;
+        top: 1rem !important;
+        left: 1rem !important;
+        background: white !important;
+        color: #0f172a !important;
+        border: none !important;
+        border-radius: 50% !important;
+        width: 32px !important;
+        height: 32px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 1.2rem !important;
+        cursor: pointer !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .student-sidebar {
+            width: 280px !important;
+        }
+        
+        .main-content {
+            margin-right: 0 !important;
+            padding: 5rem 1rem 1rem !important;
+        }
+        
+        .mobile-header {
+            display: flex !important;
+        }
+        
+        .sidebar-overlay.show {
+            display: block !important;
+        }
+    }
+    
+    @media (min-width: 769px) {
+        .mobile-header {
+            display: none !important;
+        }
+        
+        .sidebar-overlay {
+            display: none !important;
+        }
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # ===== زر فتح/إغلاق القائمة =====
-    if "show_student_sidebar" not in st.session_state:
-        st.session_state.show_student_sidebar = True
+    # ===== Initialize sidebar state =====
+    if "student_sidebar_open" not in st.session_state:
+        st.session_state.student_sidebar_open = True
 
-    col_toggle, col_spacer = st.columns([0.15, 0.85])
-    with col_toggle:
-        if st.button("☰ القائمة", key="toggle_student_sidebar", use_container_width=True):
-            st.session_state.show_student_sidebar = not st.session_state.show_student_sidebar
-            st.rerun()
+    # ===== Mobile Header =====
+    st.markdown("""
+    <div class="mobile-header">
+        <h2>🎓 بوابة الطالبات</h2>
+        <button class="menu-toggle" onclick="toggleStudentSidebar()">☰</button>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # ===== شريط جانبي للطالبة =====
-    if st.session_state.show_student_sidebar:
-        with st.sidebar:
-            st.markdown("""
-        <div class='sidebar-brand'>
-            <div class='brand-logo'>⛪</div>
-            <div class='brand-text'>
-                <h3>كنيسة الشهيدة دميانة</h3>
-                <small>بوابة الطالبات</small>
-            </div>
+    # ===== JavaScript for mobile sidebar toggle =====
+    st.markdown("""
+    <script>
+    function toggleStudentSidebar() {
+        const sidebar = document.querySelector('.student-sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        if (sidebar && overlay) {
+            sidebar.classList.toggle('hidden');
+            overlay.classList.toggle('show');
+        }
+    }
+    
+    function closeStudentSidebar() {
+        const sidebar = document.querySelector('.student-sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        if (sidebar && overlay) {
+            sidebar.classList.add('hidden');
+            overlay.classList.remove('show');
+        }
+    }
+    </script>
+    """, unsafe_allow_html=True)
+
+    # ===== Sidebar Overlay (Mobile) =====
+    st.markdown('<div class="sidebar-overlay" onclick="closeStudentSidebar()"></div>', unsafe_allow_html=True)
+
+    # ===== Professional Sidebar =====
+    full_name = student.get("full_name", "طالبة")
+    initials = get_initials(full_name)
+    menu_items = ["🏠 الرئيسية", "👤 ملفي الشخصي", "🏆 المسابقات"]
+    current_page = st.session_state.get("student_dashboard_page", "🏠 الرئيسية")
+    if current_page not in menu_items:
+        current_page = menu_items[0]
+        st.session_state.student_dashboard_page = current_page
+
+    sidebar_html = f"""
+    <div class="student-sidebar {'hidden' if not st.session_state.student_sidebar_open else ''}" id="studentSidebar">
+        <button class="close-sidebar-btn" onclick="closeStudentSidebar()">✕</button>
+        
+        <!-- Header -->
+        <div class="sidebar-header">
+            <h3>⛪ كنيسة الشهيدة دميانة</h3>
+            <small>بوابة الطالبات</small>
         </div>
-        """, unsafe_allow_html=True)
-        full_name = student.get("full_name", "طالبة")
-        initials = get_initials(full_name)
-        st.markdown(f"""
-        <div class='sidebar-user'>
-            <div class='user-avatar-lg'>{initials}</div>
-            <div class='user-info'>
+        
+        <!-- User Card -->
+        <div class="sidebar-user-card">
+            <div class="user-avatar">{initials}</div>
+            <div class="user-details">
                 <strong>{full_name}</strong>
                 <span>طالبة</span>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        
+        <!-- Navigation -->
+        <div class="sidebar-nav">
+    """
+    
+    for item in menu_items:
+        active_class = "active" if item == current_page else ""
+        sidebar_html += f"""
+            <button class="nav-item {active_class}" onclick="navigateTo('{item}')">
+                <span>{item}</span>
+            </button>
+        """
+    
+    sidebar_html += """
+        </div>
+        
+        <!-- Footer with Logout -->
+        <div class="sidebar-footer">
+            <button class="logout-btn" onclick="handleLogout()">
+                <span>🚪</span>
+                <span>تسجيل الخروج</span>
+            </button>
+        </div>
+    </div>
+    
+    <script>
+    function navigateTo(page) {
+        // Set session state and rerun
+        const data = {{page: page}};
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify(data)
+        }).then(() => window.location.reload());
+    }
+    
+    function handleLogout() {
+        if (confirm('هل أنت متأكدة من تسجيل الخروج؟')) {
+            window.location.href = window.location.pathname + '?logout=true';
+        }
+    }
+    </script>
+    """
+    
+    st.markdown(sidebar_html, unsafe_allow_html=True)
 
-        menu_items = ["🏠 الرئيسية", "👤 ملفي الشخصي", "🏆 المسابقات"]
-        current_page = st.session_state.get("student_dashboard_page", "🏠 الرئيسية")
-        if current_page not in menu_items:
-            current_page = menu_items[0]
-            st.session_state.student_dashboard_page = current_page
-
-        st.markdown('<div class="sidebar-nav nav-btn-container">', unsafe_allow_html=True)
-        for item in menu_items:
-            btn_type = "primary" if item == current_page else "secondary"
-            if st.button(item, key=f"student_nav_{item}", use_container_width=True, type=btn_type):
-                st.session_state.student_dashboard_page = item
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="sidebar-footer">', unsafe_allow_html=True)
-        if st.button("🚪 تسجيل الخروج", use_container_width=True, key="student_logout_btn"):
-            st.session_state.student_logged_in = False
-            st.session_state.current_student = None
-            st.session_state.student_dashboard_page = "الرئيسية"
-            st.session_state.selected_quiz_id = None
-            st.session_state.quiz_interface_started = False
+    # ===== Hidden buttons for navigation (Streamlit interaction) =====
+    st.markdown('<div style="display: none;">', unsafe_allow_html=True)
+    for item in menu_items:
+        if st.button(f"nav_{item}", key=f"student_nav_{item}"):
+            st.session_state.student_dashboard_page = item
+            st.session_state.student_sidebar_open = True
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+    
+    if st.button("logout", key="student_logout_btn"):
+        st.session_state.student_logged_in = False
+        st.session_state.current_student = None
+        st.session_state.student_dashboard_page = "الرئيسية"
+        st.session_state.selected_quiz_id = None
+        st.session_state.quiz_interface_started = False
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # ===== زر إعادة فتح القائمة إذا كانت مغلقة =====
-    if not st.session_state.show_student_sidebar:
-        if st.button("☰ فتح القائمة", key="open_student_sidebar", use_container_width=True):
-            st.session_state.show_student_sidebar = True
-            st.rerun()
-
+    # ===== Main Content Area =====
+    st.markdown('<div class="main-content">', unsafe_allow_html=True)
+    
     # ===== عرض الصفحة المختارة =====
     if current_page == "👤 ملفي الشخصي":
         show_student_profile_tab(db, student)
@@ -3396,6 +3716,8 @@ def show_student_dashboard(db):
         show_student_competitions_tab(db, student)
     else:
         show_student_home_tab(db, student)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def show_student_home_tab(db, student):
