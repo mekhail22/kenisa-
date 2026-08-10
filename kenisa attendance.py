@@ -3291,8 +3291,53 @@ def show_student_dashboard(db):
     student = student_row.iloc[0].to_dict()
     st.session_state.current_student = student
 
+    # ===== إضافة CSS للقائمة القابلة للطي والشاشة الكاملة =====
+    st.markdown("""
+    <style>
+    /* إخفاء القائمة الافتراضية وجعلها قابلة للفتح/الإغلاق */
+    section[data-testid="stSidebar"] {
+        transition: transform 0.3s ease-in-out !important;
+    }
+    /* زر القائمة العلوي */
+    .menu-toggle-btn {
+        position: fixed !important;
+        top: 1rem !important;
+        right: 1rem !important;
+        z-index: 999999 !important;
+        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important;
+        padding: 0.6rem 1.2rem !important;
+        font-weight: 700 !important;
+        font-family: 'Cairo', sans-serif !important;
+        box-shadow: 0 4px 12px rgba(37,99,235,0.3) !important;
+        cursor: pointer !important;
+    }
+    .menu-toggle-btn:hover {
+        background: linear-gradient(135deg, #1d4ed8, #6d28d9) !important;
+    }
+    /* جعل المحتوى يملأ الشاشة */
+    .block-container, section.main {
+        padding-top: 2rem !important;
+        max-width: 100% !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ===== زر فتح/إغلاق القائمة =====
+    if "show_student_sidebar" not in st.session_state:
+        st.session_state.show_student_sidebar = True
+
+    col_toggle, col_spacer = st.columns([0.15, 0.85])
+    with col_toggle:
+        if st.button("☰ القائمة", key="toggle_student_sidebar", use_container_width=True):
+            st.session_state.show_student_sidebar = not st.session_state.show_student_sidebar
+            st.rerun()
+
     # ===== شريط جانبي للطالبة =====
-    with st.sidebar:
+    if st.session_state.show_student_sidebar:
+        with st.sidebar:
         st.markdown("""
         <div class='sidebar-brand'>
             <div class='brand-logo'>⛪</div>
@@ -3338,6 +3383,12 @@ def show_student_dashboard(db):
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # ===== زر إعادة فتح القائمة إذا كانت مغلقة =====
+    if not st.session_state.show_student_sidebar:
+        if st.button("☰ فتح القائمة", key="open_student_sidebar", use_container_width=True):
+            st.session_state.show_student_sidebar = True
+            st.rerun()
+
     # ===== عرض الصفحة المختارة =====
     if current_page == "👤 ملفي الشخصي":
         show_student_profile_tab(db, student)
@@ -3364,7 +3415,8 @@ def show_student_home_tab(db, student):
     student_results = results[results["student_id"] == student.get("student_id", "")] if not results.empty and "student_id" in results.columns else pd.DataFrame()
     submitted_results = student_results[student_results["status"] == "submitted"] if not student_results.empty and "status" in student_results.columns else pd.DataFrame()
     quizzes = db.get_quizzes()
-    available_quizzes = quizzes[quizzes["section_id"] == sec_id] if not quizzes.empty and sec_id else pd.DataFrame()
+    # فلترة المسابقات بناءً على is_active فقط (بدون فصل أو صف أو قسم)
+    available_quizzes = quizzes[quizzes["is_active"].astype(str).str.strip() == "True"] if not quizzes.empty and "is_active" in quizzes.columns else pd.DataFrame()
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("🏫 الفصل", section_name or "—")
@@ -3479,9 +3531,10 @@ def show_student_competitions_tab(db, student):
 
     # ===== المسابقات المتاحة =====
     st.markdown("### 🏆 المسابقات المتاحة")
-    available_quizzes = quizzes[quizzes["section_id"] == sec_id] if not quizzes.empty and sec_id else pd.DataFrame()
+    # فلترة المسابقات بناءً على is_active فقط (بدون فصل أو صف أو قسم)
+    available_quizzes = quizzes[quizzes["is_active"].astype(str).str.strip() == "True"] if not quizzes.empty and "is_active" in quizzes.columns else pd.DataFrame()
     if available_quizzes.empty:
-        st.info("لا توجد مسابقات متاحة لفصلك حالياً.")
+        st.info("لا توجد مسابقات متاحة حالياً.")
     else:
         for _, q in available_quizzes.iterrows():
             qid = q.get("quiz_id", "")
