@@ -3270,7 +3270,7 @@ def show_student_quiz_interface(db):
 # Student Dashboard (تسجيل دخول الطالبات)
 # =============================================================================
 def show_student_dashboard(db):
-    """لوحة تحكم الطالبة الشخصية مع تصميم Sidebar احترافي."""
+    """لوحة تحكم الطالبة الشخصية مع قائمة كاملة الشاشة."""
     student = st.session_state.get("current_student")
     if not student:
         st.session_state.student_logged_in = False
@@ -3291,81 +3291,74 @@ def show_student_dashboard(db):
     student = student_row.iloc[0].to_dict()
     st.session_state.current_student = student
 
-    # ===== CSS للـSidebar الاحترافي مع RTL =====
+    # ===== CSS للقائمة الكاملة الشاشة =====
     st.markdown("""
     <style>
-    /* Hide default Streamlit sidebar completely for student dashboard */
+    /* Hide default Streamlit sidebar */
     section[data-testid="stSidebar"] {
         display: none !important;
     }
     
-    /* Student Dashboard Layout */
-    .student-dashboard-container {
-        display: flex !important;
-        min-height: 100vh !important;
-        direction: rtl !important;
-    }
-    
-    /* Professional Sidebar */
-    .student-sidebar {
+    /* Full-screen overlay menu */
+    .fullscreen-sidebar-overlay {
         position: fixed !important;
         top: 0 !important;
         right: 0 !important;
-        width: 260px !important;
+        width: 100vw !important;
         height: 100vh !important;
         background: #ffffff !important;
-        border-left: 1px solid #e2e8f0 !important;
-        box-shadow: -2px 0 8px rgba(0,0,0,0.05) !important;
-        z-index: 9999 !important;
+        z-index: 999999 !important;
         overflow-y: auto !important;
-        transition: transform 0.3s ease-in-out !important;
-        display: flex !important;
-        flex-direction: column !important;
-    }
-    
-    .student-sidebar.hidden {
-        transform: translateX(100%) !important;
-    }
-    
-    /* Sidebar Header */
-    .sidebar-header {
-        padding: 1.5rem 1rem !important;
-        border-bottom: 1px solid #e2e8f0 !important;
-        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
-        color: white !important;
-    }
-    
-    .sidebar-header h3 {
-        margin: 0 !important;
-        font-size: 1rem !important;
-        font-weight: 700 !important;
-        color: white !important;
+        direction: rtl !important;
         font-family: 'Cairo', sans-serif !important;
     }
     
-    .sidebar-header small {
-        display: block !important;
-        margin-top: 0.25rem !important;
-        font-size: 0.75rem !important;
-        opacity: 0.9 !important;
+    .fullscreen-sidebar-overlay .sidebar-header {
+        padding: 2rem 1.5rem !important;
+        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
+        color: white !important;
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+    }
+    
+    .fullscreen-sidebar-overlay .sidebar-header h2 {
+        margin: 0 !important;
+        font-size: 1.5rem !important;
+        font-weight: 800 !important;
         color: white !important;
     }
     
-    /* User Card in Sidebar */
-    .sidebar-user-card {
-        padding: 1rem !important;
-        margin: 1rem !important;
+    .fullscreen-sidebar-overlay .close-btn {
+        background: white !important;
+        color: #0f172a !important;
+        border: none !important;
+        border-radius: 50% !important;
+        width: 40px !important;
+        height: 40px !important;
+        font-size: 1.5rem !important;
+        font-weight: 700 !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+    }
+    
+    .fullscreen-sidebar-overlay .user-card {
+        padding: 1.5rem !important;
+        margin: 1.5rem !important;
         background: #f8fafc !important;
-        border-radius: 12px !important;
+        border-radius: 16px !important;
         border: 1px solid #e2e8f0 !important;
         display: flex !important;
         align-items: center !important;
-        gap: 0.75rem !important;
+        gap: 1rem !important;
     }
     
-    .user-avatar {
-        width: 48px !important;
-        height: 48px !important;
+    .fullscreen-sidebar-overlay .user-avatar {
+        width: 56px !important;
+        height: 56px !important;
         border-radius: 50% !important;
         background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
         display: flex !important;
@@ -3373,313 +3366,319 @@ def show_student_dashboard(db):
         justify-content: center !important;
         color: white !important;
         font-weight: 700 !important;
-        font-size: 1rem !important;
+        font-size: 1.3rem !important;
         flex-shrink: 0 !important;
     }
     
-    .user-details {
-        flex: 1 !important;
-        min-width: 0 !important;
+    .fullscreen-sidebar-overlay .nav-menu {
+        padding: 0 1.5rem 1.5rem !important;
     }
     
-    .user-details strong {
-        display: block !important;
-        font-size: 0.9rem !important;
-        font-weight: 700 !important;
-        color: #0f172a !important;
-        margin-bottom: 0.25rem !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-    }
-    
-    .user-details span {
-        font-size: 0.75rem !important;
-        color: #64748b !important;
-    }
-    
-    /* Navigation Menu */
-    .sidebar-nav {
-        flex: 1 !important;
-        padding: 0.5rem !important;
-        overflow-y: auto !important;
-    }
-    
-    .nav-item {
-        display: flex !important;
-        align-items: center !important;
-        gap: 0.75rem !important;
+    .fullscreen-sidebar-overlay .nav-btn {
         width: 100% !important;
-        padding: 0.85rem 1rem !important;
-        margin-bottom: 0.5rem !important;
+        padding: 1rem 1.25rem !important;
+        margin-bottom: 0.75rem !important;
         background: transparent !important;
         color: #0f172a !important;
-        border: 1px solid transparent !important;
-        border-radius: 10px !important;
-        font-size: 0.9rem !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        font-size: 1.1rem !important;
         font-weight: 600 !important;
         cursor: pointer !important;
         transition: all 0.2s ease !important;
-        font-family: 'Cairo', sans-serif !important;
         text-align: right !important;
+        font-family: 'Cairo', sans-serif !important;
     }
     
-    .nav-item:hover {
+    .fullscreen-sidebar-overlay .nav-btn:hover {
         background: #dbeafe !important;
         border-color: #2563eb !important;
         transform: translateX(-4px) !important;
     }
     
-    .nav-item.active {
+    .fullscreen-sidebar-overlay .nav-btn.active {
         background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
         color: white !important;
         border: none !important;
         box-shadow: 0 4px 12px rgba(37,99,235,0.3) !important;
     }
     
-    /* Sidebar Footer */
-    .sidebar-footer {
-        padding: 1rem !important;
+    .fullscreen-sidebar-overlay .logout-section {
+        padding: 1.5rem !important;
         border-top: 1px solid #e2e8f0 !important;
-        margin-top: auto !important;
+        margin-top: 1rem !important;
     }
     
-    .logout-btn {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        gap: 0.5rem !important;
+    .fullscreen-sidebar-overlay .logout-btn {
         width: 100% !important;
-        padding: 0.85rem !important;
+        padding: 1rem !important;
         background: #fee2e2 !important;
         color: #dc2626 !important;
         border: 1px solid #fecaca !important;
-        border-radius: 10px !important;
-        font-size: 0.9rem !important;
+        border-radius: 12px !important;
+        font-size: 1.1rem !important;
         font-weight: 600 !important;
         cursor: pointer !important;
         transition: all 0.2s ease !important;
         font-family: 'Cairo', sans-serif !important;
     }
     
-    .logout-btn:hover {
+    .fullscreen-sidebar-overlay .logout-btn:hover {
         background: #dc2626 !important;
         color: white !important;
-    }
-    
-    /* Mobile Header */
-    .mobile-header {
-        display: none !important;
-        position: fixed !important;
-        top: 0 !important;
-        right: 0 !important;
-        left: 0 !important;
-        height: 60px !important;
-        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
-        color: white !important;
-        align-items: center !important;
-        justify-content: space-between !important;
-        padding: 0 1rem !important;
-        z-index: 9998 !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
-    }
-    
-    .mobile-header h2 {
-        margin: 0 !important;
-        font-size: 1.1rem !important;
-        font-weight: 700 !important;
-        color: white !important;
-    }
-    
-    .menu-toggle {
-        background: white !important;
-        color: #2563eb !important;
-        border: none !important;
-        border-radius: 8px !important;
-        padding: 0.5rem 1rem !important;
-        font-size: 1.2rem !important;
-        font-weight: 700 !important;
-        cursor: pointer !important;
-        display: flex !important;
-        align-items: center !important;
-        gap: 0.5rem !important;
-    }
-    
-    /* Main Content */
-    .main-content {
-        flex: 1 !important;
-        margin-right: 260px !important;
-        padding: 2rem !important;
-        min-height: 100vh !important;
-        background: #f8fafc !important;
-    }
-    
-    /* Mobile Overlay */
-    .sidebar-overlay {
-        display: none !important;
-        position: fixed !important;
-        inset: 0 !important;
-        background: rgba(0,0,0,0.5) !important;
-        z-index: 9997 !important;
-    }
-    
-    .sidebar-overlay.show {
-        display: block !important;
-    }
-    
-    /* Close Button */
-    .close-sidebar-btn {
-        position: absolute !important;
-        top: 1rem !important;
-        left: 1rem !important;
-        background: white !important;
-        color: #0f172a !important;
-        border: none !important;
-        border-radius: 50% !important;
-        width: 32px !important;
-        height: 32px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        font-size: 1.2rem !important;
-        cursor: pointer !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-    }
-    
-    /* Responsive */
-    @media (max-width: 768px) {
-        .student-sidebar {
-            width: 280px !important;
-        }
-        
-        .main-content {
-            margin-right: 0 !important;
-            padding: 5rem 1rem 1rem !important;
-        }
-        
-        .mobile-header {
-            display: flex !important;
-        }
-        
-        .sidebar-overlay.show {
-            display: block !important;
-        }
-    }
-    
-    @media (min-width: 769px) {
-        .mobile-header {
-            display: none !important;
-        }
-        
-        .sidebar-overlay {
-            display: none !important;
-        }
     }
     </style>
     """, unsafe_allow_html=True)
 
     # ===== Initialize sidebar state =====
     if "student_sidebar_open" not in st.session_state:
-        st.session_state.student_sidebar_open = True
+        st.session_state.student_sidebar_open = False
 
-    # ===== Mobile Header =====
-    st.markdown("""
-    <div class="mobile-header">
-        <h2>🎓 بوابة الطالبات</h2>
-        <button class="menu-toggle" onclick="toggleStudentSidebar()">☰</button>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ===== JavaScript for mobile sidebar toggle =====
-    st.markdown("""
-    <script>
-    function toggleStudentSidebar() {
-        const sidebar = document.querySelector('.student-sidebar');
-        const overlay = document.querySelector('.sidebar-overlay');
-        if (sidebar && overlay) {
-            sidebar.classList.toggle('hidden');
-            overlay.classList.toggle('show');
-        }
-    }
-    
-    function closeStudentSidebar() {
-        const sidebar = document.querySelector('.student-sidebar');
-        const overlay = document.querySelector('.sidebar-overlay');
-        if (sidebar && overlay) {
-            sidebar.classList.add('hidden');
-            overlay.classList.remove('show');
-        }
-    }
-    </script>
-    """, unsafe_allow_html=True)
-
-    # ===== Sidebar Overlay (Mobile) =====
-    st.markdown('<div class="sidebar-overlay" onclick="closeStudentSidebar()"></div>', unsafe_allow_html=True)
-
-    # ===== Professional Sidebar =====
+    # ===== Full-screen Sidebar Overlay =====
     full_name = student.get("full_name", "طالبة")
     initials = get_initials(full_name)
-    menu_items = ["🏠 الرئيسية", "👤 ملفي الشخصي", "🏆 المسابقات"]
+    menu_items = ["🏠 الرئيسية", "👤 ملفي الشخصي", "🏆 المسابقات", "📊 درجاتي", "📋 سجل الاختبارات", "🔔 الإشعارات", "🚪 تسجيل الخروج"]
     current_page = st.session_state.get("student_dashboard_page", "🏠 الرئيسية")
     if current_page not in menu_items:
         current_page = menu_items[0]
         st.session_state.student_dashboard_page = current_page
 
-    # ===== Professional Sidebar using Streamlit native components =====
-    with st.sidebar:
-        st.markdown(f"<div style='text-align: center; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 1rem;'><h3 style='color: white; margin: 0;'>⛪ كنيسة الشهيدة دميانة</h3><small style='color: #ddd;'>بوابة الطالبات</small></div>", unsafe_allow_html=True)
-        
-        # User Card
-        st.markdown(f"""
-        <div style='background: white; padding: 1rem; border-radius: 10px; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1);'>
-            <div style='display: flex; align-items: center; gap: 10px;'>
-                <div style='width: 50px; height: 50px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.2rem;'>{initials}</div>
+    # Show fullscreen sidebar if open
+    if st.session_state.student_sidebar_open:
+        sidebar_html = f"""
+        <div class="fullscreen-sidebar-overlay">
+            <div class="sidebar-header">
+                <h2>🎓 بوابة الطالبات</h2>
+                <button class="close-btn" onclick="closeStudentSidebar()">✕</button>
+            </div>
+            
+            <div class="user-card">
+                <div class="user-avatar">{initials}</div>
                 <div>
-                    <strong style='color: #333;'>{full_name}</strong><br>
-                    <small style='color: #666;'>طالبة</small>
+                    <div style="font-weight: 700; font-size: 1.1rem; color: #0f172a;">{full_name}</div>
+                    <div style="font-size: 0.9rem; color: #64748b;">طالبة</div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            
+            <div class="nav-menu">
+        """
         
-        st.markdown("### 📋 القائمة")
-        
-        # Navigation buttons using Streamlit native components
         for item in menu_items:
             is_active = item == current_page
-            if st.button(
-                f"{'✅ ' if is_active else '  '}{item}",
-                key=f"student_nav_{item}",
-                use_container_width=True,
-                type="primary" if is_active else "secondary"
-            ):
-                st.session_state.student_dashboard_page = item
-                st.session_state.student_sidebar_open = True
-                st.rerun()
+            active_class = "active" if is_active else ""
+            sidebar_html += f'<button class="nav-btn {active_class}" onclick="navigateTo(\'{item}\')">{item}</button>'
         
-        st.markdown("---")
+        sidebar_html += """
+            </div>
+            
+            <div class="logout-section">
+                <button class="logout-btn" onclick="logoutStudent()">🚪 تسجيل الخروج</button>
+            </div>
+        </div>
         
-        # Logout button
-        if st.button("🚪 تسجيل الخروج", use_container_width=True, key="student_logout_btn"):
-            st.session_state.student_logged_in = False
-            st.session_state.current_student = None
-            st.session_state.student_dashboard_page = "الرئيسية"
-            st.session_state.selected_quiz_id = None
-            st.session_state.quiz_interface_started = False
+        <script>
+        function closeStudentSidebar() {
+            window.parent.postMessage({{type: 'CLOSE_STUDENT_SIDEBAR'}}, "*");
+        }}
+        
+        function navigateTo(page) {{
+            window.parent.postMessage({{type: 'STUDENT_NAVIGATE', page: page}}, "*");
+        }}
+        
+        function logoutStudent() {{
+            window.parent.postMessage({{type: 'STUDENT_LOGOUT'}}, "*");
+        }}
+        </script>
+        """
+        
+        st.markdown(sidebar_html, unsafe_allow_html=True)
+
+    # ===== Hidden iframe for JavaScript message handling =====
+    components.html(
+        """
+        <iframe id="student-sidebar-listener" style="display:none;"></iframe>
+        <script>
+        window.addEventListener('message', function(event) {
+            const data = event.data || {};
+            if (data.type === 'CLOSE_STUDENT_SIDEBAR') {
+                window.parent.postMessage({type: 'STREAMLIT_CLOSE_SIDEBAR'}, '*');
+            } else if (data.type === 'STUDENT_NAVIGATE') {
+                window.parent.postMessage({type: 'STREAMLIT_NAVIGATE', page: data.page}, '*');
+            } else if (data.type === 'STUDENT_LOGOUT') {
+                window.parent.postMessage({type: 'STREAMLIT_LOGOUT'}, '*');
+            }
+        });
+        </script>
+        """,
+        height=0,
+        scrolling=False
+    )
+
+    # ===== Top bar with Help and Menu buttons =====
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("🆘 مركز المساعدة", use_container_width=True, key="help_center_btn"):
+            st.session_state.open_help_dialog = True
+            st.rerun()
+    with col2:
+        if st.button("☰ القائمة", use_container_width=True, key="menu_toggle_btn"):
+            st.session_state.student_sidebar_open = not st.session_state.student_sidebar_open
             st.rerun()
 
     # ===== Main Content Area =====
-    st.markdown('<div class="main-content">', unsafe_allow_html=True)
-    
-    # ===== عرض الصفحة المختارة =====
     if current_page == "👤 ملفي الشخصي":
         show_student_profile_tab(db, student)
     elif current_page == "🏆 المسابقات":
         show_student_competitions_tab(db, student)
+    elif current_page == "📊 درجاتي":
+        show_student_grades_tab(db, student)
+    elif current_page == "📋 سجل الاختبارات":
+        show_student_exam_history_tab(db, student)
+    elif current_page == "🔔 الإشعارات":
+        show_student_notifications_tab(db, student)
+    elif current_page == "🚪 تسجيل الخروج":
+        st.session_state.student_logged_in = False
+        st.session_state.current_student = None
+        st.session_state.student_dashboard_page = "الرئيسية"
+        st.session_state.selected_quiz_id = None
+        st.session_state.quiz_interface_started = False
+        st.rerun()
     else:
         show_student_home_tab(db, student)
+
+
+def show_student_grades_tab(db, student):
+    """درجاتي - عرض درجات المسابقات."""
+    st.markdown(hero_header("درجاتي", "📊 درجات ونتائج المسابقات"), unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    student_id = student.get("student_id", "")
+    results = db.get_quiz_results()
+    quizzes = db.get_quizzes()
+    
+    # فلترة النتائج للطالبة الحالية
+    student_results = results[results["student_id"] == student_id] if not results.empty and "student_id" in results.columns else pd.DataFrame()
+    
+    if student_results.empty:
+        st.info("لا توجد درجات بعد.")
+        return
+    
+    # دمج بيانات المسابقات
+    if not quizzes.empty and "quiz_id" in student_results.columns:
+        student_results = student_results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
+        student_results.rename(columns={"title": "المسابقة"}, inplace=True)
+    
+    # حساب النسبة المئوية
+    if "score" in student_results.columns:
+        student_results["score"] = pd.to_numeric(student_results["score"], errors="coerce").fillna(0)
+    if "total_marks" in student_results.columns:
+        student_results["total_marks"] = pd.to_numeric(student_results["total_marks"], errors="coerce").fillna(20)
+    if "score" in student_results.columns and "total_marks" in student_results.columns:
+        student_results["النسبة"] = (student_results["score"] / student_results["total_marks"] * 100).round(1)
+    
+    # عرض النتائج المسلّمة فقط
+    if "status" in student_results.columns:
+        submitted_results = student_results[student_results["status"] == "submitted"]
+    else:
+        submitted_results = student_results
+    
+    if submitted_results.empty:
+        st.info("لا توجد نتائج مسلّمة بعد.")
+        return
+    
+    # ترتيب حسب التاريخ
+    if "submission_time" in submitted_results.columns:
+        submitted_results = submitted_results.sort_values("submission_time", ascending=False)
+    
+    # عرض الجدول
+    display_cols = ["المسابقة", "score", "total_marks", "النسبة", "submission_time", "status"]
+    available_cols = [c for c in display_cols if c in submitted_results.columns]
+    
+    st.dataframe(
+        submitted_results[available_cols].rename(columns={
+            "score": "الدرجة",
+            "total_marks": "الدرجة الكلية",
+            "submission_time": "تاريخ التسليم",
+            "status": "الحالة"
+        }),
+        use_container_width=True
+    )
+
+
+def show_student_exam_history_tab(db, student):
+    """سجل الاختبارات - عرض تاريخ جميع الاختبارات."""
+    st.markdown(hero_header("سجل الاختبارات", "📋 تاريخ جميع المسابقات والاختبارات"), unsafe_allow_html=True)
+    
+    student_id = student.get("student_id", "")
+    results = db.get_quiz_results()
+    quizzes = db.get_quizzes()
+    
+    # فلترة النتائج للطالبة الحالية
+    student_results = results[results["student_id"] == student_id] if not results.empty and "student_id" in results.columns else pd.DataFrame()
+    
+    if student_results.empty:
+        st.info("لا توجد سجلات اختبارات بعد.")
+        return
+    
+    # دمج بيانات المسابقات
+    if not quizzes.empty and "quiz_id" in student_results.columns:
+        student_results = student_results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
+        student_results.rename(columns={"title": "المسابقة"}, inplace=True)
+    
+    # ترتيب حسب التاريخ
+    if "submission_time" in student_results.columns:
+        student_results = student_results.sort_values("submission_time", ascending=False)
+    
+    # عرض الجدول
+    display_cols = ["المسابقة", "score", "status", "submission_time"]
+    available_cols = [c for c in display_cols if c in student_results.columns]
+    
+    st.dataframe(
+        student_results[available_cols].rename(columns={
+            "score": "الدرجة",
+            "submission_time": "التاريخ",
+            "status": "الحالة"
+        }),
+        use_container_width=True
+    )
+
+
+def show_student_notifications_tab(db, student):
+    """الإشعارات - عرض إشعارات الطالبة."""
+    st.markdown(hero_header("الإشعارات", "🔔 الإشعارات والرسائل"), unsafe_allow_html=True)
+    
+    student_id = student.get("student_id", "")
+    notifications = db.get_notifications(student_id)
+    
+    if notifications.empty:
+        st.info("لا توجد إشعارات حالياً.")
+        return
+    
+    # عرض الإشعارات
+    for _, notif in notifications.iterrows():
+        title = notif.get("title", "")
+        message = notif.get("message", "")
+        created_at = notif.get("created_at", "")
+        is_read = notif.get("is_read", "False")
+        
+        # تحديد لون الإشعار
+        bg_color = "#f8fafc" if is_read == "True" else "#dbeafe"
+        border_color = "#e2e8f0" if is_read == "True" else "#2563eb"
+        
+        st.markdown(f"""
+        <div style="background: {bg_color}; border: 1px solid {border_color}; border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
+            <div style="font-weight: 700; color: #0f172a; margin-bottom: 0.5rem;">{title}</div>
+            <div style="color: #64748b; margin-bottom: 0.5rem;">{message}</div>
+            <div style="font-size: 0.75rem; color: #94a3b8;">{created_at}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # زر تحديد الكل كمقروء
+    if st.button("✅ تحديد الكل كمقروء", use_container_width=True, key="mark_all_read_btn"):
+        for _, notif in notifications.iterrows():
+            if notif.get("is_read", "False") != "True":
+                db.mark_notification_read(notif.get("notification_id", ""))
+        st.success("تم تحديد جميع الإشعارات كمقروءة")
+        st.rerun()
 
 
 def show_student_home_tab(db, student):
@@ -8996,3 +8995,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
