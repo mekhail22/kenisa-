@@ -3625,86 +3625,48 @@ def show_student_dashboard(db):
         current_page = menu_items[0]
         st.session_state.student_dashboard_page = current_page
 
-    sidebar_html = f"""
-    <div class="student-sidebar {'hidden' if not st.session_state.student_sidebar_open else ''}" id="studentSidebar">
-        <button class="close-sidebar-btn" onclick="closeStudentSidebar()">✕</button>
+    # ===== Professional Sidebar using Streamlit native components =====
+    with st.sidebar:
+        st.markdown(f"<div style='text-align: center; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 1rem;'><h3 style='color: white; margin: 0;'>⛪ كنيسة الشهيدة دميانة</h3><small style='color: #ddd;'>بوابة الطالبات</small></div>", unsafe_allow_html=True)
         
-        <!-- Header -->
-        <div class="sidebar-header">
-            <h3>⛪ كنيسة الشهيدة دميانة</h3>
-            <small>بوابة الطالبات</small>
-        </div>
-        
-        <!-- User Card -->
-        <div class="sidebar-user-card">
-            <div class="user-avatar">{initials}</div>
-            <div class="user-details">
-                <strong>{full_name}</strong>
-                <span>طالبة</span>
+        # User Card
+        st.markdown(f"""
+        <div style='background: white; padding: 1rem; border-radius: 10px; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1);'>
+            <div style='display: flex; align-items: center; gap: 10px;'>
+                <div style='width: 50px; height: 50px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.2rem;'>{initials}</div>
+                <div>
+                    <strong style='color: #333;'>{full_name}</strong><br>
+                    <small style='color: #666;'>طالبة</small>
+                </div>
             </div>
         </div>
+        """, unsafe_allow_html=True)
         
-        <!-- Navigation -->
-        <div class="sidebar-nav">
-    """
-    
-    for item in menu_items:
-        active_class = "active" if item == current_page else ""
-        sidebar_html += f"""
-            <button class="nav-item {active_class}" onclick="navigateTo('{item}')">
-                <span>{item}</span>
-            </button>
-        """
-    
-    sidebar_html += """
-        </div>
+        st.markdown("### 📋 القائمة")
         
-        <!-- Footer with Logout -->
-        <div class="sidebar-footer">
-            <button class="logout-btn" onclick="handleLogout()">
-                <span>🚪</span>
-                <span>تسجيل الخروج</span>
-            </button>
-        </div>
-    </div>
-    
-    <script>
-    function navigateTo(page) {
-        // Set session state and rerun
-        const data = {{page: page}};
-        fetch(window.location.href, {
-            method: 'POST',
-            headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify(data)
-        }).then(() => window.location.reload());
-    }
-    
-    function handleLogout() {
-        if (confirm('هل أنت متأكدة من تسجيل الخروج؟')) {
-            window.location.href = window.location.pathname + '?logout=true';
-        }
-    }
-    </script>
-    """
-    
-    st.markdown(sidebar_html, unsafe_allow_html=True)
-
-    # ===== Hidden buttons for navigation (Streamlit interaction) =====
-    st.markdown('<div style="display: none;">', unsafe_allow_html=True)
-    for item in menu_items:
-        if st.button(f"nav_{item}", key=f"student_nav_{item}"):
-            st.session_state.student_dashboard_page = item
-            st.session_state.student_sidebar_open = True
+        # Navigation buttons using Streamlit native components
+        for item in menu_items:
+            is_active = item == current_page
+            if st.button(
+                f"{'✅ ' if is_active else '  '}{item}",
+                key=f"student_nav_{item}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary"
+            ):
+                st.session_state.student_dashboard_page = item
+                st.session_state.student_sidebar_open = True
+                st.rerun()
+        
+        st.markdown("---")
+        
+        # Logout button
+        if st.button("🚪 تسجيل الخروج", use_container_width=True, key="student_logout_btn"):
+            st.session_state.student_logged_in = False
+            st.session_state.current_student = None
+            st.session_state.student_dashboard_page = "الرئيسية"
+            st.session_state.selected_quiz_id = None
+            st.session_state.quiz_interface_started = False
             st.rerun()
-    
-    if st.button("logout", key="student_logout_btn"):
-        st.session_state.student_logged_in = False
-        st.session_state.current_student = None
-        st.session_state.student_dashboard_page = "الرئيسية"
-        st.session_state.selected_quiz_id = None
-        st.session_state.quiz_interface_started = False
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
     # ===== Main Content Area =====
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
