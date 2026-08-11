@@ -777,6 +777,13 @@ def get_design_css():
         #MainMenu {{ visibility: hidden; }}
         footer {{ visibility: hidden; }}
         [data-testid="InputInstructions"] {{ display: none !important; }}
+        [data-testid="stToolbar"],
+        [data-testid="stDeployButton"],
+        [data-testid="stStatusWidget"],
+        [data-testid="baseButton-header"] {{
+            display: none !important;
+            visibility: hidden !important;
+        }}
 
         /* ===== Scrollbar ===== */
         ::-webkit-scrollbar {{ width: 8px !important; height: 8px !important; }}
@@ -812,6 +819,116 @@ def get_design_css():
 def inject_css():
     """Inject the unified premium design system."""
     st.markdown(get_design_css(), unsafe_allow_html=True)
+
+
+def inject_top_bar_css():
+    """Styles for the global top bar (Help + Menu buttons)."""
+    st.markdown("""
+    <style>
+    .app-top-bar {
+        direction: rtl;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.25rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    .app-top-bar [data-testid="stButton"] > button {
+        background-color: #2563eb !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 12px !important;
+        min-height: 48px !important;
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22) !important;
+    }
+    .app-top-bar [data-testid="stButton"] > button:hover {
+        background-color: #1d4ed8 !important;
+        color: #ffffff !important;
+    }
+    .app-top-title-center {
+        text-align: center;
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin: 0.65rem 0 0.85rem 0;
+        line-height: 1.45;
+    }
+    @media (max-width: 480px) {
+        .app-top-bar [data-testid="stButton"] > button {
+            min-height: 52px !important;
+            font-size: 1rem !important;
+        }
+        .app-top-title-center { font-size: 0.92rem; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def render_help_center_button():
+    """Blue Help Center button — call at most once per Streamlit run."""
+    if st.button("❓ مركز المساعدة", key="app_help_center_btn", use_container_width=True):
+        st.session_state.open_help_dialog = True
+        st.rerun()
+
+
+def render_student_menu_button():
+    """Blue menu button for student portal — call at most once per Streamlit run."""
+    if st.button("☰", key="app_student_menu_btn", help="القائمة", use_container_width=True):
+        st.session_state.sidebar_open = not st.session_state.get("sidebar_open", False)
+        st.rerun()
+
+
+def render_student_top_bar(current_page):
+    """Single student top bar: Help (left), Menu (right), optional competitions title below."""
+    inject_top_bar_css()
+    st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
+    is_competitions = current_page == "🏆 المسابقات"
+    if is_competitions:
+        c_left, c_right = st.columns(2)
+        with c_left:
+            render_help_center_button()
+        with c_right:
+            render_student_menu_button()
+        st.markdown(
+            '<p class="app-top-title-center">المسابقات والاختبارات 🏆</p>',
+            unsafe_allow_html=True,
+        )
+    else:
+        c_left, _c_mid, c_right = st.columns([1, 0.15, 1])
+        with c_left:
+            render_help_center_button()
+        with c_right:
+            render_student_menu_button()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_login_top_bar():
+    """Help Center on login page."""
+    inject_top_bar_css()
+    st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
+    c1, _c2, _c3 = st.columns([1, 1, 1])
+    with c1:
+        render_help_center_button()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_admin_top_bar(show_menu_button=False):
+    """Help Center (+ optional menu) for admin/staff pages."""
+    inject_top_bar_css()
+    st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
+    if show_menu_button:
+        c_left, c_right = st.columns(2)
+        with c_left:
+            render_help_center_button()
+        with c_right:
+            if st.button("☰", key="app_admin_menu_btn", help="القائمة", use_container_width=True):
+                st.session_state.show_sidebar = True
+                st.rerun()
+    else:
+        c1, _c2, _c3 = st.columns([1, 1, 1])
+        with c1:
+            render_help_center_button()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def inject_user_cards_css():
@@ -2836,6 +2953,7 @@ def show_initialization(db):
 
 
 def show_login_page(db, jwt_secret):
+    render_login_top_bar()
     # Hero banner for login page
     st.markdown(hero_header("نظام إدارة الكنيسة", "كنيسة الشهيدة دميانة"), unsafe_allow_html=True)
     show_initialization(db)
@@ -3606,119 +3724,6 @@ STUDENT_MENU_ITEMS = [
     "🚪 تسجيل الخروج",
 ]
 
-STUDENT_PAGE_TITLES = {
-    "🏠 الرئيسية": "الرئيسية",
-    "👤 ملفي الشخصي": "الملف الشخصي",
-    "🏆 المسابقات": "المسابقات والاختبارات 🏆",
-    "📊 درجاتي": "النتائج",
-    "📋 سجل الامتحانات": "سجل الامتحانات",
-    "🔔 الإشعارات": "الإشعارات",
-    "🚪 تسجيل الخروج": "تسجيل الخروج",
-}
-
-
-def get_student_header_title(current_page):
-    """Dynamic header title based on current student page/context."""
-    if st.session_state.get("review_result_id") and st.session_state.get("review_result_type"):
-        return "مراجعة المسابقة 📝"
-    if st.session_state.get("assessment_confirmation"):
-        return "تأكيد دخول الاختبار"
-    if st.session_state.get("quiz_interface_started"):
-        return "الاختبار"
-    return STUDENT_PAGE_TITLES.get(current_page, current_page)
-
-
-def inject_student_portal_css():
-    """Unified student portal CSS: header, sidebar hide, RTL, mobile."""
-    st.markdown("""
-    <style>
-    .student-portal-wrap { direction: rtl; font-family: 'Cairo', sans-serif; max-width: 100%; overflow-x: hidden; }
-    .student-header-block {
-        background: #fff;
-        border-bottom: 1px solid #e5e7eb;
-        box-shadow: 0 1px 4px rgba(15,23,42,0.06);
-        padding: 0.5rem 0.25rem 0.65rem 0.25rem;
-        margin: -1rem -1rem 1rem -1rem;
-        position: sticky;
-        top: 0;
-        z-index: 200;
-        direction: ltr;
-    }
-    .student-header-title {
-        text-align: center;
-        font-size: 1rem;
-        font-weight: 800;
-        color: #0f172a;
-        margin: 0.55rem 0 0 0;
-        padding: 0 0.5rem;
-        line-height: 1.45;
-        word-wrap: break-word;
-        direction: rtl;
-    }
-    /* Blue header buttons */
-    .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child button,
-    .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:last-child button {
-        border-radius: 12px !important;
-        font-weight: 700 !important;
-        min-height: 44px !important;
-        font-family: 'Cairo', sans-serif !important;
-    }
-    .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child button {
-        background: #2563eb !important;
-        color: #fff !important;
-        border: none !important;
-        font-size: 0.82rem !important;
-        padding: 0.5rem 0.85rem !important;
-    }
-    .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:last-child button {
-        background: #2563eb !important;
-        color: #fff !important;
-        border: none !important;
-        font-size: 1.35rem !important;
-        padding: 0.35rem 0.75rem !important;
-        min-width: 48px !important;
-    }
-    /* Hide Streamlit default sidebar +/- controls */
-    [data-testid="collapsedControl"],
-    [data-testid="stSidebarCollapsedControl"],
-    [data-testid="stSidebarCollapseButton"],
-    button[kind="header"],
-    [data-testid="stSidebar"] > div:first-child button {
-        display: none !important;
-        visibility: hidden !important;
-        width: 0 !important;
-        height: 0 !important;
-        overflow: hidden !important;
-        pointer-events: none !important;
-    }
-    @media (max-width: 480px) {
-        .student-header-title { font-size: 0.92rem; }
-        .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child button {
-            font-size: 0.78rem !important;
-        }
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-
-def render_student_page_header(page_title):
-    """
-    Unified student header — rendered ONCE per page view.
-    Row 1: help (left) + menu (right). Row 2: centered title below.
-    """
-    st.markdown('<div class="student-header-block">', unsafe_allow_html=True)
-    col_help, col_spacer, col_menu = st.columns([2.2, 3.6, 1])
-    with col_help:
-        if st.button("❓ مركز المساعدة", key="student_header_help_btn", use_container_width=True):
-            st.session_state.open_help_dialog = True
-            st.rerun()
-    with col_menu:
-        if st.button("☰", key="student_header_menu_btn", help="القائمة", use_container_width=True):
-            st.session_state.sidebar_open = not st.session_state.get("sidebar_open", False)
-            st.rerun()
-    st.markdown(f'<p class="student-header-title">{html.escape(str(page_title))}</p>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
 
 def is_availability_true(value):
     """تحقق آمن من قيمة التوفر (true/True/TRUE/'true'/1/yes)."""
@@ -3943,6 +3948,7 @@ def show_student_dashboard(db):
     st.session_state.current_student = student
 
     if st.session_state.get("quiz_interface_started", False):
+        render_student_top_bar(st.session_state.get("student_dashboard_page", "🏠 الرئيسية"))
         show_student_assessment_interface(db)
         return
 
@@ -3959,10 +3965,7 @@ def show_student_dashboard(db):
     if st.session_state.sidebar_open:
         render_student_sidebar(db, student, menu_items, current_page)
 
-    inject_student_portal_css()
-    header_title = get_student_header_title(current_page)
-    st.markdown('<div class="student-portal-wrap">', unsafe_allow_html=True)
-    render_student_page_header(header_title)
+    render_student_top_bar(current_page)
 
     if current_page == "👤 ملفي الشخصي":
         show_student_profile_tab(db, student)
@@ -3978,8 +3981,6 @@ def show_student_dashboard(db):
         student_logout(db)
     else:
         show_student_home_tab(db, student)
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def show_student_grades_tab(db, student):
@@ -4149,7 +4150,7 @@ def show_student_notifications_tab(db, student):
 
 
 def render_student_attempt_review(db, student, result_id, result_type):
-    """مراجعة تفصيلية — بطاقات أسئلة مدمجة (بدون header — يُعرض من Dashboard)."""
+    """مراجعة تفصيلية — بطاقات أسئلة مدمجة."""
     inject_competitions_page_css()
 
     student_id = student.get("student_id", "")
@@ -4400,6 +4401,13 @@ def inject_competitions_page_css():
     st.markdown("""
     <style>
     .comp-page { direction: rtl; font-family: 'Cairo', sans-serif; max-width: 100%; overflow-x: hidden; }
+    .comp-top-header {
+        display: flex; align-items: center; justify-content: space-between;
+        background: #fff; border-bottom: 1px solid #e5e7eb;
+        padding: 0.65rem 0.25rem; margin: -1rem -1rem 1rem -1rem;
+        box-shadow: 0 1px 3px rgba(15,23,42,0.06); position: sticky; top: 0; z-index: 100;
+    }
+    .comp-header-title { font-size: 1rem; font-weight: 800; color: #0f172a; text-align: center; flex: 1; margin: 0 0.5rem; line-height: 1.4; }
     .comp-hero {
         position: relative; border-radius: 16px; overflow: hidden; min-height: 130px;
         margin-bottom: 1.25rem; background-size: cover; background-position: center;
@@ -4472,9 +4480,32 @@ def inject_competitions_page_css():
     .comp-q-wrong { color: #dc2626; }
     .comp-q-neutral { color: #64748b; }
     .comp-empty { text-align: center; color: #64748b; font-size: 0.88rem; padding: 1.5rem 1rem; }
+    div[data-testid="stButton"] button.comp-menu-btn {
+        background: #2563eb !important; color: #fff !important; border: none !important;
+        border-radius: 10px !important; min-width: 44px !important; min-height: 44px !important;
+        font-size: 1.2rem !important; padding: 0.4rem 0.65rem !important;
+    }
+    div[data-testid="stButton"] button.comp-help-btn {
+        background: #eff6ff !important; color: #2563eb !important; border: 1px solid #bfdbfe !important;
+        border-radius: 10px !important; font-size: 0.78rem !important; font-weight: 700 !important;
+        padding: 0.45rem 0.65rem !important;
+    }
+    div[data-testid="stButton"] button.comp-nav-btn {
+        background: #fff !important; color: #2563eb !important; border: 2px solid #2563eb !important;
+        border-radius: 12px !important; font-weight: 700 !important; font-size: 0.82rem !important;
+    }
+    div[data-testid="stButton"] button.comp-start-btn {
+        background: #2563eb !important; color: #fff !important; border: none !important;
+        border-radius: 10px !important; font-weight: 700 !important; font-size: 0.82rem !important;
+    }
+    div[data-testid="stButton"] button.comp-review-btn {
+        background: #eff6ff !important; color: #1d4ed8 !important; border: 1px solid #bfdbfe !important;
+        border-radius: 10px !important; font-weight: 700 !important; font-size: 0.82rem !important;
+    }
     @media (max-width: 480px) {
         .comp-stat-grid { grid-template-columns: 1fr; }
         .comp-q-row { grid-template-columns: 1fr; }
+        .comp-header-title { font-size: 0.88rem; }
         .comp-hero-title { font-size: 1.25rem; }
         .comp-nav-grid { grid-template-columns: 1fr; }
     }
@@ -9671,19 +9702,11 @@ def main():
                 errors = validate_data_integrity(db)
                 st.session_state.data_errors = errors
                 st.session_state.data_validated = True
+            render_admin_top_bar(show_menu_button=not st.session_state.show_sidebar)
             if not st.session_state.show_sidebar:
                 st.markdown("""<style>section[data-testid="stSidebar"] { transform: translateX(100%) !important; }</style>""", unsafe_allow_html=True)
-                st.markdown('<div class="floating-show-btn"></div>', unsafe_allow_html=True)
-                if st.button("القائمه", key="show_sidebar_btn"):
-                    st.session_state.show_sidebar = True
-                    st.rerun()
             else:
                 st.markdown("""<style>section[data-testid="stSidebar"] { transform: translateX(0) !important; }</style>""", unsafe_allow_html=True)
-                # Add backdrop for mobile
-                st.markdown("""
-                <div class="sidebar-backdrop" onclick="document.querySelector('section[data-testid=\"stSidebar\"]').style.transform='translateX(100%)';">
-                </div>
-                """, unsafe_allow_html=True)
                 choice = show_sidebar_navigation(db)
             if not st.session_state.show_sidebar:
                 choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
