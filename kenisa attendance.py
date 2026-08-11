@@ -3294,9 +3294,19 @@ def show_student_dashboard(db):
     # ===== CSS للقائمة الكاملة الشاشة =====
     st.markdown("""
     <style>
-    /* Hide default Streamlit sidebar */
+    /* Use Streamlit sidebar as a full-screen overlay for student dashboard when opened */
     section[data-testid="stSidebar"] {
-        display: none !important;
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        z-index: 999999 !important;
+        border-radius: 0 !important;
+        overflow-y: auto !important;
+        background: #ffffff !important;
     }
     
     /* Full-screen overlay menu */
@@ -3443,76 +3453,35 @@ def show_student_dashboard(db):
         current_page = menu_items[0]
         st.session_state.student_dashboard_page = current_page
 
-    # Show fullscreen sidebar if open
+    # Show fullscreen sidebar if open (Streamlit-native implementation)
     if st.session_state.student_sidebar_open:
-        sidebar_html = f"""
-        <div class="fullscreen-sidebar-overlay">
-            <div class="sidebar-header">
-                <h2>🎓 بوابة الطالبات</h2>
-                <button class="close-btn" onclick="closeStudentSidebar()">✕</button>
-            </div>
-            
-            <div class="user-card">
-                <div class="user-avatar">{initials}</div>
-                <div>
-                    <div style="font-weight: 700; font-size: 1.1rem; color: #0f172a;">{full_name}</div>
-                    <div style="font-size: 0.9rem; color: #64748b;">طالبة</div>
-                </div>
-            </div>
-            
-            <div class="nav-menu">
-        """
-        
-        for item in menu_items:
-            is_active = item == current_page
-            active_class = "active" if is_active else ""
-            sidebar_html += f'<button class="nav-btn {active_class}" onclick="navigateTo(\'{item}\')">{item}</button>'
-        
-        sidebar_html += """
-            </div>
-            
-            <div class="logout-section">
-                <button class="logout-btn" onclick="logoutStudent()">🚪 تسجيل الخروج</button>
-            </div>
-        </div>
-        
-        <script>
-        function closeStudentSidebar() {
-            window.parent.postMessage({{type: 'CLOSE_STUDENT_SIDEBAR'}}, "*");
-        }}
-        
-        function navigateTo(page) {{
-            window.parent.postMessage({{type: 'STUDENT_NAVIGATE', page: page}}, "*");
-        }}
-        
-        function logoutStudent() {{
-            window.parent.postMessage({{type: 'STUDENT_LOGOUT'}}, "*");
-        }}
-        </script>
-        """
-        
-        st.markdown(sidebar_html, unsafe_allow_html=True)
+        with st.sidebar:
+            # Header: student name and close button
+            col_main, col_close = st.columns([9, 1])
+            with col_main:
+                st.markdown(f"### 👤 {full_name}")
+                st.markdown(f"<div style='font-size:0.9rem; color:#64748b;'>طالبة</div>", unsafe_allow_html=True)
+            with col_close:
+                if st.button("✕", key="student_sidebar_close_btn", use_container_width=True):
+                    st.session_state.student_sidebar_open = False
+                    st.rerun()
 
-    # ===== Hidden iframe for JavaScript message handling =====
-    components.html(
-        """
-        <iframe id="student-sidebar-listener" style="display:none;"></iframe>
-        <script>
-        window.addEventListener('message', function(event) {
-            const data = event.data || {};
-            if (data.type === 'CLOSE_STUDENT_SIDEBAR') {
-                window.parent.postMessage({type: 'STREAMLIT_CLOSE_SIDEBAR'}, '*');
-            } else if (data.type === 'STUDENT_NAVIGATE') {
-                window.parent.postMessage({type: 'STREAMLIT_NAVIGATE', page: data.page}, '*');
-            } else if (data.type === 'STUDENT_LOGOUT') {
-                window.parent.postMessage({type: 'STREAMLIT_LOGOUT'}, '*');
-            }
-        });
-        </script>
-        """,
-        height=0,
-        scrolling=False
-    )
+            st.markdown("---")
+
+            for item in menu_items:
+                if st.button(item, key=f"student_nav_{item}", use_container_width=True):
+                    st.session_state.student_dashboard_page = item
+                    st.session_state.student_sidebar_open = False
+                    st.rerun()
+
+            st.markdown("---")
+
+            if st.button("🚪 تسجيل الخروج", use_container_width=True, key="student_logout_btn"):
+                logout(db)
+
+    # ===== Hidden iframe for JavaScript message handling (removed) =====
+    # The old JS-based message bridge was removed in favor of Streamlit-native navigation
+
 
     # ===== Top bar with Help and Menu buttons =====
     col1, col2 = st.columns([1, 1])
@@ -3708,16 +3677,6 @@ def show_student_home_tab(db, student):
     col4.metric("📊 متوسط الدرجات", f"{pd.to_numeric(submitted_results['score'], errors='coerce').mean():.1f}" if not submitted_results.empty and "score" in submitted_results.columns else "—")
 
     st.markdown("---")
-    st.markdown("### 📋 بياناتي")
-    col_info1, col_info2 = st.columns(2)
-    with col_info1:
-        st.markdown(f"**👤 الاسم:** {student.get('full_name', '')}")
-        st.markdown(f"**🆔 الكود:** {student.get('student_code', '')}")
-        st.markdown(f"**🏫 الفصل:** {section_name or '—'}")
-    with col_info2:
-        st.markdown(f"**📱 الهاتف:** {student.get('phone', '—') or '—'}")
-        st.markdown(f"**🏫 المدرسة:** {student.get('school', '—') or '—'}")
-        st.markdown(f"**📌 الحالة:** {'نشطة' if student.get('status', 'active') == 'active' else 'غير نشطة'}")
 
 
 def show_student_profile_tab(db, student):
@@ -3743,19 +3702,6 @@ def show_student_profile_tab(db, student):
 
     profile_edit_used = str(student.get("profile_edit_used", "")).strip().lower() in ["true", "1", "yes", "نعم"]
 
-    # عرض البيانات
-    st.markdown("### 📋 بياناتي الحالية")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**👤 الاسم الكامل:** {student.get('full_name', '')}")
-        st.markdown(f"**📱 الهاتف:** {student.get('phone', '—') or '—'}")
-        st.markdown(f"**📱 رقم ولي الأمر:** {student.get('parent_phone', '—') or '—'}")
-        st.markdown(f"**🎂 تاريخ الميلاد:** {student.get('birthdate', '—') or '—'}")
-    with col2:
-        st.markdown(f"**🏫 الفصل:** {section_name or '—'}")
-        st.markdown(f"**🏫 المدرسة:** {student.get('school', '—') or '—'}")
-        st.markdown(f"**📍 العنوان:** {student.get('address', '—') or '—'}")
-        st.markdown(f"**📌 الحالة:** {'نشطة' if student.get('status', 'active') == 'active' else 'غير نشطة'}")
 
     st.markdown("---")
 
@@ -8886,9 +8832,6 @@ def main():
         except Exception:
             pass
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
-    if st.button("🆘 مركز المساعدة", key="fixed_help_btn"):
-        st.session_state.open_help_dialog = True
-        st.rerun()
     if st.session_state.get("student_logged_in", False):
         show_student_dashboard(db)
     elif st.session_state.get("quiz_interface_started", False):
@@ -8995,4 +8938,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
