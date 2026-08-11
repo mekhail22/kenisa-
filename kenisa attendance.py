@@ -3606,6 +3606,119 @@ STUDENT_MENU_ITEMS = [
     "🚪 تسجيل الخروج",
 ]
 
+STUDENT_PAGE_TITLES = {
+    "🏠 الرئيسية": "الرئيسية",
+    "👤 ملفي الشخصي": "الملف الشخصي",
+    "🏆 المسابقات": "المسابقات والاختبارات 🏆",
+    "📊 درجاتي": "النتائج",
+    "📋 سجل الامتحانات": "سجل الامتحانات",
+    "🔔 الإشعارات": "الإشعارات",
+    "🚪 تسجيل الخروج": "تسجيل الخروج",
+}
+
+
+def get_student_header_title(current_page):
+    """Dynamic header title based on current student page/context."""
+    if st.session_state.get("review_result_id") and st.session_state.get("review_result_type"):
+        return "مراجعة المسابقة 📝"
+    if st.session_state.get("assessment_confirmation"):
+        return "تأكيد دخول الاختبار"
+    if st.session_state.get("quiz_interface_started"):
+        return "الاختبار"
+    return STUDENT_PAGE_TITLES.get(current_page, current_page)
+
+
+def inject_student_portal_css():
+    """Unified student portal CSS: header, sidebar hide, RTL, mobile."""
+    st.markdown("""
+    <style>
+    .student-portal-wrap { direction: rtl; font-family: 'Cairo', sans-serif; max-width: 100%; overflow-x: hidden; }
+    .student-header-block {
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
+        box-shadow: 0 1px 4px rgba(15,23,42,0.06);
+        padding: 0.5rem 0.25rem 0.65rem 0.25rem;
+        margin: -1rem -1rem 1rem -1rem;
+        position: sticky;
+        top: 0;
+        z-index: 200;
+        direction: ltr;
+    }
+    .student-header-title {
+        text-align: center;
+        font-size: 1rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin: 0.55rem 0 0 0;
+        padding: 0 0.5rem;
+        line-height: 1.45;
+        word-wrap: break-word;
+        direction: rtl;
+    }
+    /* Blue header buttons */
+    .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child button,
+    .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:last-child button {
+        border-radius: 12px !important;
+        font-weight: 700 !important;
+        min-height: 44px !important;
+        font-family: 'Cairo', sans-serif !important;
+    }
+    .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child button {
+        background: #2563eb !important;
+        color: #fff !important;
+        border: none !important;
+        font-size: 0.82rem !important;
+        padding: 0.5rem 0.85rem !important;
+    }
+    .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:last-child button {
+        background: #2563eb !important;
+        color: #fff !important;
+        border: none !important;
+        font-size: 1.35rem !important;
+        padding: 0.35rem 0.75rem !important;
+        min-width: 48px !important;
+    }
+    /* Hide Streamlit default sidebar +/- controls */
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarCollapseButton"],
+    button[kind="header"],
+    [data-testid="stSidebar"] > div:first-child button {
+        display: none !important;
+        visibility: hidden !important;
+        width: 0 !important;
+        height: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+    }
+    @media (max-width: 480px) {
+        .student-header-title { font-size: 0.92rem; }
+        .student-header-block div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child button {
+            font-size: 0.78rem !important;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def render_student_page_header(page_title):
+    """
+    Unified student header — rendered ONCE per page view.
+    Row 1: help (left) + menu (right). Row 2: centered title below.
+    """
+    st.markdown('<div class="student-header-block">', unsafe_allow_html=True)
+    col_help, col_spacer, col_menu = st.columns([2.2, 3.6, 1])
+    with col_help:
+        if st.button("❓ مركز المساعدة", key="student_header_help_btn", use_container_width=True):
+            st.session_state.open_help_dialog = True
+            st.rerun()
+    with col_menu:
+        if st.button("☰", key="student_header_menu_btn", help="القائمة", use_container_width=True):
+            st.session_state.sidebar_open = not st.session_state.get("sidebar_open", False)
+            st.rerun()
+    st.markdown(f'<p class="student-header-title">{html.escape(str(page_title))}</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 
 def is_availability_true(value):
     """تحقق آمن من قيمة التوفر (true/True/TRUE/'true'/1/yes)."""
@@ -3846,17 +3959,10 @@ def show_student_dashboard(db):
     if st.session_state.sidebar_open:
         render_student_sidebar(db, student, menu_items, current_page)
 
-    # Header bar — competitions page renders its own header
-    if current_page != "🏆 المسابقات":
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("🆘 مركز المساعدة", use_container_width=True, key="help_center_btn"):
-                st.session_state.open_help_dialog = True
-                st.rerun()
-        with col2:
-            if st.button("☰ القائمة", use_container_width=True, key="menu_toggle_btn"):
-                st.session_state.sidebar_open = not st.session_state.sidebar_open
-                st.rerun()
+    inject_student_portal_css()
+    header_title = get_student_header_title(current_page)
+    st.markdown('<div class="student-portal-wrap">', unsafe_allow_html=True)
+    render_student_page_header(header_title)
 
     if current_page == "👤 ملفي الشخصي":
         show_student_profile_tab(db, student)
@@ -3872,6 +3978,8 @@ def show_student_dashboard(db):
         student_logout(db)
     else:
         show_student_home_tab(db, student)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def show_student_grades_tab(db, student):
@@ -4041,9 +4149,8 @@ def show_student_notifications_tab(db, student):
 
 
 def render_student_attempt_review(db, student, result_id, result_type):
-    """مراجعة تفصيلية — بطاقات أسئلة مدمجة."""
+    """مراجعة تفصيلية — بطاقات أسئلة مدمجة (بدون header — يُعرض من Dashboard)."""
     inject_competitions_page_css()
-    render_competitions_page_header()
 
     student_id = student.get("student_id", "")
     attempt = verify_student_owns_result(db, student_id, result_id, result_type)
@@ -4293,13 +4400,6 @@ def inject_competitions_page_css():
     st.markdown("""
     <style>
     .comp-page { direction: rtl; font-family: 'Cairo', sans-serif; max-width: 100%; overflow-x: hidden; }
-    .comp-top-header {
-        display: flex; align-items: center; justify-content: space-between;
-        background: #fff; border-bottom: 1px solid #e5e7eb;
-        padding: 0.65rem 0.25rem; margin: -1rem -1rem 1rem -1rem;
-        box-shadow: 0 1px 3px rgba(15,23,42,0.06); position: sticky; top: 0; z-index: 100;
-    }
-    .comp-header-title { font-size: 1rem; font-weight: 800; color: #0f172a; text-align: center; flex: 1; margin: 0 0.5rem; line-height: 1.4; }
     .comp-hero {
         position: relative; border-radius: 16px; overflow: hidden; min-height: 130px;
         margin-bottom: 1.25rem; background-size: cover; background-position: center;
@@ -4372,52 +4472,14 @@ def inject_competitions_page_css():
     .comp-q-wrong { color: #dc2626; }
     .comp-q-neutral { color: #64748b; }
     .comp-empty { text-align: center; color: #64748b; font-size: 0.88rem; padding: 1.5rem 1rem; }
-    div[data-testid="stButton"] button.comp-menu-btn {
-        background: #2563eb !important; color: #fff !important; border: none !important;
-        border-radius: 10px !important; min-width: 44px !important; min-height: 44px !important;
-        font-size: 1.2rem !important; padding: 0.4rem 0.65rem !important;
-    }
-    div[data-testid="stButton"] button.comp-help-btn {
-        background: #eff6ff !important; color: #2563eb !important; border: 1px solid #bfdbfe !important;
-        border-radius: 10px !important; font-size: 0.78rem !important; font-weight: 700 !important;
-        padding: 0.45rem 0.65rem !important;
-    }
-    div[data-testid="stButton"] button.comp-nav-btn {
-        background: #fff !important; color: #2563eb !important; border: 2px solid #2563eb !important;
-        border-radius: 12px !important; font-weight: 700 !important; font-size: 0.82rem !important;
-    }
-    div[data-testid="stButton"] button.comp-start-btn {
-        background: #2563eb !important; color: #fff !important; border: none !important;
-        border-radius: 10px !important; font-weight: 700 !important; font-size: 0.82rem !important;
-    }
-    div[data-testid="stButton"] button.comp-review-btn {
-        background: #eff6ff !important; color: #1d4ed8 !important; border: 1px solid #bfdbfe !important;
-        border-radius: 10px !important; font-weight: 700 !important; font-size: 0.82rem !important;
-    }
     @media (max-width: 480px) {
         .comp-stat-grid { grid-template-columns: 1fr; }
         .comp-q-row { grid-template-columns: 1fr; }
-        .comp-header-title { font-size: 0.88rem; }
         .comp-hero-title { font-size: 1.25rem; }
         .comp-nav-grid { grid-template-columns: 1fr; }
     }
     </style>
     """, unsafe_allow_html=True)
-
-
-def render_competitions_page_header():
-    """Top header: menu (right), title (center), help (left) — one menu button only."""
-    h_left, h_center, h_right = st.columns([1.2, 2.6, 1])
-    with h_right:
-        if st.button("☰", key="comp_menu_btn", help="القائمة", use_container_width=True):
-            st.session_state.sidebar_open = not st.session_state.get("sidebar_open", False)
-            st.rerun()
-    with h_center:
-        st.markdown('<p class="comp-header-title">المسابقات والاختبارات 🏆</p>', unsafe_allow_html=True)
-    with h_left:
-        if st.button("❓ مركز المساعدة", key="comp_help_btn", use_container_width=True):
-            st.session_state.open_help_dialog = True
-            st.rerun()
 
 
 def render_competitions_hero():
@@ -4446,7 +4508,6 @@ def show_student_competitions_tab(db, student):
     """🏆 المسابقات — واجهة موحدة مطابقة للتصميم المرجعي."""
     inject_competitions_page_css()
     st.markdown('<div class="comp-page">', unsafe_allow_html=True)
-    render_competitions_page_header()
     render_competitions_hero()
 
     student_id = student.get("student_id", "")
