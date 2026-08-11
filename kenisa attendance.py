@@ -114,6 +114,245 @@ def format_cairo_time(dt):
     return dt.astimezone(CAIRO_TZ).strftime("%Y-%m-%d %I:%M:%S %p")
 
 
+_ARABIC_DAYS = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
+_ARABIC_MONTHS = [
+    "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+    "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
+]
+
+
+def format_arabic_datetime(value):
+    """تنسيق تاريخ/وقت مقروء بالعربية (توقيت القاهرة)."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "—"
+    if isinstance(value, str) and not value.strip():
+        return "—"
+    try:
+        dt = pd.to_datetime(value)
+        if hasattr(dt, "to_pydatetime"):
+            dt = dt.to_pydatetime()
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=CAIRO_TZ)
+        else:
+            dt = dt.astimezone(CAIRO_TZ)
+        day_name = _ARABIC_DAYS[dt.weekday()]
+        month_name = _ARABIC_MONTHS[dt.month - 1]
+        hour, minute = dt.hour, dt.minute
+        period = "صباحًا" if hour < 12 else "مساءً"
+        display_hour = hour % 12 or 12
+        return f"{day_name}، {dt.day} {month_name} {dt.year} — {display_hour:02d}:{minute:02d} {period}"
+    except Exception:
+        return str(value).split("T")[0] if "T" in str(value) else str(value)
+
+
+ADMIN_PAGE_TITLES = {
+    "🏠 لوحة التحكم": "لوحة التحكم 🏠",
+    "🔔 الإشعارات": "الإشعارات 🔔",
+    "👥 إدارة الأعضاء": "إدارة الأعضاء 👥",
+    "🏫 إدارة المراحل الدراسية": "المراحل الدراسية 🏫",
+    "📚 إدارة الفصول": "إدارة الفصول 📚",
+    "📋 الحضور": "تسجيل الحضور 📋",
+    "💬 الافتقاد": "متابعة الافتقاد 💬",
+    "📷 ماسح QR": "ماسح QR 📷",
+    "📝 المسابقات والاختبارات": "المسابقات والاختبارات 🏆",
+    "📝 إدارة الامتحانات": "الامتحانات 📋",
+    "📊 التقارير والإحصائيات": "التقارير والإحصائيات 📊",
+    "📅 إدارة الفعاليات": "إدارة الفعاليات 📅",
+    "📜 سجل العمليات": "سجل العمليات 📜",
+    "🔒 تغيير كلمة المرور": "تغيير كلمة المرور 🔒",
+}
+
+STUDENT_PAGE_TITLES = {
+    "🏠 الرئيسية": "الرئيسية 🏠",
+    "👤 ملفي الشخصي": "الملف الشخصي 👤",
+    "🏆 المسابقات": "المسابقات والاختبارات 🏆",
+    "📊 درجاتي": "درجاتي ⭐",
+    "📋 سجل الامتحانات": "سجل الامتحانات 📋",
+    "🔔 الإشعارات": "الإشعارات 🔔",
+    "🚪 تسجيل الخروج": "تسجيل الخروج 🚪",
+}
+
+
+def inject_global_header_css():
+    if st.session_state.get("_global_header_css"):
+        return
+    st.session_state._global_header_css = True
+    st.markdown("""
+    <style>
+    .global-app-header {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 1000 !important;
+        background: #ffffff !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06) !important;
+        margin: -1rem -1rem 1.25rem -1rem !important;
+        padding: 0.65rem 0.75rem !important;
+        direction: rtl !important;
+    }
+    .global-app-header + div[data-testid="stHorizontalBlock"] {
+        align-items: center !important;
+        gap: 0.35rem !important;
+    }
+    .global-header-title-wrap {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        min-height: 48px !important;
+        padding: 0 0.25rem !important;
+    }
+    .global-header-title {
+        margin: 0 !important;
+        padding: 0 !important;
+        font-family: 'Cairo', sans-serif !important;
+        font-weight: 800 !important;
+        font-size: clamp(0.82rem, 3.2vw, 1.15rem) !important;
+        color: #0f172a !important;
+        text-align: center !important;
+        line-height: 1.35 !important;
+        word-break: break-word !important;
+    }
+    .global-header-btn-wrap .stButton > button {
+        background: #2563eb !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 12px !important;
+        min-height: 46px !important;
+        padding: 0.55rem 0.85rem !important;
+        font-family: 'Cairo', sans-serif !important;
+        font-weight: 700 !important;
+        font-size: clamp(0.78rem, 2.8vw, 0.95rem) !important;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
+        transition: all 0.2s ease !important;
+        width: 100% !important;
+    }
+    .global-header-btn-wrap .stButton > button:hover {
+        background: #1d4ed8 !important;
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35) !important;
+    }
+    .global-header-btn-wrap .stButton > button:active {
+        transform: scale(0.98) !important;
+    }
+    .global-header-spacer .stButton { visibility: hidden !important; height: 46px !important; }
+    @media (max-width: 430px) {
+        .global-app-header { padding: 0.5rem 0.4rem !important; margin-bottom: 1rem !important; }
+        .global-header-btn-wrap .stButton > button {
+            min-height: 42px !important;
+            padding: 0.45rem 0.55rem !important;
+            font-size: 0.78rem !important;
+        }
+        .global-header-title { font-size: 0.82rem !important; }
+    }
+    /* Competitions page */
+    .competitions-hero {
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 55%, #1e40af 100%) !important;
+        border-radius: 16px !important;
+        padding: 1.5rem 1.25rem !important;
+        color: #fff !important;
+        margin-bottom: 1.25rem !important;
+        box-shadow: 0 8px 24px rgba(37, 99, 235, 0.25) !important;
+    }
+    .competitions-hero h2 { margin: 0 0 0.35rem 0 !important; font-size: 1.35rem !important; font-weight: 800 !important; color: #fff !important; }
+    .competitions-hero p { margin: 0 !important; opacity: 0.92 !important; font-size: 0.92rem !important; }
+    .assessment-card {
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 14px !important;
+        padding: 1rem 1.1rem !important;
+        margin-bottom: 0.85rem !important;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+        border-right: 4px solid #2563eb !important;
+    }
+    .assessment-card.done { border-right-color: #059669 !important; }
+    .assessment-card.started { border-right-color: #d97706 !important; }
+    .review-summary-card {
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 14px !important;
+        padding: 1rem !important;
+        margin-bottom: 1rem !important;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05) !important;
+    }
+    .review-q-card {
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        padding: 0.85rem 1rem !important;
+        margin-bottom: 0.75rem !important;
+        font-size: 0.92rem !important;
+    }
+    .review-q-card.correct { border-right: 4px solid #059669 !important; background: #f0fdf4 !important; }
+    .review-q-card.incorrect { border-right: 4px solid #dc2626 !important; background: #fef2f2 !important; }
+    .review-q-card.unanswered { border-right: 4px solid #94a3b8 !important; background: #f8fafc !important; }
+    .review-q-num { font-weight: 800 !important; color: #2563eb !important; font-size: 0.88rem !important; margin-bottom: 0.35rem !important; }
+    .review-q-text { font-weight: 600 !important; color: #0f172a !important; margin-bottom: 0.65rem !important; line-height: 1.5 !important; }
+    .review-q-row { display: flex !important; justify-content: space-between !important; gap: 0.5rem !important; margin: 0.25rem 0 !important; font-size: 0.85rem !important; }
+    .review-q-label { color: #64748b !important; font-weight: 600 !important; }
+    .review-q-val { font-weight: 700 !important; color: #0f172a !important; }
+    .review-q-val.ok { color: #059669 !important; }
+    .review-q-val.bad { color: #dc2626 !important; }
+    .section-heading-blue {
+        font-size: 1.05rem !important;
+        font-weight: 800 !important;
+        color: #2563eb !important;
+        margin: 1.25rem 0 0.75rem 0 !important;
+        padding-bottom: 0.35rem !important;
+        border-bottom: 2px solid #dbeafe !important;
+    }
+    .comp-nav-btn .stButton > button {
+        background: #2563eb !important;
+        color: #fff !important;
+        border-radius: 12px !important;
+        font-weight: 700 !important;
+        min-height: 44px !important;
+        border: none !important;
+    }
+    .help-float-container, .floating-show-btn { display: none !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def render_global_header(title, show_menu=True, show_help=True, menu_key="global_hdr_menu", help_key="global_hdr_help"):
+    """شريط علوي موحد: قائمة (يمين) | عنوان | مركز المساعدة (يسار)."""
+    inject_global_header_css()
+    st.markdown('<div class="global-app-header"></div>', unsafe_allow_html=True)
+    col_menu, col_title, col_help = st.columns([1.05, 2.5, 1.05], gap="small")
+
+    with col_menu:
+        st.markdown('<div class="global-header-btn-wrap">', unsafe_allow_html=True)
+        if show_menu:
+            if st.button("☰", key=menu_key, use_container_width=True, help="القائمة"):
+                if st.session_state.get("student_logged_in"):
+                    st.session_state.sidebar_open = not st.session_state.get("sidebar_open", False)
+                else:
+                    st.session_state.show_sidebar = not st.session_state.get("show_sidebar", False)
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col_title:
+        st.markdown(
+            f'<div class="global-header-title-wrap"><p class="global-header-title">{title}</p></div>',
+            unsafe_allow_html=True,
+        )
+
+    with col_help:
+        st.markdown('<div class="global-header-btn-wrap">', unsafe_allow_html=True)
+        if show_help:
+            if st.button("🆘 مركز المساعدة", key=help_key, use_container_width=True):
+                st.session_state.open_help_dialog = True
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+def competitions_page_hero():
+    st.markdown("""
+    <div class="competitions-hero">
+        <h2>🏆 المسابقات والاختبارات</h2>
+        <p>اختاري مسابقة متاحة، تابعي نتائجك، وراجعي إجاباتك بسهولة.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
 st.set_page_config(
     page_title="نظام- كنيسة الشهيدة دميانة",
     page_icon="⛪",
@@ -784,6 +1023,8 @@ def page_header(title, subtitle=""):
 
 def hero_header(title, subtitle=""):
     """Render the reusable hero section with background image."""
+    if st.session_state.get("use_global_header", False):
+        return ""
     return f"""
     <div class="hero-banner">
         <div class="hero-content">
@@ -2475,6 +2716,7 @@ def init_session():
         "quiz_confirmation_id": None,
         "assessment_confirmation": None,
         "review_result_id": None, "review_result_type": None,
+        "use_global_header": True,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -2784,8 +3026,7 @@ def show_initialization(db):
 
 
 def show_login_page(db, jwt_secret):
-    # Hero banner for login page
-    st.markdown(hero_header("نظام إدارة الكنيسة", "كنيسة الشهيدة دميانة"), unsafe_allow_html=True)
+    render_global_header("نظام إدارة الكنيسة ⛪", show_menu=False, help_key="login_hdr_help")
     show_initialization(db)
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 تسجيل دخول الطالبات"])
     with tab1:
@@ -3122,6 +3363,22 @@ def show_student_assessment_interface(db):
             a_type, a_id = "exam", st.session_state.selected_exam_id
         elif st.session_state.get("selected_quiz_id"):
             a_type, a_id = "quiz", st.session_state.selected_quiz_id
+
+    title = "الاختبار 📝"
+    if a_type == "exam" and a_id:
+        exams = db.get_exams()
+        if not exams.empty:
+            row = exams[exams["exam_id"] == a_id]
+            if not row.empty:
+                title = f"{row.iloc[0].get('title', 'الامتحان')} 📋"
+    elif a_id:
+        quizzes = db.get_quizzes()
+        if not quizzes.empty:
+            row = quizzes[quizzes["quiz_id"] == a_id]
+            if not row.empty:
+                title = f"{row.iloc[0].get('title', 'المسابقة')} 🏆"
+    render_global_header(title, menu_key="assess_hdr_menu", help_key="assess_hdr_help")
+
     if not a_type or not a_id:
         st.session_state.quiz_interface_started = False
         st.rerun()
@@ -3262,7 +3519,7 @@ def show_student_exam_interface_for_student(db):
             st.rerun()
         return
 
-    st.markdown(hero_header(exam_title, f"⏱️ {duration_minutes} دقيقة | 👤 {student_name}"), unsafe_allow_html=True)
+    st.caption(f"⏱️ {duration_minutes} دقيقة | 👤 {student_name}")
 
     if end_time is not None:
         end_time_iso = end_time.isoformat()
@@ -3438,8 +3695,8 @@ def show_student_quiz_interface(db):
             st.rerun()
         return
 
-    # ترويسة المسابقة
-    st.markdown(hero_header(quiz.get("title", "المسابقة"), f"⏱️ الوقت: {quiz.get('time_limit_minutes', '')} دقيقة | 👤 {student.get('full_name', '')}"), unsafe_allow_html=True)
+    # ترويسة المسابقة (الشريط العلوي الموحد يعرض العنوان)
+    st.caption(f"⏱️ {quiz.get('time_limit_minutes', '')} دقيقة | 👤 {student.get('full_name', '')}")
 
     # المؤقت
     end_time_iso = end_time.isoformat()
@@ -3788,15 +4045,10 @@ def show_student_dashboard(db):
     if st.session_state.sidebar_open:
         render_student_sidebar(db, student, menu_items, current_page)
 
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("🆘 مركز المساعدة", use_container_width=True, key="help_center_btn"):
-            st.session_state.open_help_dialog = True
-            st.rerun()
-    with col2:
-        if st.button("☰ القائمة", use_container_width=True, key="menu_toggle_btn"):
-            st.session_state.sidebar_open = not st.session_state.sidebar_open
-            st.rerun()
+    header_title = STUDENT_PAGE_TITLES.get(current_page, current_page)
+    if st.session_state.get("review_result_id"):
+        header_title = "مراجعة النتيجة 📖"
+    render_global_header(header_title, menu_key="student_hdr_menu", help_key="student_hdr_help")
 
     if current_page == "👤 ملفي الشخصي":
         show_student_profile_tab(db, student)
@@ -3816,8 +4068,6 @@ def show_student_dashboard(db):
 
 def show_student_grades_tab(db, student):
     """درجاتي — نتائج المسابقات والامتحانات للطالبة الحالية."""
-    st.markdown(hero_header("درجاتي", "📊 درجات ونتائج الاختبارات"), unsafe_allow_html=True)
-
     student_id = student.get("student_id", "")
     student_quiz, student_exam = get_student_submitted_results(db, student_id)
     quizzes = db.get_quizzes()
@@ -3861,6 +4111,8 @@ def show_student_grades_tab(db, student):
 
     display_cols = ["المسابقة", "score", "total_marks", "النسبة", "submission_time", "status"]
     available_cols = [c for c in display_cols if c in display.columns]
+    if "submission_time" in display.columns:
+        display["submission_time"] = display["submission_time"].apply(format_arabic_datetime)
     st.dataframe(
         display[available_cols].rename(columns={
             "score": "الدرجة",
@@ -3874,8 +4126,6 @@ def show_student_grades_tab(db, student):
 
 def show_student_exam_history_tab(db, student):
     """سجل الامتحانات — مراجعة المحاولات المكتملة."""
-    st.markdown(hero_header("سجل الامتحانات", "📋 تاريخ الاختبارات والمسابقات"), unsafe_allow_html=True)
-
     student_id = student.get("student_id", "")
     if st.session_state.get("review_result_id") and st.session_state.get("review_result_type"):
         render_student_attempt_review(db, student, st.session_state.review_result_id, st.session_state.review_result_type)
@@ -3926,8 +4176,9 @@ def show_student_exam_history_tab(db, student):
         label = f"🎯 {title} — {score}/{total_marks}"
         if percent is not None:
             label += f" — {percent}%"
-        if submission_time:
-            label += f" — {submission_time}"
+        date_fmt = format_arabic_datetime(attempt.get("submission_time", ""))
+        if date_fmt and date_fmt != "—":
+            label += f" — {date_fmt}"
 
         with st.expander(label, expanded=False):
             st.markdown(f"**الحالة:** {attempt.get('status', '')}")
@@ -3939,8 +4190,6 @@ def show_student_exam_history_tab(db, student):
 
 def show_student_notifications_tab(db, student):
     """الإشعارات - عرض إشعارات الطالبة."""
-    st.markdown(hero_header("الإشعارات", "🔔 الإشعارات والرسائل"), unsafe_allow_html=True)
-    
     student_id = student.get("student_id", "")
     notifications = db.get_notifications(student_id)
     
@@ -3977,7 +4226,7 @@ def show_student_notifications_tab(db, student):
 
 
 def render_student_attempt_review(db, student, result_id, result_type):
-    """مراجعة تفصيلية لمحاولة مكتملة — إجابات المحاولة المحددة فقط."""
+    """مراجعة تفصيلية لمحاولة مكتملة — بطاقات مدمجة."""
     student_id = student.get("student_id", "")
     attempt = verify_student_owns_result(db, student_id, result_id, result_type)
     if attempt is None:
@@ -3990,19 +4239,16 @@ def render_student_attempt_review(db, student, result_id, result_type):
         exam_row = exams_df[exams_df["exam_id"] == assessment_id] if not exams_df.empty else pd.DataFrame()
         title = exam_row.iloc[0].get("title", "الامتحان") if not exam_row.empty else "الامتحان"
         questions_df = db.get_exam_questions(assessment_id)
-        attempt_type_label = "امتحان"
     else:
         assessment_id = attempt.get("quiz_id", "")
         quiz_df = db.get_quizzes()
         quiz_row = quiz_df[quiz_df["quiz_id"] == assessment_id] if not quiz_df.empty else pd.DataFrame()
         title = quiz_row.iloc[0].get("title", "المسابقة") if not quiz_row.empty else "المسابقة"
         questions_df = db.get_quiz_questions(assessment_id)
-        attempt_type_label = "مسابقة"
 
-    st.markdown(f"## مراجعة {attempt_type_label}: {title}")
     score = attempt.get("score", "")
     total_marks = attempt.get("total_marks", "")
-    submission_time = attempt.get("submission_time", "")
+    submission_time = format_arabic_datetime(attempt.get("submission_time", ""))
     try:
         score_val = float(score)
         total_val = float(total_marks) if total_marks else 0
@@ -4010,11 +4256,21 @@ def render_student_attempt_review(db, student, result_id, result_type):
     except (TypeError, ValueError):
         percentage = None
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("الدرجة", f"{score} / {total_marks}")
-    col2.metric("النسبة", f"{percentage}%" if percentage is not None else "—")
-    col3.metric("التاريخ", submission_time or "—")
-    st.markdown("---")
+    passed = percentage is not None and percentage >= 50
+    result_label = "ناجحة ✅" if passed else "تحتاج تحسين 📌"
+    result_color = "#059669" if passed else "#d97706"
+
+    st.markdown(f"""
+    <div class="review-summary-card">
+        <div style="font-weight:800;font-size:1.05rem;color:#2563eb;margin-bottom:0.75rem;">{title}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.65rem;font-size:0.88rem;">
+            <div><span style="color:#64748b;">الدرجة:</span> <strong>{score} / {total_marks}</strong></div>
+            <div><span style="color:#64748b;">النسبة:</span> <strong style="color:#2563eb;">{percentage if percentage is not None else '—'}%</strong></div>
+            <div><span style="color:#64748b;">النتيجة:</span> <strong style="color:{result_color};">{result_label}</strong></div>
+            <div><span style="color:#64748b;">تاريخ الإنجاز:</span> <strong>{submission_time}</strong></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     if questions_df.empty:
         st.info("لا توجد أسئلة لهذا الاختبار.")
@@ -4028,27 +4284,33 @@ def render_student_attempt_review(db, student, result_id, result_type):
             q = row.to_dict()
             q_id = q.get("question_id", "")
             student_answer = str(answers_data.get(q_id, "") or "").strip()
-            correct_answer = str(q.get("correct_answer", "")).strip()
-            marks = q.get("marks", "") if "marks" in q else ""
+            correct_answer = str(q.get("correct_answer", "") or "").strip()
+            q_text = q.get("question_text", "")
 
-            st.markdown(f"### السؤال {idx + 1}")
-            st.markdown(q.get("question_text", ""))
-            st.markdown("### إجابتك")
-            st.markdown(student_answer if student_answer else "⚪ لم تتم الإجابة")
-            st.markdown("### الإجابة الصحيحة")
-            st.markdown(correct_answer if correct_answer else "غير متاحة")
-            st.markdown("### النتيجة")
             if not student_answer:
-                st.markdown("⚪ لم تتم الإجابة")
+                card_class = "unanswered"
+                result_html = '<span class="review-q-val">⚪ لم تتم الإجابة</span>'
+                ans_class = ""
             elif student_answer.strip().lower() == correct_answer.strip().lower():
-                st.markdown("✅ إجابة صحيحة")
+                card_class = "correct"
+                result_html = '<span class="review-q-val ok">إجابة صحيحة ✅</span>'
+                ans_class = "ok"
             else:
-                st.markdown("❌ إجابة خاطئة")
-            if marks:
-                st.caption(f"درجة السؤال: {marks}")
-            st.markdown("---")
+                card_class = "incorrect"
+                result_html = '<span class="review-q-val bad">إجابة خاطئة ❌</span>'
+                ans_class = "bad"
 
-    if st.button("⬅️ العودة", key=f"back_from_review_{result_id}"):
+            st.markdown(f"""
+            <div class="review-q-card {card_class}">
+                <div class="review-q-num">السؤال {idx + 1}</div>
+                <div class="review-q-text">{q_text}</div>
+                <div class="review-q-row"><span class="review-q-label">إجابتك:</span><span class="review-q-val {ans_class}">{student_answer or '—'}</span></div>
+                <div class="review-q-row"><span class="review-q-label">الإجابة الصحيحة:</span><span class="review-q-val">{correct_answer or '—'}</span></div>
+                <div class="review-q-row"><span class="review-q-label">النتيجة:</span>{result_html}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    if st.button("⬅️ العودة", key=f"back_from_review_{result_id}", use_container_width=True):
         st.session_state.review_result_id = None
         st.session_state.review_result_type = None
         st.rerun()
@@ -4091,8 +4353,6 @@ def show_student_home_tab(db, student):
 
 def show_student_profile_tab(db, student):
     """ملفي الشخصي — عرض وتعديل بيانات الطالبة (مرة واحدة فقط)."""
-    st.markdown(hero_header("ملفي الشخصي", "👤 بياناتي الشخصية"), unsafe_allow_html=True)
-
     students_df = db.get_students()
     student_row = students_df[students_df["student_id"] == student.get("student_id", "")]
     if student_row.empty:
@@ -4183,9 +4443,7 @@ def _get_assessment_attempt_status(db, student_id, assessment_type, assessment_i
 
 
 def show_student_competitions_tab(db, student):
-    """🏆 المسابقات — اختبارات موحدة (Quizzes + Exams) + المحاولات المكتملة."""
-    st.markdown(hero_header("المسابقات", "🏆 المسابقات والاختبارات"), unsafe_allow_html=True)
-
+    """🏆 المسابقات — تصميم موحد مع بطاقات حديثة."""
     student_id = student.get("student_id", "")
     quizzes = db.get_quizzes()
     exams = db.get_exams()
@@ -4220,7 +4478,7 @@ def show_student_competitions_tab(db, student):
         st.markdown(f"**الوقت المحدد:** {time_limit} دقيقة")
         st.markdown("---")
         st.markdown("## تعليمات مهمة قبل بدء الاختبار")
-        instructions = [
+        for line in [
             "يجب قراءة التعليمات جيدًا قبل البدء.",
             "بمجرد بدء الاختبار يبدأ احتساب الوقت.",
             "يجب الالتزام بالوقت المحدد.",
@@ -4230,11 +4488,9 @@ def show_student_competitions_tab(db, student):
             "لا تقومي بمغادرة الاختبار أثناء أدائه.",
             "سيتم التعامل مع انتهاء الوقت حسب نظام التسليم التلقائي.",
             "تأكدي من إجاباتك قبل تسليم الاختبار.",
-        ]
-        for line in instructions:
+        ]:
             st.markdown(f"- {line}")
         st.markdown("---")
-
         col_cancel, col_confirm = st.columns(2)
         with col_cancel:
             if st.button("إلغاء", use_container_width=True, key="cancel_assessment_start"):
@@ -4253,7 +4509,9 @@ def show_student_competitions_tab(db, student):
                 st.rerun()
         return
 
-    st.markdown("## المسابقات المتاحة")
+    competitions_page_hero()
+    st.markdown('<p class="section-heading-blue">المسابقات المتاحة</p>', unsafe_allow_html=True)
+
     assessments = build_unified_assessments(db)
     if not assessments:
         st.info("لا توجد اختبارات متاحة حالياً.")
@@ -4263,31 +4521,37 @@ def show_student_competitions_tab(db, student):
             a_id = item["assessment_id"]
             attempt_status = _get_assessment_attempt_status(db, student_id, a_type, a_id)
             if attempt_status == "submitted":
-                status_text = "✅ منجزة"
+                status_text, card_cls = "✅ منجزة", "done"
             elif attempt_status == "started":
-                status_text = "⏳ بدأت"
+                status_text, card_cls = "⏳ بدأت", "started"
             else:
-                status_text = "🟢 متاحة"
+                status_text, card_cls = "🟢 متاحة", ""
 
-            with st.expander(f"📝 {item['title']} ({item['type_label']}) — {status_text}", expanded=False):
-                if item.get("description"):
-                    st.markdown(f"**الوصف:** {item['description']}")
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("النوع", item["type_label"])
-                c2.metric("عدد الأسئلة", item["num_questions"] or "—")
-                c3.metric("الدرجة الكلية", item["total_marks"] or "—")
-                c4.metric("الوقت", f"{item['time_limit_minutes']} دقيقة" if item.get("time_limit_minutes") else "—")
+            st.markdown(f"""
+            <div class="assessment-card {card_cls}">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;flex-wrap:wrap;">
+                    <div>
+                        <div style="font-weight:800;color:#0f172a;font-size:1rem;">{item['title']}</div>
+                        <div style="color:#64748b;font-size:0.82rem;margin-top:0.2rem;">{item['type_label']} · {status_text}</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-top:0.65rem;font-size:0.82rem;color:#475569;">
+                    <div>📝 {item['num_questions'] or '—'} سؤال</div>
+                    <div>⭐ {item['total_marks'] or '—'} درجة</div>
+                    <div>⏱️ {item['time_limit_minutes'] or '—'} د</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-                if attempt_status == "submitted":
-                    st.success("لقد قمتِ بإنجاز هذا الاختبار بالفعل.")
-                elif attempt_status == "started":
-                    st.warning("لديكِ محاولة سابقة. لا يمكنك الدخول مرة أخرى.")
-                elif st.button("بدء الاختبار", key=f"start_{a_type}_{a_id}", use_container_width=True):
-                    st.session_state.assessment_confirmation = {"type": a_type, "id": a_id}
-                    st.rerun()
+            if attempt_status == "submitted":
+                st.success("لقد قمتِ بإنجاز هذا الاختبار بالفعل.")
+            elif attempt_status == "started":
+                st.warning("لديكِ محاولة سابقة. لا يمكنك الدخول مرة أخرى.")
+            elif st.button("بدء الاختبار", key=f"start_{a_type}_{a_id}", use_container_width=True):
+                st.session_state.assessment_confirmation = {"type": a_type, "id": a_id}
+                st.rerun()
 
-    st.markdown("---")
-    st.markdown("## 📋 الامتحانات التي حللتها")
+    st.markdown('<p class="section-heading-blue">مسابقاتي</p>', unsafe_allow_html=True)
 
     student_quiz, student_exam = get_student_submitted_results(db, student_id)
     history_rows = []
@@ -4309,7 +4573,7 @@ def show_student_competitions_tab(db, student):
             history_rows.append({**row.to_dict(), "attempt_type": "exam", "title": title})
 
     if not history_rows:
-        st.info("لا توجد امتحانات أو مسابقات منجزة بعد.")
+        st.info("لا توجد مسابقات منجزة بعد.")
     else:
         history_rows.sort(key=lambda x: str(x.get("submission_time", "")), reverse=True)
         for attempt in history_rows:
@@ -4318,7 +4582,7 @@ def show_student_competitions_tab(db, student):
             title = attempt.get("title", "—")
             score = attempt.get("score", "")
             total_marks = attempt.get("total_marks", "")
-            submission_time = attempt.get("submission_time", "")
+            date_fmt = format_arabic_datetime(attempt.get("submission_time", ""))
             percent = None
             try:
                 sv = float(score)
@@ -4327,18 +4591,35 @@ def show_student_competitions_tab(db, student):
             except (TypeError, ValueError):
                 pass
 
-            label = f"🎯 {title} — {score}/{total_marks}"
-            if percent is not None:
-                label += f" — {percent}%"
-            if submission_time:
-                label += f" — {submission_time}"
+            st.markdown(f"""
+            <div class="assessment-card done">
+                <div style="font-weight:800;color:#0f172a;">{title}</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0.4rem;margin-top:0.5rem;font-size:0.84rem;color:#475569;">
+                    <div>📊 <strong style="color:#2563eb;">{score}/{total_marks}</strong></div>
+                    <div>📈 {percent if percent is not None else '—'}%</div>
+                    <div>📅 {date_fmt}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("📖 مراجعة المحاولة", key=f"comp_review_{attempt_type}_{result_id}", use_container_width=True):
+                st.session_state.review_result_id = result_id
+                st.session_state.review_result_type = attempt_type
+                st.rerun()
 
-            with st.expander(label, expanded=False):
-                st.markdown(f"**الحالة:** {attempt.get('status', '')}")
-                if st.button("📖 مراجعة", key=f"comp_review_{attempt_type}_{result_id}"):
-                    st.session_state.review_result_id = result_id
-                    st.session_state.review_result_type = attempt_type
-                    st.rerun()
+    st.markdown("---")
+    nav1, nav2 = st.columns(2)
+    with nav1:
+        st.markdown('<div class="comp-nav-btn">', unsafe_allow_html=True)
+        if st.button("دراجاتي 🚲", key="comp_nav_grades", use_container_width=True):
+            st.session_state.student_dashboard_page = "📊 درجاتي"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    with nav2:
+        st.markdown('<div class="comp-nav-btn">', unsafe_allow_html=True)
+        if st.button("سجل الامتحانات 📋", key="comp_nav_history", use_container_width=True):
+            st.session_state.student_dashboard_page = "📋 سجل الامتحانات"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =============================================================================
@@ -9311,13 +9592,8 @@ def main():
                 st.session_state.data_validated = True
             if not st.session_state.show_sidebar:
                 st.markdown("""<style>section[data-testid="stSidebar"] { transform: translateX(100%) !important; }</style>""", unsafe_allow_html=True)
-                st.markdown('<div class="floating-show-btn"></div>', unsafe_allow_html=True)
-                if st.button("القائمه", key="show_sidebar_btn"):
-                    st.session_state.show_sidebar = True
-                    st.rerun()
             else:
                 st.markdown("""<style>section[data-testid="stSidebar"] { transform: translateX(0) !important; }</style>""", unsafe_allow_html=True)
-                # Add backdrop for mobile
                 st.markdown("""
                 <div class="sidebar-backdrop" onclick="document.querySelector('section[data-testid=\"stSidebar\"]').style.transform='translateX(100%)';">
                 </div>
@@ -9330,6 +9606,13 @@ def main():
                 if choice not in menu_items:
                     choice = menu_items[0] if menu_items else "🏠 لوحة التحكم"
                     st.session_state.menu_choice = choice
+
+            if st.session_state.get("profile_user_id"):
+                hdr_title = "الملف الشخصي 👤"
+            else:
+                hdr_title = ADMIN_PAGE_TITLES.get(choice, choice)
+            render_global_header(hdr_title, menu_key="admin_hdr_menu", help_key="admin_hdr_help")
+
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if st.session_state.get("profile_user_id"):
                 profile_id = st.session_state.profile_user_id
