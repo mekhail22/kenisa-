@@ -1630,9 +1630,16 @@ class Database:
         df = self.get_students()
         idx = df[df.student_id == student_id].index
         if len(idx) > 0:
+            profile_fields = {"full_name", "phone", "parent_phone", "birthdate", "address", "school", "notes"}
+            if any(k in updates for k in profile_fields):
+                used_val = str(df.at[idx[0], "profile_edit_used"]).strip().lower()
+                if used_val in ("true", "1", "yes", "نعم"):
+                    return False
             for k, v in updates.items():
                 df.at[idx[0], k] = self._safe_str(v)
             self._df_to_sheet("Students", df, df.columns.tolist())
+            return True
+        return False
 
     def delete_student(self, student_id):
         df = self.get_students()
@@ -2094,9 +2101,11 @@ class Database:
 
     def get_exam_results(self, exam_id=None):
         df = self._sheet_to_df("ExamResults")
-        if df.empty or not exam_id:
-            return df
-        return df[df.exam_id == exam_id]
+        if df.empty:
+            return pd.DataFrame()
+        if exam_id:
+            return df[df.exam_id == exam_id]
+        return df
 
     def start_exam_attempt(self, exam_id, student_id, student_name):
         result_id = str(uuid.uuid4())
@@ -2459,8 +2468,12 @@ def init_session():
         # Student Dashboard (تسجيل دخول الطالبات)
         "student_logged_in": False, "current_student": None,
         "student_dashboard_page": "🏠 الرئيسية",
-        "selected_quiz_id": None, "quiz_interface_started": False,
+        "sidebar_open": False,
+        "selected_quiz_id": None, "selected_exam_id": None,
+        "selected_assessment_type": None, "selected_assessment_id": None,
+        "quiz_interface_started": False,
         "quiz_confirmation_id": None,
+        "assessment_confirmation": None,
         "review_result_id": None, "review_result_type": None,
     }
     for k, v in defaults.items():
@@ -2476,6 +2489,31 @@ def logout(db=None):
             pass
     for key in list(st.session_state.keys()):
         del st.session_state[key]
+    st.rerun()
+
+
+def student_logout(db=None):
+    """تسجيل خروج الطالبة مع الحفاظ على حالة النظام العام."""
+    student = st.session_state.get("current_student") or {}
+    student_id = student.get("student_id", "")
+    if db and student_id:
+        try:
+            db.add_log(student_id, "تسجيل خروج طالبة", f"تم تسجيل خروج الطالبة: {student.get('full_name', '')}")
+        except Exception:
+            pass
+    student_keys = [
+        "student_logged_in", "current_student", "student_dashboard_page", "sidebar_open",
+        "selected_quiz_id", "selected_exam_id", "selected_assessment_type", "selected_assessment_id",
+        "quiz_interface_started", "quiz_confirmation_id", "assessment_confirmation",
+        "review_result_id", "review_result_type", "quiz_question_index", "quiz_answers",
+        "quiz_end_time", "quiz_attempt_id", "quiz_last_saved_answers", "quiz_confirm_finish",
+        "quiz_start_time", "exam_question_index", "exam_answers", "exam_last_saved_answers",
+        "exam_end_time", "exam_start_time", "exam_questions", "exam_shuffled_options",
+        "exam_attempt_id", "exam_submitted", "exam_submit_time", "exam_result",
+        "exam_confirm_finish", "exam_last_save_time", "quiz_questions_list", "quiz_questions_quiz_id",
+    ]
+    for key in student_keys:
+        st.session_state.pop(key, None)
     st.rerun()
 
 
@@ -2816,6 +2854,7 @@ def show_login_page(db, jwt_secret):
                                     st.session_state.student_logged_in = True
                                     st.session_state.current_student = student
                                     st.session_state.student_dashboard_page = "🏠 الرئيسية"
+                                    st.session_state.sidebar_open = False
                                     st.session_state.selected_quiz_id = None
                                     st.session_state.quiz_interface_started = False
                                     db.add_log(student.get("student_id", ""), "تسجيل دخول طالبة", f"تم تسجيل دخول الطالبة: {student.get('full_name', '')}")
@@ -3068,6 +3107,236 @@ def show_student_quiz(db):
         return
 
 
+def show_student_assessment_interface(db):
+    """واجهة الاختبار الموحدة — توجيه إلى محرك المسابقات أو الامتحانات."""
+    if not st.session_state.get("student_logged_in", False):
+        st.error("يجب تسجيل الدخول أولاً.")
+        st.session_state.quiz_interface_started = False
+        st.rerun()
+        return
+
+    a_type = st.session_state.get("selected_assessment_type")
+    a_id = st.session_state.get("selected_assessment_id")
+    if not a_type:
+        if st.session_state.get("selected_exam_id"):
+            a_type, a_id = "exam", st.session_state.selected_exam_id
+        elif st.session_state.get("selected_quiz_id"):
+            a_type, a_id = "quiz", st.session_state.selected_quiz_id
+    if not a_type or not a_id:
+        st.session_state.quiz_interface_started = False
+        st.rerun()
+        return
+
+    st.session_state.selected_assessment_type = a_type
+    st.session_state.selected_assessment_id = a_id
+    if a_type == "exam":
+        show_student_exam_interface_for_student(db)
+    else:
+        show_student_quiz_interface(db)
+
+
+def show_student_exam_interface_for_student(db):
+    """واجهة أداء الامتحان للطالبة — مدمجة في بوابة الطالبات."""
+    student = st.session_state.get("current_student")
+    exam_id = st.session_state.get("selected_assessment_id") or st.session_state.get("selected_exam_id")
+    if not student or not exam_id:
+        st.session_state.quiz_interface_started = False
+        st.rerun()
+        return
+
+    student_id = student.get("student_id", "")
+    student_name = student.get("full_name", "طالبة")
+    exams = db.get_exams()
+    exam_row = exams[exams["exam_id"] == exam_id] if not exams.empty else pd.DataFrame()
+    if exam_row.empty:
+        st.error("لم يتم العثور على الامتحان.")
+        st.session_state.quiz_interface_started = False
+        st.rerun()
+        return
+    exam = exam_row.iloc[0].to_dict()
+    exam_title = exam.get("title", "امتحان")
+    try:
+        duration_minutes = int(float(exam.get("duration_minutes", 30) or 30))
+    except (TypeError, ValueError):
+        duration_minutes = 30
+
+    results = db.get_exam_results()
+    if not results.empty:
+        student_attempts = results[(results["exam_id"] == exam_id) & (results["student_id"] == student_id)]
+        if not student_attempts.empty and "status" in student_attempts.columns:
+            if not student_attempts[student_attempts["status"] == "submitted"].empty:
+                st.warning("⚠️ لقد قمتِ بإنجاز هذا الامتحان بالفعل.")
+                st.session_state.quiz_interface_started = False
+                if st.button("العودة إلى المسابقات"):
+                    st.rerun()
+                return
+
+    for k, v in {
+        "exam_question_index": 0, "exam_answers": {}, "exam_last_saved_answers": "",
+        "exam_end_time": None, "exam_start_time": None, "exam_questions": None,
+        "exam_shuffled_options": {}, "exam_attempt_id": None, "exam_submitted": False,
+        "exam_submit_time": None, "exam_result": None, "exam_confirm_finish": False,
+        "exam_last_save_time": None,
+    }.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    if st.session_state.exam_questions is None:
+        questions_df = db.shuffle_questions(exam_id)
+        if questions_df is None or questions_df.empty:
+            st.warning("لا توجد أسئلة في هذا الامتحان.")
+            if st.button("🔙 العودة"):
+                st.session_state.quiz_interface_started = False
+                st.rerun()
+            return
+        questions = questions_df.to_dict("records")
+        random.shuffle(questions)
+        shuffled_options = {}
+        for q in questions:
+            q_id = q.get("question_id", "")
+            q_type = q.get("question_type", "")
+            if str(q_type).strip() == "صح وخطأ":
+                shuffled_options[q_id] = ["صح", "خطأ"]
+            else:
+                opts = [str(q.get(f"option{i}", "")).strip() for i in range(1, 5)]
+                opts = [o for o in opts if o]
+                random.shuffle(opts)
+                shuffled_options[q_id] = opts
+        st.session_state.exam_questions = questions
+        st.session_state.exam_shuffled_options = shuffled_options
+
+    questions = st.session_state.exam_questions
+    total_questions = len(questions)
+    shuffled_options = st.session_state.exam_shuffled_options
+
+    if st.session_state.exam_attempt_id is None:
+        st.session_state.exam_start_time = get_cairo_now()
+        st.session_state.exam_end_time = st.session_state.exam_start_time + timedelta(minutes=duration_minutes)
+        st.session_state.exam_attempt_id = db.start_exam_attempt(exam_id, student_id, student_name)
+
+    def auto_save_exam():
+        attempt_id = st.session_state.get("exam_attempt_id")
+        if not attempt_id:
+            return
+        answers_json = json.dumps(st.session_state.exam_answers, ensure_ascii=False)
+        if answers_json != st.session_state.exam_last_saved_answers:
+            db.save_exam_answers(attempt_id, st.session_state.exam_answers)
+            st.session_state.exam_last_saved_answers = answers_json
+            st.session_state.exam_last_save_time = get_cairo_now()
+
+    def submit_exam_internal(auto=False):
+        attempt_id = st.session_state.get("exam_attempt_id")
+        if not attempt_id or st.session_state.exam_submitted:
+            return
+        auto_save_exam()
+        score, total_marks, correct, wrong = db.grade_exam_attempt(exam_id, st.session_state.exam_answers)
+        answers_json = json.dumps(st.session_state.exam_answers, ensure_ascii=False)
+        db.submit_exam_attempt(attempt_id, score, answers_json)
+        st.session_state.exam_submitted = True
+        st.session_state.exam_submit_time = get_cairo_now()
+        st.session_state.exam_result = {
+            "score": score, "total_marks": total_marks,
+            "correct_count": correct, "wrong_count": wrong, "auto_submitted": auto,
+        }
+
+    now = get_cairo_now()
+    end_time = st.session_state.exam_end_time
+    if end_time is not None and now >= end_time and not st.session_state.exam_submitted:
+        submit_exam_internal(auto=True)
+        st.rerun()
+
+    if st.session_state.exam_submitted:
+        result = st.session_state.exam_result or {}
+        st.success("✅ تم تسليم الامتحان بنجاح!")
+        score = result.get("score", 0)
+        total_marks = result.get("total_marks", 0)
+        st.info(f"**درجتك:** {score} / {total_marks}")
+        if st.button("🔙 العودة إلى المسابقات", use_container_width=True):
+            for key in ["exam_question_index", "exam_answers", "exam_last_saved_answers", "exam_end_time",
+                        "exam_start_time", "exam_questions", "exam_shuffled_options", "exam_attempt_id",
+                        "exam_submitted", "exam_submit_time", "exam_result", "exam_confirm_finish",
+                        "exam_last_save_time", "selected_exam_id", "selected_assessment_id",
+                        "selected_assessment_type", "quiz_interface_started"]:
+                st.session_state.pop(key, None)
+            st.session_state.student_dashboard_page = "🏆 المسابقات"
+            st.rerun()
+        return
+
+    st.markdown(hero_header(exam_title, f"⏱️ {duration_minutes} دقيقة | 👤 {student_name}"), unsafe_allow_html=True)
+
+    if end_time is not None:
+        end_time_iso = end_time.isoformat()
+        countdown_html = f"""
+        <!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        body {{ font-family: 'Cairo', sans-serif; margin: 0; padding: 0; display: flex; justify-content: center; }}
+        #timer {{ font-size: 1.6rem; font-weight: bold; padding: 0.8rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; }}
+        </style></head><body>
+        <div id="timer">⏳ الوقت المتبقي: <span id="time"></span></div>
+        <script>
+        var endTime = new Date("{end_time_iso}").getTime();
+        function update() {{ var now = new Date().getTime(); var dist = endTime - now;
+            if (dist <= 0) {{ document.getElementById('time').innerHTML = "00:00"; setTimeout(function() {{ window.parent.location.reload(); }}, 800); return; }}
+            var mins = Math.floor((dist % (1000*60*60)) / (1000*60)); var secs = Math.floor((dist % (1000*60)) / 1000);
+            document.getElementById('time').innerHTML = (mins<10?'0'+mins:mins) + ":" + (secs<10?'0'+secs:secs); }}
+        update(); setInterval(update, 1000);
+        </script></body></html>
+        """
+        st.components.v1.html(countdown_html, height=85, scrolling=False)
+
+    current_index = st.session_state.exam_question_index
+    if total_questions > 0:
+        st.progress((current_index + 1) / total_questions)
+        st.caption(f"📋 السؤال {current_index + 1} من {total_questions}")
+
+    q = questions[current_index]
+    q_id = q.get("question_id", "")
+    q_text = q.get("question_text", "")
+    q_type = q.get("question_type", "")
+    st.markdown(f"**سؤال {current_index + 1}:** {q_text}")
+
+    options = shuffled_options.get(q_id, [])
+    prev_answer = st.session_state.exam_answers.get(q_id, "")
+    if options:
+        index = options.index(prev_answer) if prev_answer in options else None
+        ans = st.radio("اختر الإجابة", options, index=index, key=f"exam_sq_{q_id}")
+        if ans is not None and st.session_state.exam_answers.get(q_id) != ans:
+            st.session_state.exam_answers[q_id] = ans
+            auto_save_exam()
+    else:
+        ans_text = st.text_input("الإجابة", value=prev_answer, key=f"exam_sq_{q_id}")
+        if ans_text != prev_answer:
+            st.session_state.exam_answers[q_id] = ans_text
+            auto_save_exam()
+
+    st.markdown("---")
+    col_prev, col_mid, col_next = st.columns([1, 2, 1])
+    with col_prev:
+        if st.button("⬅️ السابق", use_container_width=True, disabled=current_index == 0, key="exam_sq_prev"):
+            st.session_state.exam_question_index = max(0, current_index - 1)
+            st.rerun()
+    with col_mid:
+        if st.button("🚨 تسليم الاختبار", use_container_width=True, key="exam_sq_finish"):
+            st.session_state.exam_confirm_finish = True
+            st.rerun()
+    with col_next:
+        if st.button("التالي ➡️", use_container_width=True, disabled=current_index >= total_questions - 1, key="exam_sq_next"):
+            st.session_state.exam_question_index = min(total_questions - 1, current_index + 1)
+            st.rerun()
+
+    if st.session_state.get("exam_confirm_finish", False):
+        st.warning("⚠️ هل أنت متأكدة من تسليم الاختبار؟")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("✅ نعم، تسليم", use_container_width=True, key="exam_sq_yes"):
+                submit_exam_internal(auto=False)
+                st.session_state.exam_confirm_finish = False
+                st.rerun()
+        with c2:
+            if st.button("❌ تراجع", use_container_width=True, key="exam_sq_no"):
+                st.session_state.exam_confirm_finish = False
+                st.rerun()
+
+
 def show_student_quiz_interface(db):
     """واجهة حل المسابقة الموحدة - سؤال واحد في الصفحة مع مؤقت."""
     if not st.session_state.get("student_logged_in", False):
@@ -3077,7 +3346,7 @@ def show_student_quiz_interface(db):
         return
 
     student = st.session_state.get("current_student")
-    quiz_id = st.session_state.get("selected_quiz_id")
+    quiz_id = st.session_state.get("selected_assessment_id") or st.session_state.get("selected_quiz_id")
     if not quiz_id or not student:
         st.session_state.quiz_interface_started = False
         st.rerun()
@@ -3119,16 +3388,21 @@ def show_student_quiz_interface(db):
     if "quiz_last_saved_answers" not in st.session_state:
         st.session_state.quiz_last_saved_answers = ""
 
-    # تحميل الأسئلة
-    questions_df = db.get_quiz_questions(quiz_id)
-    if questions_df.empty:
-        st.warning("لا توجد أسئلة في هذه المسابقة بعد.")
-        if st.button("🔙 العودة إلى المسابقات"):
-            st.session_state.quiz_interface_started = False
-            st.session_state.selected_quiz_id = None
-            st.rerun()
-        return
-    questions = questions_df.to_dict("records")
+    # تحميل الأسئلة (مع خلط عشوائي)
+    if "quiz_questions_list" not in st.session_state or st.session_state.get("quiz_questions_quiz_id") != quiz_id:
+        questions_df = db.get_quiz_questions(quiz_id)
+        if questions_df.empty:
+            st.warning("لا توجد أسئلة في هذه المسابقة بعد.")
+            if st.button("🔙 العودة إلى المسابقات"):
+                st.session_state.quiz_interface_started = False
+                st.session_state.selected_quiz_id = None
+                st.rerun()
+            return
+        questions = questions_df.to_dict("records")
+        random.shuffle(questions)
+        st.session_state.quiz_questions_list = questions
+        st.session_state.quiz_questions_quiz_id = quiz_id
+    questions = st.session_state.quiz_questions_list
 
     # بدء المحاولة
     if st.session_state.quiz_attempt_id is None:
@@ -3268,17 +3542,222 @@ def show_student_quiz_interface(db):
 
 
 # =============================================================================
+# Student Portal Helpers
+# =============================================================================
+STUDENT_MENU_ITEMS = [
+    "🏠 الرئيسية",
+    "👤 ملفي الشخصي",
+    "🏆 المسابقات",
+    "📊 درجاتي",
+    "📋 سجل الامتحانات",
+    "🔔 الإشعارات",
+    "🚪 تسجيل الخروج",
+]
+
+
+def is_availability_true(value):
+    """تحقق آمن من قيمة التوفر (true/True/TRUE/'true'/1/yes)."""
+    if value is None:
+        return False
+    if isinstance(value, float) and pd.isna(value):
+        return False
+    return str(value).strip().lower() in ("true", "1", "yes", "نعم", "active")
+
+
+def get_availability_column(df):
+    """إرجاع اسم عمود التوفر من Quizzes أو Exams."""
+    if df is None or df.empty:
+        return None
+    for col in ("is_active", "availability", "is_available"):
+        if col in df.columns:
+            return col
+    return None
+
+
+def filter_available_rows(df):
+    """فلترة الصفوف المتاحة بناءً على عمود التوفر."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    col = get_availability_column(df)
+    if col is None:
+        return df.copy()
+    mask = df[col].apply(is_availability_true)
+    return df[mask].copy()
+
+
+def get_assessment_question_count(db, assessment_type, assessment_id):
+    """عدد أسئلة المسابقة أو الامتحان."""
+    if assessment_type == "exam":
+        qdf = db.get_exam_questions(assessment_id)
+    else:
+        qdf = db.get_quiz_questions(assessment_id)
+    return len(qdf) if not qdf.empty else 0
+
+
+def build_unified_assessments(db):
+    """دمج Quizzes و Exams في قائمة موحدة للطالبة."""
+    items = []
+    quizzes = filter_available_rows(db.get_quizzes())
+    if not quizzes.empty:
+        for _, row in quizzes.iterrows():
+            qid = str(row.get("quiz_id", "")).strip()
+            if not qid:
+                continue
+            num_q = row.get("num_questions", "")
+            if not num_q or str(num_q).strip() == "":
+                num_q = get_assessment_question_count(db, "quiz", qid)
+            items.append({
+                "assessment_type": "quiz",
+                "assessment_id": qid,
+                "title": row.get("title", "مسابقة"),
+                "description": row.get("description", ""),
+                "type_label": "مسابقة",
+                "num_questions": num_q,
+                "total_marks": row.get("total_marks", "20"),
+                "time_limit_minutes": row.get("time_limit_minutes", ""),
+            })
+
+    exams = filter_available_rows(db.get_exams())
+    if not exams.empty:
+        for _, row in exams.iterrows():
+            eid = str(row.get("exam_id", "")).strip()
+            if not eid:
+                continue
+            num_q = get_assessment_question_count(db, "exam", eid)
+            time_limit = row.get("duration_minutes", row.get("time_limit_minutes", ""))
+            items.append({
+                "assessment_type": "exam",
+                "assessment_id": eid,
+                "title": row.get("title", "امتحان"),
+                "description": row.get("description", ""),
+                "type_label": "امتحان",
+                "num_questions": num_q,
+                "total_marks": row.get("total_marks", "20"),
+                "time_limit_minutes": time_limit,
+            })
+    return items
+
+
+def get_student_submitted_results(db, student_id):
+    """جمع نتائج المسابقات والامتحانات المسلّمة للطالبة."""
+    quiz_results = db.get_quiz_results()
+    exam_results = db.get_exam_results()
+    student_quiz = quiz_results[quiz_results["student_id"] == student_id] if not quiz_results.empty and "student_id" in quiz_results.columns else pd.DataFrame()
+    student_exam = exam_results[exam_results["student_id"] == student_id] if not exam_results.empty and "student_id" in exam_results.columns else pd.DataFrame()
+    if "status" in student_quiz.columns:
+        student_quiz = student_quiz[student_quiz["status"] == "submitted"]
+    if "status" in student_exam.columns:
+        student_exam = student_exam[student_exam["status"] == "submitted"]
+    return student_quiz, student_exam
+
+
+def verify_student_owns_result(db, student_id, result_id, result_type):
+    """التحقق من أن النتيجة تخص الطالبة الحالية."""
+    if result_type == "exam":
+        results_df = db.get_exam_results()
+    else:
+        results_df = db.get_quiz_results()
+    if results_df.empty or "result_id" not in results_df.columns:
+        return None
+    attempt_df = results_df[results_df["result_id"] == result_id]
+    if attempt_df.empty:
+        return None
+    attempt = attempt_df.iloc[0].to_dict()
+    if str(attempt.get("student_id", "")).strip() != str(student_id).strip():
+        return None
+    return attempt
+
+
+def inject_student_sidebar_css(sidebar_open):
+    """CSS للقائمة الجانبية الكاملة للطالبة."""
+    if sidebar_open:
+        st.markdown("""
+        <style>
+        section[data-testid="stSidebar"] {
+            position: fixed !important;
+            top: 0 !important;
+            right: 0 !important;
+            left: auto !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100vw !important;
+            max-height: 100vh !important;
+            z-index: 999999 !important;
+            border-radius: 0 !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            background: #ffffff !important;
+            transform: translateX(0) !important;
+            direction: rtl !important;
+        }
+        section[data-testid="stSidebar"] > div {
+            width: 100% !important;
+            max-width: 100vw !important;
+            direction: rtl !important;
+        }
+        [data-testid="collapsedControl"], button[kind="header"] {
+            display: none !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <style>
+        section[data-testid="stSidebar"] {
+            display: none !important;
+            transform: translateX(100%) !important;
+        }
+        [data-testid="collapsedControl"], button[kind="header"] {
+            display: none !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+
+def render_student_sidebar(db, student, menu_items, current_page):
+    """قائمة جانبية موحدة للطالبة — Streamlit native."""
+    full_name = student.get("full_name", "طالبة")
+    with st.sidebar:
+        col_main, col_close = st.columns([9, 1])
+        with col_main:
+            st.markdown(f"### 👤 {full_name}")
+            st.caption("طالبة")
+        with col_close:
+            if st.button("✕", key="student_sidebar_close_btn", use_container_width=True, help="إغلاق"):
+                st.session_state.sidebar_open = False
+                st.rerun()
+
+        if st.button("✕ إغلاق", key="student_sidebar_close_text_btn", use_container_width=True):
+            st.session_state.sidebar_open = False
+            st.rerun()
+
+        st.markdown("---")
+
+        for item in menu_items:
+            if item == "🚪 تسجيل الخروج":
+                continue
+            btn_type = "primary" if item == current_page else "secondary"
+            if st.button(item, key=f"student_nav_{item}", use_container_width=True, type=btn_type):
+                st.session_state.student_dashboard_page = item
+                st.session_state.sidebar_open = False
+                st.rerun()
+
+        st.markdown("---")
+        if st.button("🚪 تسجيل الخروج", use_container_width=True, key="student_logout_btn"):
+            student_logout(db)
+
+
+# =============================================================================
 # Student Dashboard (تسجيل دخول الطالبات)
 # =============================================================================
 def show_student_dashboard(db):
-    """لوحة تحكم الطالبة الشخصية مع قائمة كاملة الشاشة."""
+    """لوحة تحكم الطالبة — Dashboard واحد مع قائمة جانبية موحدة."""
     student = st.session_state.get("current_student")
     if not student:
         st.session_state.student_logged_in = False
         st.rerun()
         return
 
-    # التأكد من أن الطالبة ما زالت موجودة في Students
     students_df = db.get_students()
     if students_df.empty or "student_id" not in students_df.columns:
         st.error("تعذر تحميل بيانات الطالبة.")
@@ -3293,203 +3772,22 @@ def show_student_dashboard(db):
     st.session_state.current_student = student
 
     if st.session_state.get("quiz_interface_started", False):
-        show_student_quiz_interface(db)
+        show_student_assessment_interface(db)
         return
 
-    # ===== CSS للقائمة الكاملة الشاشة =====
-    st.markdown("""
-    <style>
-    /* Use Streamlit sidebar as a full-screen overlay for student dashboard when opened */
-    section[data-testid="stSidebar"] {
-        position: fixed !important;
-        top: 0 !important;
-        right: 0 !important;
-        left: auto !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        max-width: 100vw !important;
-        max-height: 100vh !important;
-        z-index: 999999 !important;
-        border-radius: 0 !important;
-        overflow-y: auto !important;
-        background: #ffffff !important;
-    }
-    
-    /* Full-screen overlay menu */
-    .fullscreen-sidebar-overlay {
-        position: fixed !important;
-        top: 0 !important;
-        right: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        background: #ffffff !important;
-        z-index: 999999 !important;
-        overflow-y: auto !important;
-        direction: rtl !important;
-        font-family: 'Cairo', sans-serif !important;
-    }
-    
-    .fullscreen-sidebar-overlay .sidebar-header {
-        padding: 2rem 1.5rem !important;
-        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
-        color: white !important;
-        display: flex !important;
-        justify-content: space-between !important;
-        align-items: center !important;
-    }
-    
-    .fullscreen-sidebar-overlay .sidebar-header h2 {
-        margin: 0 !important;
-        font-size: 1.5rem !important;
-        font-weight: 800 !important;
-        color: white !important;
-    }
-    
-    .fullscreen-sidebar-overlay .close-btn {
-        background: white !important;
-        color: #0f172a !important;
-        border: none !important;
-        border-radius: 50% !important;
-        width: 40px !important;
-        height: 40px !important;
-        font-size: 1.5rem !important;
-        font-weight: 700 !important;
-        cursor: pointer !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
-    }
-    
-    .fullscreen-sidebar-overlay .user-card {
-        padding: 1.5rem !important;
-        margin: 1.5rem !important;
-        background: #f8fafc !important;
-        border-radius: 16px !important;
-        border: 1px solid #e2e8f0 !important;
-        display: flex !important;
-        align-items: center !important;
-        gap: 1rem !important;
-    }
-    
-    .fullscreen-sidebar-overlay .user-avatar {
-        width: 56px !important;
-        height: 56px !important;
-        border-radius: 50% !important;
-        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        color: white !important;
-        font-weight: 700 !important;
-        font-size: 1.3rem !important;
-        flex-shrink: 0 !important;
-    }
-    
-    .fullscreen-sidebar-overlay .nav-menu {
-        padding: 0 1.5rem 1.5rem !important;
-    }
-    
-    .fullscreen-sidebar-overlay .nav-btn {
-        width: 100% !important;
-        padding: 1rem 1.25rem !important;
-        margin-bottom: 0.75rem !important;
-        background: transparent !important;
-        color: #0f172a !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 12px !important;
-        font-size: 1.1rem !important;
-        font-weight: 600 !important;
-        cursor: pointer !important;
-        transition: all 0.2s ease !important;
-        text-align: right !important;
-        font-family: 'Cairo', sans-serif !important;
-    }
-    
-    .fullscreen-sidebar-overlay .nav-btn:hover {
-        background: #dbeafe !important;
-        border-color: #2563eb !important;
-        transform: translateX(-4px) !important;
-    }
-    
-    .fullscreen-sidebar-overlay .nav-btn.active {
-        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
-        color: white !important;
-        border: none !important;
-        box-shadow: 0 4px 12px rgba(37,99,235,0.3) !important;
-    }
-    
-    .fullscreen-sidebar-overlay .logout-section {
-        padding: 1.5rem !important;
-        border-top: 1px solid #e2e8f0 !important;
-        margin-top: 1rem !important;
-    }
-    
-    .fullscreen-sidebar-overlay .logout-btn {
-        width: 100% !important;
-        padding: 1rem !important;
-        background: #fee2e2 !important;
-        color: #dc2626 !important;
-        border: 1px solid #fecaca !important;
-        border-radius: 12px !important;
-        font-size: 1.1rem !important;
-        font-weight: 600 !important;
-        cursor: pointer !important;
-        transition: all 0.2s ease !important;
-        font-family: 'Cairo', sans-serif !important;
-    }
-    
-    .fullscreen-sidebar-overlay .logout-btn:hover {
-        background: #dc2626 !important;
-        color: white !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    if "sidebar_open" not in st.session_state:
+        st.session_state.sidebar_open = False
 
-    # ===== Initialize sidebar state =====
-    if "student_sidebar_open" not in st.session_state:
-        st.session_state.student_sidebar_open = False
-
-    # ===== Full-screen Sidebar Overlay =====
-    full_name = student.get("full_name", "طالبة")
-    initials = get_initials(full_name)
-    menu_items = ["🏠 الرئيسية", "👤 ملفي الشخصي", "🏆 المسابقات", "🔔 الإشعارات", "🚪 تسجيل الخروج"]
+    menu_items = STUDENT_MENU_ITEMS
     current_page = st.session_state.get("student_dashboard_page", "🏠 الرئيسية")
     if current_page not in menu_items:
         current_page = menu_items[0]
         st.session_state.student_dashboard_page = current_page
 
-    # Show fullscreen sidebar if open (Streamlit-native implementation)
-    if st.session_state.student_sidebar_open:
-        with st.sidebar:
-            # Header: student name and close button
-            col_main, col_close = st.columns([9, 1])
-            with col_main:
-                st.markdown(f"### 👤 {full_name}")
-                st.markdown(f"<div style='font-size:0.9rem; color:#64748b;'>طالبة</div>", unsafe_allow_html=True)
-            with col_close:
-                if st.button("✕", key="student_sidebar_close_btn", use_container_width=True):
-                    st.session_state.student_sidebar_open = False
-                    st.rerun()
+    inject_student_sidebar_css(st.session_state.sidebar_open)
+    if st.session_state.sidebar_open:
+        render_student_sidebar(db, student, menu_items, current_page)
 
-            st.markdown("---")
-
-            for item in menu_items:
-                if st.button(item, key=f"student_nav_{item}", use_container_width=True):
-                    st.session_state.student_dashboard_page = item
-                    st.session_state.student_sidebar_open = False
-                    st.rerun()
-
-            st.markdown("---")
-
-            if st.button("🚪 تسجيل الخروج", use_container_width=True, key="student_logout_btn"):
-                logout(db)
-
-    # ===== Hidden iframe for JavaScript message handling (removed) =====
-    # The old JS-based message bridge was removed in favor of Streamlit-native navigation
-
-
-    # ===== Top bar with Help and Menu buttons =====
     col1, col2 = st.columns([1, 1])
     with col1:
         if st.button("🆘 مركز المساعدة", use_container_width=True, key="help_center_btn"):
@@ -3497,78 +3795,77 @@ def show_student_dashboard(db):
             st.rerun()
     with col2:
         if st.button("☰ القائمة", use_container_width=True, key="menu_toggle_btn"):
-            st.session_state.student_sidebar_open = not st.session_state.student_sidebar_open
+            st.session_state.sidebar_open = not st.session_state.sidebar_open
             st.rerun()
 
-    # ===== Main Content Area =====
     if current_page == "👤 ملفي الشخصي":
         show_student_profile_tab(db, student)
     elif current_page == "🏆 المسابقات":
         show_student_competitions_tab(db, student)
+    elif current_page == "📊 درجاتي":
+        show_student_grades_tab(db, student)
+    elif current_page == "📋 سجل الامتحانات":
+        show_student_exam_history_tab(db, student)
     elif current_page == "🔔 الإشعارات":
         show_student_notifications_tab(db, student)
     elif current_page == "🚪 تسجيل الخروج":
-        st.session_state.student_logged_in = False
-        st.session_state.current_student = None
-        st.session_state.student_dashboard_page = "🏠 الرئيسية"
-        st.session_state.selected_quiz_id = None
-        st.session_state.quiz_interface_started = False
-        st.rerun()
+        student_logout(db)
     else:
         show_student_home_tab(db, student)
 
 
 def show_student_grades_tab(db, student):
-    """درجاتي - عرض درجات المسابقات."""
-    st.markdown(hero_header("درجاتي", "📊 درجات ونتائج المسابقات"), unsafe_allow_html=True)
-    
+    """درجاتي — نتائج المسابقات والامتحانات للطالبة الحالية."""
+    st.markdown(hero_header("درجاتي", "📊 درجات ونتائج الاختبارات"), unsafe_allow_html=True)
+
     student_id = student.get("student_id", "")
-    results = db.get_quiz_results()
+    student_quiz, student_exam = get_student_submitted_results(db, student_id)
     quizzes = db.get_quizzes()
-    
-    # فلترة النتائج للطالبة الحالية
-    student_results = results[results["student_id"] == student_id] if not results.empty and "student_id" in results.columns else pd.DataFrame()
-    
-    if student_results.empty:
+    exams = db.get_exams()
+
+    frames = []
+    if not student_quiz.empty:
+        sq = student_quiz.copy()
+        sq["result_source"] = "quiz"
+        frames.append(sq)
+    if not student_exam.empty:
+        se = student_exam.copy()
+        se["result_source"] = "exam"
+        frames.append(se)
+
+    if not frames:
         st.info("لا توجد درجات بعد.")
         return
-    
-    # دمج بيانات المسابقات
-    if not quizzes.empty and "quiz_id" in student_results.columns:
-        student_results = student_results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
-        student_results.rename(columns={"title": "المسابقة"}, inplace=True)
-    
-    # حساب النسبة المئوية
-    if "score" in student_results.columns:
-        student_results["score"] = pd.to_numeric(student_results["score"], errors="coerce").fillna(0)
-    if "total_marks" in student_results.columns:
-        student_results["total_marks"] = pd.to_numeric(student_results["total_marks"], errors="coerce").fillna(20)
-    if "score" in student_results.columns and "total_marks" in student_results.columns:
-        student_results["النسبة"] = (student_results["score"] / student_results["total_marks"] * 100).round(1)
-    
-    # عرض النتائج المسلّمة فقط
-    if "status" in student_results.columns:
-        submitted_results = student_results[student_results["status"] == "submitted"]
-    else:
-        submitted_results = student_results
-    
-    if submitted_results.empty:
-        st.info("لا توجد نتائج مسلّمة بعد.")
-        return
-    
-    # ترتيب حسب التاريخ
-    if "submission_time" in submitted_results.columns:
-        submitted_results = submitted_results.sort_values("submission_time", ascending=False)
-    
-    # عرض الجدول
+
+    student_results = pd.concat(frames, ignore_index=True, sort=False)
+    if "submission_time" in student_results.columns:
+        student_results = student_results.sort_values("submission_time", ascending=False)
+
+    display = student_results.copy()
+    display["المسابقة"] = ""
+    if not quizzes.empty and "quiz_id" in display.columns:
+        quiz_titles = quizzes[["quiz_id", "title"]].rename(columns={"title": "quiz_title"})
+        display = display.merge(quiz_titles, on="quiz_id", how="left")
+        display.loc[display["result_source"] == "quiz", "المسابقة"] = display["quiz_title"]
+    if not exams.empty and "exam_id" in display.columns:
+        exam_titles = exams[["exam_id", "title"]].rename(columns={"title": "exam_title"})
+        display = display.merge(exam_titles, on="exam_id", how="left")
+        display.loc[display["result_source"] == "exam", "المسابقة"] = display["exam_title"]
+
+    if "score" in display.columns:
+        display["score"] = pd.to_numeric(display["score"], errors="coerce").fillna(0)
+    if "total_marks" in display.columns:
+        display["total_marks"] = pd.to_numeric(display["total_marks"], errors="coerce").fillna(20)
+    if "score" in display.columns and "total_marks" in display.columns:
+        display["النسبة"] = (display["score"] / display["total_marks"] * 100).round(1)
+
     display_cols = ["المسابقة", "score", "total_marks", "النسبة", "submission_time", "status"]
-    available_cols = [c for c in display_cols if c in submitted_results.columns]
-    
+    available_cols = [c for c in display_cols if c in display.columns]
     st.dataframe(
-        submitted_results[available_cols].rename(columns={
+        display[available_cols].rename(columns={
             "score": "الدرجة",
             "total_marks": "الدرجة الكلية",
-            "submission_time": "تاريخ التسليم",
+            "submission_time": "التاريخ",
             "status": "الحالة"
         }),
         use_container_width=True
@@ -3576,41 +3873,68 @@ def show_student_grades_tab(db, student):
 
 
 def show_student_exam_history_tab(db, student):
-    """سجل الاختبارات - عرض تاريخ جميع الاختبارات."""
-    st.markdown(hero_header("سجل الاختبارات", "📋 تاريخ جميع المسابقات والاختبارات"), unsafe_allow_html=True)
-    
+    """سجل الامتحانات — مراجعة المحاولات المكتملة."""
+    st.markdown(hero_header("سجل الامتحانات", "📋 تاريخ الاختبارات والمسابقات"), unsafe_allow_html=True)
+
     student_id = student.get("student_id", "")
-    results = db.get_quiz_results()
+    if st.session_state.get("review_result_id") and st.session_state.get("review_result_type"):
+        render_student_attempt_review(db, student, st.session_state.review_result_id, st.session_state.review_result_type)
+        return
+
+    student_quiz, student_exam = get_student_submitted_results(db, student_id)
     quizzes = db.get_quizzes()
-    
-    # فلترة النتائج للطالبة الحالية
-    student_results = results[results["student_id"] == student_id] if not results.empty and "student_id" in results.columns else pd.DataFrame()
-    
-    if student_results.empty:
+    exams = db.get_exams()
+
+    history_rows = []
+    if not student_quiz.empty:
+        for _, row in student_quiz.iterrows():
+            title = "—"
+            if not quizzes.empty and "quiz_id" in quizzes.columns:
+                match = quizzes[quizzes["quiz_id"] == row.get("quiz_id", "")]
+                if not match.empty:
+                    title = match.iloc[0].get("title", "—")
+            history_rows.append({**row.to_dict(), "attempt_type": "quiz", "title": title})
+    if not student_exam.empty:
+        for _, row in student_exam.iterrows():
+            title = "—"
+            if not exams.empty and "exam_id" in exams.columns:
+                match = exams[exams["exam_id"] == row.get("exam_id", "")]
+                if not match.empty:
+                    title = match.iloc[0].get("title", "—")
+            history_rows.append({**row.to_dict(), "attempt_type": "exam", "title": title})
+
+    if not history_rows:
         st.info("لا توجد سجلات اختبارات بعد.")
         return
-    
-    # دمج بيانات المسابقات
-    if not quizzes.empty and "quiz_id" in student_results.columns:
-        student_results = student_results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
-        student_results.rename(columns={"title": "المسابقة"}, inplace=True)
-    
-    # ترتيب حسب التاريخ
-    if "submission_time" in student_results.columns:
-        student_results = student_results.sort_values("submission_time", ascending=False)
-    
-    # عرض الجدول
-    display_cols = ["المسابقة", "score", "status", "submission_time"]
-    available_cols = [c for c in display_cols if c in student_results.columns]
-    
-    st.dataframe(
-        student_results[available_cols].rename(columns={
-            "score": "الدرجة",
-            "submission_time": "التاريخ",
-            "status": "الحالة"
-        }),
-        use_container_width=True
-    )
+
+    history_rows.sort(key=lambda x: str(x.get("submission_time", "")), reverse=True)
+    for attempt in history_rows:
+        result_id = attempt.get("result_id", "")
+        attempt_type = attempt.get("attempt_type", "quiz")
+        title = attempt.get("title", "—")
+        score = attempt.get("score", "")
+        total_marks = attempt.get("total_marks", "")
+        submission_time = attempt.get("submission_time", "")
+        percent = None
+        try:
+            score_val = float(score)
+            total_val = float(total_marks) if total_marks else 0
+            percent = round((score_val / total_val) * 100, 1) if total_val > 0 else None
+        except (TypeError, ValueError):
+            percent = None
+
+        label = f"🎯 {title} — {score}/{total_marks}"
+        if percent is not None:
+            label += f" — {percent}%"
+        if submission_time:
+            label += f" — {submission_time}"
+
+        with st.expander(label, expanded=False):
+            st.markdown(f"**الحالة:** {attempt.get('status', '')}")
+            if st.button("📖 مراجعة المحاولة", key=f"hist_review_{attempt_type}_{result_id}"):
+                st.session_state.review_result_id = result_id
+                st.session_state.review_result_type = attempt_type
+                st.rerun()
 
 
 def show_student_notifications_tab(db, student):
@@ -3653,151 +3977,122 @@ def show_student_notifications_tab(db, student):
 
 
 def render_student_attempt_review(db, student, result_id, result_type):
-    """Render a detailed review of a completed quiz or exam attempt."""
+    """مراجعة تفصيلية لمحاولة مكتملة — إجابات المحاولة المحددة فقط."""
     student_id = student.get("student_id", "")
-    if result_type == "quiz":
-        results_df = db.get_quiz_results()
-        if results_df.empty:
-            st.error("تعذر تحميل نتائج المسابقة.")
-            return
-        attempt_df = results_df[results_df["result_id"] == result_id]
-        if attempt_df.empty:
-            st.error("تعذر العثور على نتيجة المسابقة المحددة.")
-            return
-        attempt = attempt_df.iloc[0].to_dict()
-        if str(attempt.get("student_id", "")).strip() != str(student_id).strip():
-            st.error("🚫 غير مصرح بمراجعة هذه النتيجة.")
-            return
-        quiz_id = attempt.get("quiz_id", "")
-        quiz_df = db.get_quizzes()
-        quiz_row = quiz_df[quiz_df["quiz_id"] == quiz_id] if not quiz_df.empty else pd.DataFrame()
-        title = quiz_row.iloc[0].get("title", "المسابقة") if not quiz_row.empty else "المسابقة"
-        questions_df = db.get_quiz_questions(quiz_id)
-        attempt_type_label = "مسابقة"
-    else:
-        results_df = db.get_exam_results()
-        if results_df.empty:
-            st.error("تعذر تحميل نتائج الامتحان.")
-            return
-        attempt_df = results_df[results_df["result_id"] == result_id]
-        if attempt_df.empty:
-            st.error("تعذر العثور على نتيجة الامتحان المحددة.")
-            return
-        attempt = attempt_df.iloc[0].to_dict()
-        if str(attempt.get("student_id", "")).strip() != str(student_id).strip():
-            st.error("🚫 غير مصرح بمراجعة هذه النتيجة.")
-            return
-        exam_id = attempt.get("exam_id", "")
-        exams_df = db.get_exams()
-        exam_row = exams_df[exams_df["exam_id"] == exam_id] if not exams_df.empty else pd.DataFrame()
-        title = exam_row.iloc[0].get("title", "الامتحان") if not exam_row.empty else "الامتحان"
-        questions_df = db.get_exam_questions(exam_id)
-        attempt_type_label = "امتحان"
+    attempt = verify_student_owns_result(db, student_id, result_id, result_type)
+    if attempt is None:
+        st.error("🚫 غير مصرح بمراجعة هذه النتيجة.")
+        return
 
-    st.markdown(f"### مراجعة {attempt_type_label}: {title}")
+    if result_type == "exam":
+        assessment_id = attempt.get("exam_id", "")
+        exams_df = db.get_exams()
+        exam_row = exams_df[exams_df["exam_id"] == assessment_id] if not exams_df.empty else pd.DataFrame()
+        title = exam_row.iloc[0].get("title", "الامتحان") if not exam_row.empty else "الامتحان"
+        questions_df = db.get_exam_questions(assessment_id)
+        attempt_type_label = "امتحان"
+    else:
+        assessment_id = attempt.get("quiz_id", "")
+        quiz_df = db.get_quizzes()
+        quiz_row = quiz_df[quiz_df["quiz_id"] == assessment_id] if not quiz_df.empty else pd.DataFrame()
+        title = quiz_row.iloc[0].get("title", "المسابقة") if not quiz_row.empty else "المسابقة"
+        questions_df = db.get_quiz_questions(assessment_id)
+        attempt_type_label = "مسابقة"
+
+    st.markdown(f"## مراجعة {attempt_type_label}: {title}")
     score = attempt.get("score", "")
     total_marks = attempt.get("total_marks", "")
-    status = attempt.get("status", "")
     submission_time = attempt.get("submission_time", "")
-    percentage = None
     try:
         score_val = float(score)
         total_val = float(total_marks) if total_marks else 0
         percentage = round((score_val / total_val * 100), 1) if total_val > 0 else None
-    except Exception:
+    except (TypeError, ValueError):
         percentage = None
 
-    st.markdown(f"- **النوع:** {attempt_type_label}")
-    st.markdown(f"- **اسم الطالبة:** {student.get('full_name', '')}")
-    st.markdown(f"- **الحالة:** {status}")
-    st.markdown(f"- **الدرجة:** {score} / {total_marks}")
-    if percentage is not None:
-        st.markdown(f"- **النسبة:** {percentage}%")
-    if submission_time:
-        st.markdown(f"- **تاريخ التسليم:** {submission_time}")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("الدرجة", f"{score} / {total_marks}")
+    col2.metric("النسبة", f"{percentage}%" if percentage is not None else "—")
+    col3.metric("التاريخ", submission_time or "—")
     st.markdown("---")
 
     if questions_df.empty:
         st.info("لا توجد أسئلة لهذا الاختبار.")
-        return
+    else:
+        try:
+            answers_data = json.loads(attempt.get("answers", "{}") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            answers_data = {}
 
-    try:
-        answers_data = json.loads(attempt.get("answers", "{}") or "{}")
-    except Exception:
-        answers_data = {}
+        for idx, row in questions_df.iterrows():
+            q = row.to_dict()
+            q_id = q.get("question_id", "")
+            student_answer = str(answers_data.get(q_id, "") or "").strip()
+            correct_answer = str(q.get("correct_answer", "")).strip()
+            marks = q.get("marks", "") if "marks" in q else ""
 
-    for idx, row in questions_df.iterrows():
-        q = row.to_dict()
-        q_id = q.get("question_id", "")
-        student_answer = str(answers_data.get(q_id, "") or "").strip()
-        correct_answer = str(q.get("correct_answer", "")).strip()
-        q_type = q.get("question_type", "")
-        marks = q.get("marks", "") if "marks" in q else ""
-        normalized_student = student_answer.strip().lower()
-        normalized_correct = correct_answer.strip().lower()
-        is_correct = bool(normalized_student and normalized_student == normalized_correct)
+            st.markdown(f"### السؤال {idx + 1}")
+            st.markdown(q.get("question_text", ""))
+            st.markdown("### إجابتك")
+            st.markdown(student_answer if student_answer else "⚪ لم تتم الإجابة")
+            st.markdown("### الإجابة الصحيحة")
+            st.markdown(correct_answer if correct_answer else "غير متاحة")
+            st.markdown("### النتيجة")
+            if not student_answer:
+                st.markdown("⚪ لم تتم الإجابة")
+            elif student_answer.strip().lower() == correct_answer.strip().lower():
+                st.markdown("✅ إجابة صحيحة")
+            else:
+                st.markdown("❌ إجابة خاطئة")
+            if marks:
+                st.caption(f"درجة السؤال: {marks}")
+            st.markdown("---")
 
-        st.markdown(f"**سؤال {idx + 1}:** {q.get('question_text', '')}")
-        if q_type:
-            st.markdown(f"- نوع السؤال: {q_type}")
-        if marks:
-            st.markdown(f"- الدرجة المحتسبة: {marks}")
-        st.markdown(f"- إجابتك: {student_answer if student_answer else '⚪ لم تجب'}")
-        st.markdown(f"- الإجابة الصحيحة: {correct_answer if correct_answer else 'غير متاحة'}")
-        if not student_answer:
-            st.markdown("- النتيجة: ⚪ لم تجب")
-        elif is_correct:
-            st.markdown("- النتيجة: ✅ صحيح")
-        else:
-            st.markdown("- النتيجة: ❌ غير صحيح")
-        st.markdown("---")
-
-    if st.button("⬅️ العودة إلى المسابقات", key=f"back_to_competitions_{result_id}"):
+    if st.button("⬅️ العودة", key=f"back_from_review_{result_id}"):
         st.session_state.review_result_id = None
         st.session_state.review_result_type = None
         st.rerun()
 
 
 def show_student_home_tab(db, student):
-    """الرئيسية - ملخص حساب الطالبة."""
-    st.markdown(hero_header("لوحة تحكم الطالبة", f"مرحباً {student.get('full_name', '')}"), unsafe_allow_html=True)
+    """الرئيسية — ترحيب وإحصائيات."""
+    full_name = student.get("full_name", "طالبة")
+    st.markdown(f"## مرحبًا، {full_name} 👋")
 
-    sections = db.get_sections()
-    section_name = ""
-    sec_id = student.get("section_id", "")
-    if not sections.empty and sec_id:
-        sec_match = sections[sections["section_id"] == sec_id]
-        if not sec_match.empty:
-            section_name = sec_match.iloc[0].get("section_name", "")
+    student_id = student.get("student_id", "")
+    student_quiz, student_exam = get_student_submitted_results(db, student_id)
+    available_count = len(build_unified_assessments(db))
+    completed_count = len(student_quiz) + len(student_exam)
 
-    # إحصائيات
-    quiz_results = db.get_quiz_results()
-    exam_results = db.get_exam_results()
-    student_quiz_results = quiz_results[quiz_results["student_id"] == student.get("student_id", "")] if not quiz_results.empty and "student_id" in quiz_results.columns else pd.DataFrame()
-    student_exam_results = exam_results[exam_results["student_id"] == student.get("student_id", "")] if not exam_results.empty and "student_id" in exam_results.columns else pd.DataFrame()
-    if not student_quiz_results.empty or not student_exam_results.empty:
-        student_results = pd.concat([student_quiz_results, student_exam_results], ignore_index=True, sort=False)
-    else:
-        student_results = pd.DataFrame()
-    submitted_results = student_results[student_results["status"] == "submitted"] if not student_results.empty and "status" in student_results.columns else pd.DataFrame()
-    quizzes = db.get_quizzes()
-    # فلترة المسابقات بناءً على is_active فقط (بدون فصل أو صف أو قسم)
-    available_quizzes = quizzes[quizzes["is_active"].astype(str).str.strip() == "True"] if not quizzes.empty and "is_active" in quizzes.columns else pd.DataFrame()
+    all_results = []
+    for df in (student_quiz, student_exam):
+        if not df.empty:
+            all_results.append(df)
+    latest_score = None
+    if all_results:
+        combined = pd.concat(all_results, ignore_index=True, sort=False)
+        if "submission_time" in combined.columns:
+            combined = combined.sort_values("submission_time", ascending=False)
+        if not combined.empty and "score" in combined.columns:
+            latest_score = pd.to_numeric(combined.iloc[0]["score"], errors="coerce")
+
+    all_scores = []
+    for df in (student_quiz, student_exam):
+        if not df.empty and "score" in df.columns:
+            all_scores.extend(pd.to_numeric(df["score"], errors="coerce").dropna().tolist())
+    avg_score = round(sum(all_scores) / len(all_scores), 1) if all_scores else None
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("🏫 الفصل", section_name or "—")
-    col2.metric("📝 المسابقات المتاحة", len(available_quizzes))
-    col3.metric("✅ مسابقات منجزة", len(submitted_results))
-    col4.metric("📊 متوسط الدرجات", f"{pd.to_numeric(submitted_results['score'], errors='coerce').mean():.1f}" if not submitted_results.empty and "score" in submitted_results.columns else "—")
-
-    st.markdown("---")
+    col1.metric("📝 اختبارات متاحة", available_count)
+    col2.metric("✅ اختبارات منجزة", completed_count)
+    col3.metric("📊 آخر درجة", latest_score if latest_score is not None else "—")
+    col4.metric("📈 متوسط الدرجات", avg_score if avg_score is not None else "—")
 
 
 def show_student_profile_tab(db, student):
-    """ملفي الشخصي - عرض وتعديل بيانات الطالبة (مرة واحدة فقط)."""
+    """ملفي الشخصي — عرض وتعديل بيانات الطالبة (مرة واحدة فقط)."""
     st.markdown(hero_header("ملفي الشخصي", "👤 بياناتي الشخصية"), unsafe_allow_html=True)
 
-    # قراءة أحدث البيانات من Students
     students_df = db.get_students()
     student_row = students_df[students_df["student_id"] == student.get("student_id", "")]
     if student_row.empty:
@@ -3814,14 +4109,25 @@ def show_student_profile_tab(db, student):
         if not sec_match.empty:
             section_name = sec_match.iloc[0].get("section_name", "")
 
-    profile_edit_used = str(student.get("profile_edit_used", "")).strip().lower() in ["true", "1", "yes", "نعم"]
+    profile_edit_used = str(student.get("profile_edit_used", "")).strip().lower() in ("true", "1", "yes", "نعم")
 
+    st.markdown("### 📋 بياناتي")
+    col1, col2 = st.columns(2)
+    col1.markdown(f"**الاسم الكامل:** {student.get('full_name', '—')}")
+    col2.markdown(f"**كود الطالبة:** {student.get('student_code', '—')}")
+    col1.markdown(f"**الفصل:** {section_name or '—'}")
+    col2.markdown(f"**الهاتف:** {student.get('phone', '—') or '—'}")
+    col1.markdown(f"**رقم ولي الأمر:** {student.get('parent_phone', '—') or '—'}")
+    col2.markdown(f"**تاريخ الميلاد:** {student.get('birthdate', '—') or '—'}")
+    col1.markdown(f"**العنوان:** {student.get('address', '—') or '—'}")
+    col2.markdown(f"**المدرسة:** {student.get('school', '—') or '—'}")
+    if student.get("notes"):
+        st.markdown(f"**ملاحظات:** {student.get('notes', '')}")
 
     st.markdown("---")
 
     if profile_edit_used:
         st.warning("⚠️ لقد استخدمتِ فرصة تعديل البيانات بالفعل. البيانات أصبحت للقراءة فقط.")
-        st.info("إذا كنتِ بحاجة لتعديل بياناتك، يرجى التواصل مع مسؤول النظام.")
     else:
         st.markdown("### ✏️ تعديل بياناتي (مرة واحدة فقط)")
         st.info("يمكنكِ تعديل بياناتك مرة واحدة فقط. بعد الحفظ لن تتمكني من التعديل مرة أخرى.")
@@ -3836,18 +4142,10 @@ def show_student_profile_tab(db, student):
             edit_notes = st.text_area("ملاحظات", value=student.get("notes", ""))
             submitted = st.form_submit_button("💾 حفظ البيانات", use_container_width=True)
             if submitted:
-                # ===== التحقق في الـ backend: هل استخدمت فرصة التعديل؟ =====
-                students_check = db.get_students()
-                check_row = students_check[students_check["student_id"] == student.get("student_id", "")]
-                if not check_row.empty:
-                    check_used = str(check_row.iloc[0].get("profile_edit_used", "")).strip().lower() in ["true", "1", "yes", "نعم"]
-                    if check_used:
-                        st.error("🚫 تم رفض التعديل: لقد استخدمتِ فرصة تعديل البيانات بالفعل.")
-                        st.stop()
                 if not edit_name:
                     st.error("الاسم الكامل مطلوب")
                 else:
-                    db.update_student(student.get("student_id", ""), {
+                    ok = db.update_student(student.get("student_id", ""), {
                         "full_name": edit_name,
                         "phone": edit_phone,
                         "parent_phone": edit_parent_phone,
@@ -3857,251 +4155,190 @@ def show_student_profile_tab(db, student):
                         "notes": edit_notes,
                         "profile_edit_used": "True"
                     })
-                    db.add_log(student.get("student_id", ""), "تعديل بيانات الطالبة", f"تم تعديل بيانات الطالبة: {edit_name}")
-                    st.success("✅ تم حفظ بياناتك بنجاح! لن تتمكني من التعديل مرة أخرى.")
-                    time.sleep(1)
-                    st.rerun()
+                    if not ok:
+                        st.error("🚫 تم رفض التعديل: لقد استخدمتِ فرصة تعديل البيانات بالفعل.")
+                    else:
+                        db.add_log(student.get("student_id", ""), "تعديل بيانات الطالبة", f"تم تعديل بيانات الطالبة: {edit_name}")
+                        st.success("✅ تم حفظ بياناتك بنجاح! لن تتمكني من التعديل مرة أخرى.")
+                        time.sleep(1)
+                        st.rerun()
+
+
+def _get_assessment_attempt_status(db, student_id, assessment_type, assessment_id):
+    """حالة محاولة الطالبة: available | started | submitted."""
+    if assessment_type == "exam":
+        results = db.get_exam_results()
+        id_col = "exam_id"
+    else:
+        results = db.get_quiz_results()
+        id_col = "quiz_id"
+    if results.empty or id_col not in results.columns or "student_id" not in results.columns:
+        return "available"
+    attempts = results[(results[id_col].astype(str) == str(assessment_id)) & (results["student_id"].astype(str) == str(student_id))]
+    if attempts.empty:
+        return "available"
+    if "status" in attempts.columns and not attempts[attempts["status"] == "submitted"].empty:
+        return "submitted"
+    return "started"
 
 
 def show_student_competitions_tab(db, student):
-    """المسابقات - المسابقات المتاحة + درجاتي + سجل الامتحانات."""
-    st.markdown(hero_header("المسابقات", "🏆 المسابقات والاختبارات والامتحانات"), unsafe_allow_html=True)
+    """🏆 المسابقات — اختبارات موحدة (Quizzes + Exams) + المحاولات المكتملة."""
+    st.markdown(hero_header("المسابقات", "🏆 المسابقات والاختبارات"), unsafe_allow_html=True)
 
-    sec_id = student.get("section_id", "")
     student_id = student.get("student_id", "")
     quizzes = db.get_quizzes()
-    results = db.get_quiz_results()
+    exams = db.get_exams()
 
-    # ===== المسابقات المتاحة =====
-    st.markdown("### 🏆 المسابقات المتاحة")
-    # فلترة المسابقات بناءً على is_active فقط (بدون فصل أو صف أو قسم)
-    available_quizzes = quizzes[quizzes["is_active"].astype(str).str.strip() == "True"] if not quizzes.empty and "is_active" in quizzes.columns else pd.DataFrame()
+    if st.session_state.get("review_result_id") and st.session_state.get("review_result_type"):
+        render_student_attempt_review(db, student, st.session_state.review_result_id, st.session_state.review_result_type)
+        return
 
-    confirmation_quiz_id = st.session_state.get("quiz_confirmation_id")
-    if confirmation_quiz_id:
-        confirm_quiz = quizzes[quizzes["quiz_id"] == confirmation_quiz_id] if not quizzes.empty and "quiz_id" in quizzes.columns else pd.DataFrame()
-        if confirm_quiz.empty:
+    confirmation = st.session_state.get("assessment_confirmation")
+    if confirmation:
+        a_type = confirmation.get("type", "quiz")
+        a_id = confirmation.get("id", "")
+        if a_type == "exam":
+            match_df = exams[exams["exam_id"] == a_id] if not exams.empty and "exam_id" in exams.columns else pd.DataFrame()
+        else:
+            match_df = quizzes[quizzes["quiz_id"] == a_id] if not quizzes.empty and "quiz_id" in quizzes.columns else pd.DataFrame()
+        if match_df.empty:
             st.warning("تعذر العثور على بيانات الاختبار.")
-            st.session_state.quiz_confirmation_id = None
+            st.session_state.assessment_confirmation = None
             st.rerun()
             return
 
-        quiz = confirm_quiz.iloc[0].to_dict()
-        st.markdown("### تأكيد دخول الاختبار")
-        st.info("هل أنتِ متأكدة من رغبتك في بدء الاختبار؟")
+        item = match_df.iloc[0].to_dict()
+        num_q = get_assessment_question_count(db, a_type, a_id)
+        total_marks = item.get("total_marks", "20")
+        time_limit = item.get("time_limit_minutes") or item.get("duration_minutes", "—")
+
+        st.markdown("## تأكيد دخول الاختبار")
+        st.markdown(f"**اسم الاختبار:** {item.get('title', '')}")
+        st.markdown(f"**عدد الأسئلة:** {num_q or '—'}")
+        st.markdown(f"**الدرجة الكلية:** {total_marks}")
+        st.markdown(f"**الوقت المحدد:** {time_limit} دقيقة")
         st.markdown("---")
-        st.markdown(f"**اسم الاختبار:** {quiz.get('title', '')}")
-        st.markdown(f"**عدد الأسئلة:** {quiz.get('num_questions', '—')}")
-        st.markdown(f"**الدرجة الكلية:** {quiz.get('total_marks', '20')}")
-        st.markdown(f"**الوقت المحدد:** {quiz.get('time_limit_minutes', '—')} دقيقة")
-        st.markdown("---")
-        st.markdown("### تعليمات مهمة قبل بدء الاختبار")
-        st.markdown("- يجب قراءة التعليمات جيدًا قبل البدء.")
-        st.markdown("- بمجرد بدء الاختبار يبدأ احتساب الوقت.")
-        st.markdown("- يجب الالتزام بالوقت المحدد للاختبار.")
-        st.markdown("- لا تقومي بإغلاق صفحة الاختبار أثناء أداء الاختبار.")
-        st.markdown("- لا تقومي بالخروج من صفحة الاختبار أو مغادرتها أثناء الاختبار.")
-        st.markdown("- لا تقومي بفتح صفحة أخرى أو إعادة تحميل الصفحة أثناء الاختبار.")
-        st.markdown("- عند انتهاء الوقت سيتم التعامل مع الاختبار وفق نظام التسليم التلقائي الموجود حاليًا.")
-        st.markdown("- تأكدي من الإجابة عن الأسئلة قبل الضغط على تسليم الاختبار.")
-        st.markdown("- بعد بدء الاختبار، اتبعي التعليمات الموجودة داخل صفحة الاختبار.")
+        st.markdown("## تعليمات مهمة قبل بدء الاختبار")
+        instructions = [
+            "يجب قراءة التعليمات جيدًا قبل البدء.",
+            "بمجرد بدء الاختبار يبدأ احتساب الوقت.",
+            "يجب الالتزام بالوقت المحدد.",
+            "لا تقومي بإغلاق صفحة الاختبار.",
+            "لا تقومي بالخروج من صفحة الاختبار.",
+            "لا تقومي بإعادة تحميل الصفحة.",
+            "لا تقومي بمغادرة الاختبار أثناء أدائه.",
+            "سيتم التعامل مع انتهاء الوقت حسب نظام التسليم التلقائي.",
+            "تأكدي من إجاباتك قبل تسليم الاختبار.",
+        ]
+        for line in instructions:
+            st.markdown(f"- {line}")
         st.markdown("---")
 
-        col_cancel, col_confirm = st.columns([1, 1])
+        col_cancel, col_confirm = st.columns(2)
         with col_cancel:
-            if st.button("إلغاء", use_container_width=True, key="cancel_quiz_start_btn"):
-                st.session_state.quiz_confirmation_id = None
-                st.session_state.selected_quiz_id = None
+            if st.button("إلغاء", use_container_width=True, key="cancel_assessment_start"):
+                st.session_state.assessment_confirmation = None
                 st.rerun()
         with col_confirm:
-            if st.button("أوافق وأبدأ الاختبار", use_container_width=True, key="confirm_quiz_start_btn"):
-                st.session_state.selected_quiz_id = confirmation_quiz_id
-                st.session_state.quiz_confirmation_id = None
+            if st.button("أوافق وأبدأ الاختبار", use_container_width=True, key="confirm_assessment_start"):
+                st.session_state.selected_assessment_type = a_type
+                st.session_state.selected_assessment_id = a_id
+                st.session_state.assessment_confirmation = None
                 st.session_state.quiz_interface_started = True
+                if a_type == "quiz":
+                    st.session_state.selected_quiz_id = a_id
+                else:
+                    st.session_state.selected_exam_id = a_id
                 st.rerun()
         return
 
-    if available_quizzes.empty:
-        st.info("لا توجد مسابقات متاحة حالياً.")
+    st.markdown("## المسابقات المتاحة")
+    assessments = build_unified_assessments(db)
+    if not assessments:
+        st.info("لا توجد اختبارات متاحة حالياً.")
     else:
-        for _, q in available_quizzes.iterrows():
-            qid = q.get("quiz_id", "")
-            title = q.get("title", "")
-            desc = q.get("description", "")
-            num_q = q.get("num_questions", "")
-            total_marks = q.get("total_marks", "20")
-            time_limit = q.get("time_limit_minutes", "")
-            expiry = q.get("expiry_date", "")
-            is_active = str(q.get("is_active", "True")).strip() == "True"
-
-            # هل بدأت/انتهت؟
-            student_attempts = results[(results["quiz_id"] == qid) & (results["student_id"] == student_id)] if not results.empty and "quiz_id" in results.columns and "student_id" in results.columns else pd.DataFrame()
-            started = not student_attempts.empty
-            submitted = not student_attempts[student_attempts["status"] == "submitted"].empty if started and "status" in student_attempts.columns else False
-
-            status_text = "🟢 متاحة" if is_active else "🔴 مغلقة"
-            if submitted:
+        for item in assessments:
+            a_type = item["assessment_type"]
+            a_id = item["assessment_id"]
+            attempt_status = _get_assessment_attempt_status(db, student_id, a_type, a_id)
+            if attempt_status == "submitted":
                 status_text = "✅ منجزة"
-            elif started:
+            elif attempt_status == "started":
                 status_text = "⏳ بدأت"
+            else:
+                status_text = "🟢 متاحة"
 
-            with st.expander(f"📝 {title} — {status_text}", expanded=False):
-                if desc:
-                    st.markdown(f"**الوصف:** {desc}")
-                col_q1, col_q2, col_q3, col_q4 = st.columns(4)
-                col_q1.metric("عدد الأسئلة", num_q or "—")
-                col_q2.metric("الدرجة الكلية", total_marks or "—")
-                col_q3.metric("الوقت", f"{time_limit} دقيقة" if time_limit else "—")
-                col_q4.metric("ينتهي", expiry or "—")
+            with st.expander(f"📝 {item['title']} ({item['type_label']}) — {status_text}", expanded=False):
+                if item.get("description"):
+                    st.markdown(f"**الوصف:** {item['description']}")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("النوع", item["type_label"])
+                c2.metric("عدد الأسئلة", item["num_questions"] or "—")
+                c3.metric("الدرجة الكلية", item["total_marks"] or "—")
+                c4.metric("الوقت", f"{item['time_limit_minutes']} دقيقة" if item.get("time_limit_minutes") else "—")
 
-                if not is_active:
-                    st.warning("هذه المسابقة غير نشطة حالياً.")
-                elif submitted:
-                    st.success("لقد قمتِ بإنجاز هذه المسابقة بالفعل.")
-                elif started:
-                    st.warning("لديكِ محاولة سابقة لهذه المسابقة. لا يمكنك الدخول مرة أخرى.")
-                else:
-                    if st.button("🚀 بدء المسابقة", key=f"start_quiz_{qid}", use_container_width=True):
-                        st.session_state.quiz_confirmation_id = qid
-                        st.rerun()
-
-    st.markdown("---")
-
-    # ===== درجاتي =====
-    st.markdown("### 📊 درجاتي")
-    quiz_results = results.copy() if not results.empty else pd.DataFrame()
-    exam_results = db.get_exam_results()
-    if not exam_results.empty:
-        exam_results = exam_results.copy()
-    student_quiz_results = quiz_results[quiz_results["student_id"] == student_id] if not quiz_results.empty and "student_id" in quiz_results.columns else pd.DataFrame()
-    student_exam_results = exam_results[exam_results["student_id"] == student_id] if not exam_results.empty and "student_id" in exam_results.columns else pd.DataFrame()
-    if not student_quiz_results.empty or not student_exam_results.empty:
-        student_results = pd.concat([student_quiz_results, student_exam_results], ignore_index=True, sort=False)
-    else:
-        student_results = pd.DataFrame()
-
-    if student_results.empty:
-        st.info("لا توجد نتائج بعد.")
-    else:
-        submitted_results = student_results[student_results["status"] == "submitted"] if "status" in student_results.columns else student_results
-        if submitted_results.empty:
-            st.info("لا توجد نتائج مسلّمة بعد.")
-        else:
-            display = submitted_results.copy()
-            if not quizzes.empty and "quiz_id" in display.columns:
-                display = display.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
-                display.rename(columns={"title": "item_title"}, inplace=True)
-            if not exams.empty and "exam_id" in display.columns:
-                display = display.merge(exams[["exam_id", "title"]], on="exam_id", how="left", suffixes=("", "_exam"))
-                if "item_title" not in display.columns:
-                    display["item_title"] = ""
-                if "title_exam" in display.columns:
-                    display["item_title"] = display["item_title"].fillna(display["title_exam"])
-                display.drop(columns=[col for col in ["title_exam"] if col in display.columns], inplace=True)
-            if "item_title" in display.columns:
-                display.rename(columns={"item_title": "المسابقة"}, inplace=True)
-            if "score" in display.columns:
-                display["score"] = pd.to_numeric(display["score"], errors="coerce").fillna(0)
-            if "total_marks" in display.columns:
-                display["total_marks"] = pd.to_numeric(display["total_marks"], errors="coerce").fillna(20)
-            if "score" in display.columns and "total_marks" in display.columns:
-                display["النسبة"] = (display["score"] / display["total_marks"] * 100).round(1)
-            display_cols = []
-            if "المسابقة" in display.columns:
-                display_cols.append("المسابقة")
-            if "score" in display.columns:
-                display_cols.append("score")
-            if "total_marks" in display.columns:
-                display_cols.append("total_marks")
-            if "النسبة" in display.columns:
-                display_cols.append("النسبة")
-            if "submission_time" in display.columns:
-                display_cols.append("submission_time")
-            if "status" in display.columns:
-                display_cols.append("status")
-            available = [c for c in display_cols if c in display.columns]
-            st.dataframe(display[available].rename(columns={
-                "score": "الدرجة", "total_marks": "الدرجة الكلية",
-                "submission_time": "تاريخ الاختبار", "status": "الحالة"
-            }), use_container_width=True)
+                if attempt_status == "submitted":
+                    st.success("لقد قمتِ بإنجاز هذا الاختبار بالفعل.")
+                elif attempt_status == "started":
+                    st.warning("لديكِ محاولة سابقة. لا يمكنك الدخول مرة أخرى.")
+                elif st.button("بدء الاختبار", key=f"start_{a_type}_{a_id}", use_container_width=True):
+                    st.session_state.assessment_confirmation = {"type": a_type, "id": a_id}
+                    st.rerun()
 
     st.markdown("---")
+    st.markdown("## 📋 الامتحانات التي حللتها")
 
-    # ===== سجل الامتحانات =====
-    st.markdown("### 📋 الامتحانات التي حللتها")
-    quiz_results = results.copy() if not results.empty else pd.DataFrame()
-    if "status" in quiz_results.columns:
-        quiz_results = quiz_results[quiz_results["status"] == "submitted"]
+    student_quiz, student_exam = get_student_submitted_results(db, student_id)
+    history_rows = []
+    if not student_quiz.empty:
+        for _, row in student_quiz.iterrows():
+            title = "—"
+            if not quizzes.empty:
+                m = quizzes[quizzes["quiz_id"] == row.get("quiz_id", "")]
+                if not m.empty:
+                    title = m.iloc[0].get("title", "—")
+            history_rows.append({**row.to_dict(), "attempt_type": "quiz", "title": title})
+    if not student_exam.empty:
+        for _, row in student_exam.iterrows():
+            title = "—"
+            if not exams.empty:
+                m = exams[exams["exam_id"] == row.get("exam_id", "")]
+                if not m.empty:
+                    title = m.iloc[0].get("title", "—")
+            history_rows.append({**row.to_dict(), "attempt_type": "exam", "title": title})
 
-    exams = db.get_exams()
-    exam_results = db.get_exam_results()
-    if not exam_results.empty and "status" in exam_results.columns:
-        exam_results = exam_results[exam_results["status"] == "submitted"]
-
-    has_quiz_history = not quiz_results.empty
-    has_exam_history = not exam_results.empty
-
-    if not has_quiz_history and not has_exam_history:
+    if not history_rows:
         st.info("لا توجد امتحانات أو مسابقات منجزة بعد.")
     else:
-        if has_quiz_history:
-            quiz_history = quiz_results.copy()
-            if not quizzes.empty and "quiz_id" in quiz_history.columns:
-                quiz_history = quiz_history.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
-                quiz_history.rename(columns={"title": "العنوان"}, inplace=True)
-            quiz_history["attempt_type"] = "مسابقة"
-        else:
-            quiz_history = pd.DataFrame()
-
-        if has_exam_history:
-            exam_history = exam_results.copy()
-            if not exams.empty and "exam_id" in exam_history.columns:
-                exam_history = exam_history.merge(exams[["exam_id", "title"]], on="exam_id", how="left")
-                exam_history.rename(columns={"title": "العنوان"}, inplace=True)
-            exam_history["attempt_type"] = "امتحان"
-        else:
-            exam_history = pd.DataFrame()
-
-        combined_history = pd.concat([quiz_history, exam_history], ignore_index=True, sort=False) if not quiz_history.empty or not exam_history.empty else pd.DataFrame()
-        if not combined_history.empty and "submission_time" in combined_history.columns:
-            combined_history = combined_history.sort_values("submission_time", ascending=False)
-
-        for _, attempt in combined_history.iterrows():
+        history_rows.sort(key=lambda x: str(x.get("submission_time", "")), reverse=True)
+        for attempt in history_rows:
             result_id = attempt.get("result_id", "")
-            attempt_type = attempt.get("attempt_type", "")
-            title = attempt.get("العنوان", "—")
+            attempt_type = attempt.get("attempt_type", "quiz")
+            title = attempt.get("title", "—")
             score = attempt.get("score", "")
             total_marks = attempt.get("total_marks", "")
             submission_time = attempt.get("submission_time", "")
             percent = None
             try:
-                score_val = float(score)
-                total_val = float(total_marks) if total_marks else 0
-                percent = round((score_val / total_val) * 100, 1) if total_val > 0 else None
-            except Exception:
-                percent = None
+                sv = float(score)
+                tv = float(total_marks) if total_marks else 0
+                percent = round((sv / tv) * 100, 1) if tv > 0 else None
+            except (TypeError, ValueError):
+                pass
 
-            status = attempt.get("status", "")
-            opener = f"🎯 {title} — {attempt_type} — {score}/{total_marks}"
+            label = f"🎯 {title} — {score}/{total_marks}"
             if percent is not None:
-                opener += f" — {percent}%"
+                label += f" — {percent}%"
             if submission_time:
-                opener += f" — {submission_time}"
+                label += f" — {submission_time}"
 
-            with st.expander(opener, expanded=False):
-                if attempt_type == "مسابقة":
-                    st.markdown(f"**نوع المحاولة:** {attempt_type}")
-                else:
-                    st.markdown(f"**نوع المحاولة:** {attempt_type}")
-                st.markdown(f"**الحالة:** {status}")
-                if st.button("عرض المراجعة", key=f"review_{attempt_type}_{result_id}"):
+            with st.expander(label, expanded=False):
+                st.markdown(f"**الحالة:** {attempt.get('status', '')}")
+                if st.button("📖 مراجعة", key=f"comp_review_{attempt_type}_{result_id}"):
                     st.session_state.review_result_id = result_id
-                    st.session_state.review_result_type = "quiz" if attempt_type == "مسابقة" else "exam"
+                    st.session_state.review_result_type = attempt_type
                     st.rerun()
-
-    if st.session_state.get("review_result_id") and st.session_state.get("review_result_type"):
-        st.markdown("---")
-        render_student_attempt_review(db, student, st.session_state.review_result_id, st.session_state.review_result_type)
 
 
 # =============================================================================
@@ -9057,10 +9294,6 @@ def main():
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.session_state.get("student_logged_in", False):
         show_student_dashboard(db)
-    elif st.session_state.get("quiz_interface_started", False):
-        show_student_quiz_interface(db)
-    elif st.session_state.student_quiz_started:
-        show_student_quiz(db)
     else:
         if not st.session_state.authenticated:
             show_login_page(db, jwt_secret)
