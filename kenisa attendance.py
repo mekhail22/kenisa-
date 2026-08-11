@@ -873,7 +873,7 @@ def render_help_center_button():
 
 def render_student_menu_button():
     """Blue menu button for student portal — call at most once per Streamlit run."""
-    if st.button("☰", key="app_student_menu_btn", help="القائمة", use_container_width=True):
+    if st.button("القائمة", key="app_student_menu_btn", use_container_width=True):
         st.session_state.sidebar_open = not st.session_state.get("sidebar_open", False)
         st.rerun()
 
@@ -921,7 +921,7 @@ def render_admin_top_bar(show_menu_button=False):
         with c_left:
             render_help_center_button()
         with c_right:
-            if st.button("☰", key="app_admin_menu_btn", help="القائمة", use_container_width=True):
+            if st.button("القائمة", key="app_admin_menu_btn", use_container_width=True):
                 st.session_state.show_sidebar = True
                 st.rerun()
     else:
@@ -3898,10 +3898,7 @@ def render_student_sidebar(db, student, menu_items, current_page):
         with col_main:
             st.markdown(f"### 👤 {full_name}")
             st.caption("طالبة")
-        with col_close:
-            if st.button("✕", key="student_sidebar_close_btn", use_container_width=True, help="إغلاق"):
-                st.session_state.sidebar_open = False
-                st.rerun()
+        
 
         if st.button("✕ إغلاق", key="student_sidebar_close_text_btn", use_container_width=True):
             st.session_state.sidebar_open = False
