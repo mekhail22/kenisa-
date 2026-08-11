@@ -2461,6 +2461,7 @@ def init_session():
         "student_logged_in": False, "current_student": None,
         "student_dashboard_page": "الرئيسية",
         "selected_quiz_id": None, "quiz_interface_started": False,
+        "quiz_confirmation_id": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -3291,6 +3292,10 @@ def show_student_dashboard(db):
     student = student_row.iloc[0].to_dict()
     st.session_state.current_student = student
 
+    if st.session_state.get("quiz_interface_started", False):
+        show_student_quiz_interface(db)
+        return
+
     # ===== CSS للقائمة الكاملة الشاشة =====
     st.markdown("""
     <style>
@@ -3299,6 +3304,7 @@ def show_student_dashboard(db):
         position: fixed !important;
         top: 0 !important;
         right: 0 !important;
+        left: auto !important;
         width: 100vw !important;
         height: 100vh !important;
         max-width: 100vw !important;
@@ -3762,6 +3768,51 @@ def show_student_competitions_tab(db, student):
     st.markdown("### 🏆 المسابقات المتاحة")
     # فلترة المسابقات بناءً على is_active فقط (بدون فصل أو صف أو قسم)
     available_quizzes = quizzes[quizzes["is_active"].astype(str).str.strip() == "True"] if not quizzes.empty and "is_active" in quizzes.columns else pd.DataFrame()
+
+    confirmation_quiz_id = st.session_state.get("quiz_confirmation_id")
+    if confirmation_quiz_id:
+        confirm_quiz = quizzes[quizzes["quiz_id"] == confirmation_quiz_id] if not quizzes.empty and "quiz_id" in quizzes.columns else pd.DataFrame()
+        if confirm_quiz.empty:
+            st.warning("تعذر العثور على بيانات الاختبار.")
+            st.session_state.quiz_confirmation_id = None
+            st.rerun()
+            return
+
+        quiz = confirm_quiz.iloc[0].to_dict()
+        st.markdown("### تأكيد دخول الاختبار")
+        st.info("هل أنتِ متأكدة من رغبتك في بدء الاختبار؟")
+        st.markdown("---")
+        st.markdown(f"**اسم الاختبار:** {quiz.get('title', '')}")
+        st.markdown(f"**عدد الأسئلة:** {quiz.get('num_questions', '—')}")
+        st.markdown(f"**الدرجة الكلية:** {quiz.get('total_marks', '20')}")
+        st.markdown(f"**الوقت المحدد:** {quiz.get('time_limit_minutes', '—')} دقيقة")
+        st.markdown("---")
+        st.markdown("### تعليمات مهمة قبل بدء الاختبار")
+        st.markdown("- يجب قراءة التعليمات جيدًا قبل البدء.")
+        st.markdown("- بمجرد بدء الاختبار يبدأ احتساب الوقت.")
+        st.markdown("- يجب الالتزام بالوقت المحدد للاختبار.")
+        st.markdown("- لا تقومي بإغلاق صفحة الاختبار أثناء أداء الاختبار.")
+        st.markdown("- لا تقومي بالخروج من صفحة الاختبار أو مغادرتها أثناء الاختبار.")
+        st.markdown("- لا تقومي بفتح صفحة أخرى أو إعادة تحميل الصفحة أثناء الاختبار.")
+        st.markdown("- عند انتهاء الوقت سيتم التعامل مع الاختبار وفق نظام التسليم التلقائي الموجود حاليًا.")
+        st.markdown("- تأكدي من الإجابة عن الأسئلة قبل الضغط على تسليم الاختبار.")
+        st.markdown("- بعد بدء الاختبار، اتبعي التعليمات الموجودة داخل صفحة الاختبار.")
+        st.markdown("---")
+
+        col_cancel, col_confirm = st.columns([1, 1])
+        with col_cancel:
+            if st.button("إلغاء", use_container_width=True, key="cancel_quiz_start_btn"):
+                st.session_state.quiz_confirmation_id = None
+                st.session_state.selected_quiz_id = None
+                st.rerun()
+        with col_confirm:
+            if st.button("أوافق وأبدأ الاختبار", use_container_width=True, key="confirm_quiz_start_btn"):
+                st.session_state.selected_quiz_id = confirmation_quiz_id
+                st.session_state.quiz_confirmation_id = None
+                st.session_state.quiz_interface_started = True
+                st.rerun()
+        return
+
     if available_quizzes.empty:
         st.info("لا توجد مسابقات متاحة حالياً.")
     else:
@@ -3803,8 +3854,7 @@ def show_student_competitions_tab(db, student):
                     st.warning("لديكِ محاولة سابقة لهذه المسابقة. لا يمكنك الدخول مرة أخرى.")
                 else:
                     if st.button("🚀 بدء المسابقة", key=f"start_quiz_{qid}", use_container_width=True):
-                        st.session_state.selected_quiz_id = qid
-                        st.session_state.quiz_interface_started = True
+                        st.session_state.quiz_confirmation_id = qid
                         st.rerun()
 
     st.markdown("---")
