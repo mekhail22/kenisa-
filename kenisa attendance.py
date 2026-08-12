@@ -49,6 +49,15 @@ CACHE_TTL_SECONDS = 600
 SESSION_TIMEOUT_HOURS = 24
 CAIRO_TZ = timezone(timedelta(hours=3), name='Africa/Cairo')
 
+STUDENT_ASSESSMENTS_PAGE = "🏆 المسابقات والاختبارات"
+LEGACY_STUDENT_ASSESSMENT_PAGES = {
+    "🏆 المسابقات": STUDENT_ASSESSMENTS_PAGE,
+    "📊 درجاتي": STUDENT_ASSESSMENTS_PAGE,
+    "📋 سجل الامتحانات": STUDENT_ASSESSMENTS_PAGE,
+}
+ADMIN_ASSESSMENTS_PAGE = "📝 المسابقات والاختبارات"
+LEGACY_ADMIN_ASSESSMENTS_PAGE = "📝 إدارة الامتحانات"
+
 # أعمدة سجل التدقيق (AuditLog)
 AUDIT_LOG_COLUMNS = [
     "log_id", "timestamp", "username", "user_id", "action", "details",
@@ -882,7 +891,7 @@ def render_student_top_bar(current_page):
     """Single student top bar: Help (left), Menu (right), optional competitions title below."""
     inject_top_bar_css()
     st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
-    is_competitions = current_page == "🏆 المسابقات"
+    is_competitions = current_page == STUDENT_ASSESSMENTS_PAGE
     if is_competitions:
         c_left, c_right = st.columns(2)
         with c_left:
@@ -2672,14 +2681,14 @@ def student_logout(db=None):
             pass
     student_keys = [
         "student_logged_in", "current_student", "student_dashboard_page", "sidebar_open",
-        "selected_quiz_id", "selected_exam_id", "selected_assessment_type", "selected_assessment_id",
-        "quiz_interface_started", "quiz_confirmation_id", "assessment_confirmation",
-        "review_result_id", "review_result_type", "quiz_question_index", "quiz_answers",
-        "quiz_end_time", "quiz_attempt_id", "quiz_last_saved_answers", "quiz_confirm_finish",
-        "quiz_start_time", "exam_question_index", "exam_answers", "exam_last_saved_answers",
-        "exam_end_time", "exam_start_time", "exam_questions", "exam_shuffled_options",
-        "exam_attempt_id", "exam_submitted", "exam_submit_time", "exam_result",
-        "exam_confirm_finish", "exam_last_save_time", "quiz_questions_list", "quiz_questions_quiz_id",
+    ] + ASSESSMENT_SESSION_KEYS + [
+        "quiz_question_index", "quiz_answers", "quiz_end_time", "quiz_attempt_id",
+        "quiz_last_saved_answers", "quiz_confirm_finish", "quiz_start_time",
+        "exam_question_index", "exam_answers", "exam_last_saved_answers", "exam_end_time",
+        "exam_start_time", "exam_questions", "exam_shuffled_options", "exam_attempt_id",
+        "exam_submitted", "exam_submit_time", "exam_result", "exam_confirm_finish",
+        "exam_last_save_time", "quiz_questions_list", "quiz_questions_quiz_id",
+        "assessment_questions_type",
     ]
     for key in student_keys:
         st.session_state.pop(key, None)
@@ -2797,19 +2806,19 @@ def get_role_menu(role):
         "System Admin": [
             "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "🏫 إدارة المراحل الدراسية", "📚 إدارة الفصول",
             "📋 الحضور", "💬 الافتقاد", "📷 ماسح QR",
-            "📝 المسابقات والاختبارات", "📝 إدارة الامتحانات", "📊 التقارير والإحصائيات",
+            ADMIN_ASSESSMENTS_PAGE, "📊 التقارير والإحصائيات",
             "📅 إدارة الفعاليات", "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
         ],
-        "Father Account": ["🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📝 إدارة الامتحانات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
+        "Father Account": ["🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", ADMIN_ASSESSMENTS_PAGE, "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"],
         "Service Manager": [
             "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد", "📷 ماسح QR",
-            "📝 المسابقات والاختبارات", "📝 إدارة الامتحانات", "📅 إدارة الفعاليات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
+            ADMIN_ASSESSMENTS_PAGE, "📅 إدارة الفعاليات", "📊 التقارير والإحصائيات", "🔒 تغيير كلمة المرور"
         ],
         "Teacher": [
             "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "📋 الحضور", "💬 الافتقاد", "📷 ماسح QR",
-            "📝 إدارة الامتحانات", "📅 إدارة الفعاليات", "🔒 تغيير كلمة المرور"
+            ADMIN_ASSESSMENTS_PAGE, "📅 إدارة الفعاليات", "🔒 تغيير كلمة المرور"
         ],
-        "Student": ["🏠 لوحة التحكم", "🔔 الإشعارات", "📝 المسابقات والاختبارات", "📅 إدارة الفعاليات", "🔒 تغيير كلمة المرور"]
+        "Student": ["🏠 لوحة التحكم", "🔔 الإشعارات", ADMIN_ASSESSMENTS_PAGE, "📅 إدارة الفعاليات", "🔒 تغيير كلمة المرور"]
     }
     return menus.get(role, [])
 
@@ -3278,13 +3287,19 @@ def show_student_quiz(db):
 
 
 def show_student_assessment_interface(db):
-    """واجهة الاختبار الموحدة — توجيه إلى محرك المسابقات أو الامتحانات."""
+    """Unified assessment taking experience for quizzes and exams."""
+    show_unified_assessment_taking_interface(db)
+
+
+def show_unified_assessment_taking_interface(db):
+    """Single assessment UI — shared timer, save, submit, and navigation."""
     if not st.session_state.get("student_logged_in", False):
         st.error("يجب تسجيل الدخول أولاً.")
         st.session_state.quiz_interface_started = False
         st.rerun()
         return
 
+    student = st.session_state.get("current_student")
     a_type = st.session_state.get("selected_assessment_type")
     a_id = st.session_state.get("selected_assessment_id")
     if not a_type:
@@ -3292,168 +3307,143 @@ def show_student_assessment_interface(db):
             a_type, a_id = "exam", st.session_state.selected_exam_id
         elif st.session_state.get("selected_quiz_id"):
             a_type, a_id = "quiz", st.session_state.selected_quiz_id
-    if not a_type or not a_id:
+    if not a_type or not a_id or not student:
         st.session_state.quiz_interface_started = False
         st.rerun()
         return
 
     st.session_state.selected_assessment_type = a_type
     st.session_state.selected_assessment_id = a_id
-    if a_type == "exam":
-        show_student_exam_interface_for_student(db)
-    else:
-        show_student_quiz_interface(db)
-
-
-def show_student_exam_interface_for_student(db):
-    """واجهة أداء الامتحان للطالبة — مدمجة في بوابة الطالبات."""
-    student = st.session_state.get("current_student")
-    exam_id = st.session_state.get("selected_assessment_id") or st.session_state.get("selected_exam_id")
-    if not student or not exam_id:
-        st.session_state.quiz_interface_started = False
-        st.rerun()
-        return
-
     student_id = student.get("student_id", "")
     student_name = student.get("full_name", "طالبة")
-    exams = db.get_exams()
-    exam_row = exams[exams["exam_id"] == exam_id] if not exams.empty else pd.DataFrame()
-    if exam_row.empty:
-        st.error("لم يتم العثور على الامتحان.")
+
+    assessment_row = get_assessment_record(db, a_type, a_id)
+    if not assessment_row:
+        st.error("لم يتم العثور على الاختبار.")
         st.session_state.quiz_interface_started = False
         st.rerun()
         return
-    exam = exam_row.iloc[0].to_dict()
-    exam_title = exam.get("title", "امتحان")
-    try:
-        duration_minutes = int(float(exam.get("duration_minutes", 30) or 30))
-    except (TypeError, ValueError):
-        duration_minutes = 30
 
-    results = db.get_exam_results()
-    if not results.empty:
-        student_attempts = results[(results["exam_id"] == exam_id) & (results["student_id"] == student_id)]
-        if not student_attempts.empty and "status" in student_attempts.columns:
-            if not student_attempts[student_attempts["status"] == "submitted"].empty:
-                st.warning("⚠️ لقد قمتِ بإنجاز هذا الامتحان بالفعل.")
-                st.session_state.quiz_interface_started = False
-                if st.button("العودة إلى المسابقات"):
-                    st.rerun()
-                return
-
-    for k, v in {
-        "exam_question_index": 0, "exam_answers": {}, "exam_last_saved_answers": "",
-        "exam_end_time": None, "exam_start_time": None, "exam_questions": None,
-        "exam_shuffled_options": {}, "exam_attempt_id": None, "exam_submitted": False,
-        "exam_submit_time": None, "exam_result": None, "exam_confirm_finish": False,
-        "exam_last_save_time": None,
-    }.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-    if st.session_state.exam_questions is None:
-        questions_df = db.shuffle_questions(exam_id)
-        if questions_df is None or questions_df.empty:
-            st.warning("لا توجد أسئلة في هذا الامتحان.")
-            if st.button("🔙 العودة"):
-                st.session_state.quiz_interface_started = False
-                st.rerun()
-            return
-        questions = questions_df.to_dict("records")
-        random.shuffle(questions)
-        shuffled_options = {}
-        for q in questions:
-            q_id = q.get("question_id", "")
-            q_type = q.get("question_type", "")
-            if str(q_type).strip() == "صح وخطأ":
-                shuffled_options[q_id] = ["صح", "خطأ"]
-            else:
-                opts = [str(q.get(f"option{i}", "")).strip() for i in range(1, 5)]
-                opts = [o for o in opts if o]
-                random.shuffle(opts)
-                shuffled_options[q_id] = opts
-        st.session_state.exam_questions = questions
-        st.session_state.exam_shuffled_options = shuffled_options
-
-    questions = st.session_state.exam_questions
-    total_questions = len(questions)
-    shuffled_options = st.session_state.exam_shuffled_options
-
-    if st.session_state.exam_attempt_id is None:
-        st.session_state.exam_start_time = get_cairo_now()
-        st.session_state.exam_end_time = st.session_state.exam_start_time + timedelta(minutes=duration_minutes)
-        st.session_state.exam_attempt_id = db.start_exam_attempt(exam_id, student_id, student_name)
-
-    def auto_save_exam():
-        attempt_id = st.session_state.get("exam_attempt_id")
-        if not attempt_id:
-            return
-        answers_json = json.dumps(st.session_state.exam_answers, ensure_ascii=False)
-        if answers_json != st.session_state.exam_last_saved_answers:
-            db.save_exam_answers(attempt_id, st.session_state.exam_answers)
-            st.session_state.exam_last_saved_answers = answers_json
-            st.session_state.exam_last_save_time = get_cairo_now()
-
-    def submit_exam_internal(auto=False):
-        attempt_id = st.session_state.get("exam_attempt_id")
-        if not attempt_id or st.session_state.exam_submitted:
-            return
-        auto_save_exam()
-        score, total_marks, correct, wrong = db.grade_exam_attempt(exam_id, st.session_state.exam_answers)
-        answers_json = json.dumps(st.session_state.exam_answers, ensure_ascii=False)
-        db.submit_exam_attempt(attempt_id, score, answers_json)
-        st.session_state.exam_submitted = True
-        st.session_state.exam_submit_time = get_cairo_now()
-        st.session_state.exam_result = {
-            "score": score, "total_marks": total_marks,
-            "correct_count": correct, "wrong_count": wrong, "auto_submitted": auto,
-        }
-
-    now = get_cairo_now()
-    end_time = st.session_state.exam_end_time
-    if end_time is not None and now >= end_time and not st.session_state.exam_submitted:
-        submit_exam_internal(auto=True)
-        st.rerun()
-
-    if st.session_state.exam_submitted:
-        result = st.session_state.exam_result or {}
-        st.success("✅ تم تسليم الامتحان بنجاح!")
-        score = result.get("score", 0)
-        total_marks = result.get("total_marks", 0)
-        st.info(f"**درجتك:** {score} / {total_marks}")
-        if st.button("🔙 العودة إلى المسابقات", use_container_width=True):
-            for key in ["exam_question_index", "exam_answers", "exam_last_saved_answers", "exam_end_time",
-                        "exam_start_time", "exam_questions", "exam_shuffled_options", "exam_attempt_id",
-                        "exam_submitted", "exam_submit_time", "exam_result", "exam_confirm_finish",
-                        "exam_last_save_time", "selected_exam_id", "selected_assessment_id",
-                        "selected_assessment_type", "quiz_interface_started"]:
-                st.session_state.pop(key, None)
-            st.session_state.student_dashboard_page = "🏆 المسابقات"
+    can_access, deny_reason = student_can_access_assessment(db, student, a_type, a_id)
+    if not can_access:
+        st.warning(deny_reason or "غير مصرح بالدخول إلى هذا الاختبار.")
+        st.session_state.quiz_interface_started = False
+        if st.button("العودة إلى المسابقات والاختبارات", use_container_width=True):
+            clear_assessment_session_state()
+            st.session_state.student_dashboard_page = STUDENT_ASSESSMENTS_PAGE
             st.rerun()
         return
 
-    st.markdown(hero_header(exam_title, f"⏱️ {duration_minutes} دقيقة | 👤 {student_name}"), unsafe_allow_html=True)
+    status = _get_assessment_attempt_status(db, student_id, a_type, a_id)
+    if status == "submitted":
+        st.warning("⚠️ لقد قمتِ بإنجاز هذا الاختبار بالفعل.")
+        st.session_state.quiz_interface_started = False
+        if st.button("العودة إلى المسابقات والاختبارات", use_container_width=True):
+            clear_assessment_session_state()
+            st.session_state.student_dashboard_page = STUDENT_ASSESSMENTS_PAGE
+            st.rerun()
+        return
+
+    assessment_title = assessment_row.get("title", "اختبار")
+    duration_minutes = get_assessment_duration_minutes(assessment_row, a_type)
+
+    defaults = {
+        "assessment_question_index": 0,
+        "assessment_answers": {},
+        "assessment_last_saved_answers": "",
+        "assessment_attempt_id": None,
+        "assessment_submitted": False,
+        "assessment_result": None,
+        "assessment_confirm_finish": False,
+        "assessment_questions": None,
+        "assessment_shuffled_options": {},
+        "assessment_questions_id": None,
+        "assessment_end_time": None,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+    if (
+        st.session_state.assessment_questions is None
+        or st.session_state.get("assessment_questions_id") != a_id
+        or st.session_state.get("assessment_questions_type") != a_type
+    ):
+        questions, shuffled_options = load_assessment_questions(db, a_type, a_id)
+        if not questions:
+            st.warning("لا توجد أسئلة في هذا الاختبار.")
+            if st.button("🔙 العودة", use_container_width=True):
+                st.session_state.quiz_interface_started = False
+                st.rerun()
+            return
+        st.session_state.assessment_questions = questions
+        st.session_state.assessment_shuffled_options = shuffled_options
+        st.session_state.assessment_questions_id = a_id
+        st.session_state.assessment_questions_type = a_type
+
+    questions = st.session_state.assessment_questions
+    shuffled_options = st.session_state.assessment_shuffled_options
+    total_questions = len(questions)
+
+    if st.session_state.assessment_attempt_id is None:
+        existing_id, saved_answers = get_in_progress_attempt(db, student_id, a_type, a_id)
+        if existing_id:
+            st.session_state.assessment_attempt_id = existing_id
+            if saved_answers and not st.session_state.assessment_answers:
+                st.session_state.assessment_answers = saved_answers
+        else:
+            if a_type == "exam":
+                attempt_id = db.start_exam_attempt(a_id, student_id, student_name)
+            else:
+                attempt_id = db.start_quiz_attempt(a_id, student_id, student_name)
+            st.session_state.assessment_attempt_id = attempt_id
+
+    attempt_id = st.session_state.assessment_attempt_id
+    end_time = get_attempt_deadline(db, a_type, a_id, attempt_id)
+    st.session_state.assessment_end_time = end_time
+
+    def auto_save():
+        if not attempt_id:
+            return
+        answers_json = json.dumps(st.session_state.assessment_answers, ensure_ascii=False)
+        if answers_json != st.session_state.assessment_last_saved_answers:
+            save_assessment_answers(db, a_type, attempt_id, st.session_state.assessment_answers)
+            st.session_state.assessment_last_saved_answers = answers_json
+
+    def submit_internal(auto=False):
+        if not attempt_id or st.session_state.assessment_submitted:
+            return
+        auto_save()
+        result = submit_assessment_attempt(
+            db, a_type, a_id, attempt_id, st.session_state.assessment_answers, auto=auto
+        )
+        st.session_state.assessment_submitted = True
+        st.session_state.assessment_result = result
+
+    now = get_cairo_now()
+    if end_time is not None and now >= end_time and not st.session_state.assessment_submitted:
+        submit_internal(auto=True)
+        st.rerun()
+
+    if st.session_state.assessment_submitted:
+        result = st.session_state.assessment_result or {}
+        st.success("✅ تم تسليم الاختبار بنجاح!")
+        st.info(f"**درجتك:** {result.get('score', 0)} / {result.get('total_marks', 0)}")
+        if st.button("🔙 العودة إلى المسابقات والاختبارات", use_container_width=True):
+            clear_assessment_session_state()
+            st.session_state.student_dashboard_page = STUDENT_ASSESSMENTS_PAGE
+            st.rerun()
+        return
+
+    st.markdown(
+        hero_header(assessment_title, f"⏱️ {duration_minutes} دقيقة | 👤 {student_name}"),
+        unsafe_allow_html=True,
+    )
 
     if end_time is not None:
-        end_time_iso = end_time.isoformat()
-        countdown_html = f"""
-        <!DOCTYPE html><html><head><meta charset="utf-8"><style>
-        body {{ font-family: 'Cairo', sans-serif; margin: 0; padding: 0; display: flex; justify-content: center; }}
-        #timer {{ font-size: 1.6rem; font-weight: bold; padding: 0.8rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; }}
-        </style></head><body>
-        <div id="timer">⏳ الوقت المتبقي: <span id="time"></span></div>
-        <script>
-        var endTime = new Date("{end_time_iso}").getTime();
-        function update() {{ var now = new Date().getTime(); var dist = endTime - now;
-            if (dist <= 0) {{ document.getElementById('time').innerHTML = "00:00"; setTimeout(function() {{ window.parent.location.reload(); }}, 800); return; }}
-            var mins = Math.floor((dist % (1000*60*60)) / (1000*60)); var secs = Math.floor((dist % (1000*60)) / 1000);
-            document.getElementById('time').innerHTML = (mins<10?'0'+mins:mins) + ":" + (secs<10?'0'+secs:secs); }}
-        update(); setInterval(update, 1000);
-        </script></body></html>
-        """
-        st.components.v1.html(countdown_html, height=85, scrolling=False)
+        st.components.v1.html(render_assessment_timer_html(end_time.isoformat()), height=85, scrolling=False)
 
-    current_index = st.session_state.exam_question_index
+    current_index = st.session_state.assessment_question_index
     if total_questions > 0:
         st.progress((current_index + 1) / total_questions)
         st.caption(f"📋 السؤال {current_index + 1} من {total_questions}")
@@ -3461,254 +3451,59 @@ def show_student_exam_interface_for_student(db):
     q = questions[current_index]
     q_id = q.get("question_id", "")
     q_text = q.get("question_text", "")
-    q_type = q.get("question_type", "")
     st.markdown(f"**سؤال {current_index + 1}:** {q_text}")
 
     options = shuffled_options.get(q_id, [])
-    prev_answer = st.session_state.exam_answers.get(q_id, "")
+    prev_answer = st.session_state.assessment_answers.get(q_id, "")
     if options:
         index = options.index(prev_answer) if prev_answer in options else None
-        ans = st.radio("اختر الإجابة", options, index=index, key=f"exam_sq_{q_id}")
-        if ans is not None and st.session_state.exam_answers.get(q_id) != ans:
-            st.session_state.exam_answers[q_id] = ans
-            auto_save_exam()
+        ans = st.radio("اختر الإجابة", options, index=index, key=f"assess_q_{a_type}_{q_id}")
+        if ans is not None and st.session_state.assessment_answers.get(q_id) != ans:
+            st.session_state.assessment_answers[q_id] = ans
+            auto_save()
     else:
-        ans_text = st.text_input("الإجابة", value=prev_answer, key=f"exam_sq_{q_id}")
+        ans_text = st.text_input("الإجابة", value=prev_answer, key=f"assess_q_{a_type}_{q_id}")
         if ans_text != prev_answer:
-            st.session_state.exam_answers[q_id] = ans_text
-            auto_save_exam()
+            st.session_state.assessment_answers[q_id] = ans_text
+            auto_save()
 
     st.markdown("---")
     col_prev, col_mid, col_next = st.columns([1, 2, 1])
     with col_prev:
-        if st.button("⬅️ السابق", use_container_width=True, disabled=current_index == 0, key="exam_sq_prev"):
-            st.session_state.exam_question_index = max(0, current_index - 1)
+        if st.button("⬅️ السابق", use_container_width=True, disabled=current_index == 0, key="assess_prev"):
+            st.session_state.assessment_question_index = max(0, current_index - 1)
             st.rerun()
     with col_mid:
-        if st.button("🚨 تسليم الاختبار", use_container_width=True, key="exam_sq_finish"):
-            st.session_state.exam_confirm_finish = True
+        if st.button("🚨 تسليم الاختبار", use_container_width=True, key="assess_finish"):
+            st.session_state.assessment_confirm_finish = True
             st.rerun()
     with col_next:
-        if st.button("التالي ➡️", use_container_width=True, disabled=current_index >= total_questions - 1, key="exam_sq_next"):
-            st.session_state.exam_question_index = min(total_questions - 1, current_index + 1)
+        if st.button("التالي ➡️", use_container_width=True, disabled=current_index >= total_questions - 1, key="assess_next"):
+            st.session_state.assessment_question_index = min(total_questions - 1, current_index + 1)
             st.rerun()
 
-    if st.session_state.get("exam_confirm_finish", False):
-        st.warning("⚠️ هل أنت متأكدة من تسليم الاختبار؟")
+    if st.session_state.get("assessment_confirm_finish", False):
+        st.warning("⚠️ هل أنت متأكدة من تسليم الاختبار؟ لن تتمكني من تعديل إجاباتك بعد التسليم.")
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("✅ نعم، تسليم", use_container_width=True, key="exam_sq_yes"):
-                submit_exam_internal(auto=False)
-                st.session_state.exam_confirm_finish = False
+            if st.button("✅ نعم، تسليم", use_container_width=True, key="assess_yes"):
+                submit_internal(auto=False)
+                st.session_state.assessment_confirm_finish = False
                 st.rerun()
         with c2:
-            if st.button("❌ تراجع", use_container_width=True, key="exam_sq_no"):
-                st.session_state.exam_confirm_finish = False
+            if st.button("❌ تراجع", use_container_width=True, key="assess_no"):
+                st.session_state.assessment_confirm_finish = False
                 st.rerun()
+
+
+def show_student_exam_interface_for_student(db):
+    """Legacy wrapper — redirects to unified assessment interface."""
+    show_unified_assessment_taking_interface(db)
 
 
 def show_student_quiz_interface(db):
-    """واجهة حل المسابقة الموحدة - سؤال واحد في الصفحة مع مؤقت."""
-    if not st.session_state.get("student_logged_in", False):
-        st.error("يجب تسجيل الدخول أولاً.")
-        st.session_state.quiz_interface_started = False
-        st.rerun()
-        return
-
-    student = st.session_state.get("current_student")
-    quiz_id = st.session_state.get("selected_assessment_id") or st.session_state.get("selected_quiz_id")
-    if not quiz_id or not student:
-        st.session_state.quiz_interface_started = False
-        st.rerun()
-        return
-
-    student_id = student.get("student_id", "")
-    quizzes = db.get_quizzes()
-    quiz_row = quizzes[quizzes["quiz_id"] == quiz_id] if not quizzes.empty and "quiz_id" in quizzes.columns else pd.DataFrame()
-    if quiz_row.empty:
-        st.error("لم يتم العثور على المسابقة.")
-        st.session_state.quiz_interface_started = False
-        st.rerun()
-        return
-    quiz = quiz_row.iloc[0].to_dict()
-
-    # منع إعادة المحاولة (Backend check)
-    results = db.get_quiz_results()
-    if not results.empty and "quiz_id" in results.columns and "student_id" in results.columns:
-        student_attempts = results[(results["quiz_id"] == quiz_id) & (results["student_id"] == student_id)]
-        if not student_attempts.empty and "status" in student_attempts.columns:
-            submitted_attempts = student_attempts[student_attempts["status"] == "submitted"]
-            if not submitted_attempts.empty:
-                st.warning("⚠️ لقد قمتِ بإنجاز هذه المسابقة بالفعل. لا يمكنك الدخول مرة أخرى.")
-                st.session_state.quiz_interface_started = False
-                st.session_state.selected_quiz_id = None
-                if st.button("العودة إلى المسابقات"):
-                    st.rerun()
-                return
-
-    # حالة الجلسة
-    if "quiz_question_index" not in st.session_state:
-        st.session_state.quiz_question_index = 0
-    if "quiz_answers" not in st.session_state:
-        st.session_state.quiz_answers = {}
-    if "quiz_end_time" not in st.session_state:
-        st.session_state.quiz_end_time = None
-    if "quiz_attempt_id" not in st.session_state:
-        st.session_state.quiz_attempt_id = None
-    if "quiz_last_saved_answers" not in st.session_state:
-        st.session_state.quiz_last_saved_answers = ""
-
-    # تحميل الأسئلة (مع خلط عشوائي)
-    if "quiz_questions_list" not in st.session_state or st.session_state.get("quiz_questions_quiz_id") != quiz_id:
-        questions_df = db.get_quiz_questions(quiz_id)
-        if questions_df.empty:
-            st.warning("لا توجد أسئلة في هذه المسابقة بعد.")
-            if st.button("🔙 العودة إلى المسابقات"):
-                st.session_state.quiz_interface_started = False
-                st.session_state.selected_quiz_id = None
-                st.rerun()
-            return
-        questions = questions_df.to_dict("records")
-        random.shuffle(questions)
-        st.session_state.quiz_questions_list = questions
-        st.session_state.quiz_questions_quiz_id = quiz_id
-    questions = st.session_state.quiz_questions_list
-
-    # بدء المحاولة
-    if st.session_state.quiz_attempt_id is None:
-        attempt_id = db.start_quiz_attempt(quiz_id, student_id, student.get("full_name", ""))
-        st.session_state.quiz_attempt_id = attempt_id
-        st.session_state.quiz_start_time = get_cairo_now()
-        time_limit = int(quiz.get("time_limit_minutes", 15) or 15)
-        st.session_state.quiz_end_time = st.session_state.quiz_start_time + timedelta(minutes=time_limit)
-
-    # الحفظ التلقائي
-    def auto_save():
-        attempt_id = st.session_state.quiz_attempt_id
-        if not attempt_id:
-            return
-        answers_json = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
-        if answers_json != st.session_state.quiz_last_saved_answers:
-            db.save_answers(attempt_id, st.session_state.quiz_answers)
-            st.session_state.quiz_last_saved_answers = answers_json
-
-    # التسليم التلقائي عند انتهاء الوقت
-    now = get_cairo_now()
-    end_time = st.session_state.quiz_end_time
-    if end_time is not None and now >= end_time:
-        auto_save()
-        score = grade_attempt(db, quiz_id, st.session_state.quiz_answers)
-        answers_json = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
-        db.submit_quiz_attempt(st.session_state.quiz_attempt_id, score, answers_json)
-        st.warning("⏰ انتهى الوقت المخصص! تم تسليم إجاباتك تلقائياً.")
-        if st.button("عرض النتيجة"):
-            st.session_state.quiz_interface_started = False
-            st.session_state.selected_quiz_id = None
-            st.session_state.student_dashboard_page = "🏆 المسابقات"
-            st.rerun()
-        return
-
-    # ترويسة المسابقة
-    st.markdown(hero_header(quiz.get("title", "المسابقة"), f"⏱️ الوقت: {quiz.get('time_limit_minutes', '')} دقيقة | 👤 {student.get('full_name', '')}"), unsafe_allow_html=True)
-
-    # المؤقت
-    end_time_iso = end_time.isoformat()
-    countdown_html = f"""
-    <!DOCTYPE html><html><head><meta charset="utf-8"><style>
-    body {{ font-family: 'Cairo', sans-serif; margin: 0; padding: 0; display: flex; justify-content: center; }}
-    #timer {{ font-size: 1.6rem; font-weight: bold; padding: 0.8rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; box-shadow: 0 4px 12px rgba(102,126,234,0.4); text-align: center; }}
-    </style></head><body>
-    <div id="timer">⏳ الوقت المتبقي: <span id="time"></span></div>
-    <script>
-    var endTime = new Date("{end_time_iso}").getTime();
-    function update() {{ var now = new Date().getTime(); var dist = endTime - now;
-        if (dist <= 0) {{ document.getElementById('time').innerHTML = "00:00"; setTimeout(function() {{ window.parent.location.reload(); }}, 800); return; }}
-        var mins = Math.floor((dist % (1000*60*60)) / (1000*60)); var secs = Math.floor((dist % (1000*60)) / 1000);
-        document.getElementById('time').innerHTML = (mins<10?'0'+mins:mins) + ":" + (secs<10?'0'+secs:secs); }}
-    update(); var intervalId = setInterval(update, 1000);
-    </script></body></html>
-    """
-    st.components.v1.html(countdown_html, height=85, scrolling=False)
-
-    total_questions = len(questions)
-    current_index = st.session_state.quiz_question_index
-
-    # شريط التقدم
-    progress = (current_index + 1) / total_questions
-    st.progress(progress)
-    st.caption(f"📋 السؤال {current_index + 1} من {total_questions}")
-
-    # عرض السؤال الحالي
-    q = questions[current_index]
-    q_id = q.get("question_id", "")
-    q_text = q.get("question_text", "")
-    q_type = q.get("question_type", "")
-
-    st.markdown(f"**سؤال {current_index + 1}:** {q_text}")
-    prev_answer = st.session_state.quiz_answers.get(q_id, "")
-
-    if q_type == "صح وخطأ":
-        options = ["صح", "خطأ"]
-        index = options.index(prev_answer) if prev_answer in options else None
-        ans = st.radio("اختر الإجابة", options, index=index, key=f"sq_{q_id}")
-        if ans is not None:
-            st.session_state.quiz_answers[q_id] = ans
-            auto_save()
-    else:
-        options = [str(q.get(f"option{i}", "")).strip() for i in range(1, 5)]
-        options = [o for o in options if o]
-        if options:
-            index = options.index(prev_answer) if prev_answer in options else None
-            ans = st.radio("اختر الإجابة", options, index=index, key=f"sq_{q_id}")
-            if ans is not None:
-                st.session_state.quiz_answers[q_id] = ans
-                auto_save()
-        else:
-            ans_text = st.text_input("الإجابة", value=prev_answer, key=f"sq_{q_id}")
-            if ans_text != prev_answer:
-                st.session_state.quiz_answers[q_id] = ans_text
-                auto_save()
-
-    st.markdown("---")
-
-    # أزرار التنقل
-    col_prev, col_mid, col_next = st.columns([1, 2, 1])
-    with col_prev:
-        prev_disabled = current_index == 0
-        if st.button("⬅️ السابق", use_container_width=True, disabled=prev_disabled, key="sq_prev"):
-            st.session_state.quiz_question_index = max(0, current_index - 1)
-            st.rerun()
-    with col_mid:
-        if st.button("🚨 إنهاء المسابقة", use_container_width=True, key="sq_finish"):
-            st.session_state.quiz_confirm_finish = True
-            st.rerun()
-    with col_next:
-        next_disabled = current_index == total_questions - 1
-        if st.button("التالي ➡️", use_container_width=True, disabled=next_disabled, key="sq_next"):
-            st.session_state.quiz_question_index = min(total_questions - 1, current_index + 1)
-            st.rerun()
-
-    # تأكيد التسليم
-    if st.session_state.get("quiz_confirm_finish", False):
-        st.warning("⚠️ هل أنت متأكدة من تسليم المسابقة؟ لن تتمكني من تعديل إجاباتك بعد التسليم.")
-        col_yes, col_no = st.columns(2)
-        with col_yes:
-            if st.button("✅ نعم، تسليم نهائي", use_container_width=True, key="sq_confirm_yes"):
-                auto_save()
-                score = grade_attempt(db, quiz_id, st.session_state.quiz_answers)
-                answers_json = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
-                db.submit_quiz_attempt(st.session_state.quiz_attempt_id, score, answers_json)
-                st.session_state.quiz_confirm_finish = False
-                st.success(f"✅ تم تسليم المسابقة بنجاح! درجتك: {score}")
-                if st.button("العودة إلى المسابقات"):
-                    st.session_state.quiz_interface_started = False
-                    st.session_state.selected_quiz_id = None
-                    st.session_state.student_dashboard_page = "🏆 المسابقات"
-                    st.rerun()
-        with col_no:
-            if st.button("❌ تراجع", use_container_width=True, key="sq_confirm_no"):
-                st.session_state.quiz_confirm_finish = False
-                st.rerun()
+    """Legacy wrapper — redirects to unified assessment interface."""
+    show_unified_assessment_taking_interface(db)
 
 
 # =============================================================================
@@ -3717,11 +3512,19 @@ def show_student_quiz_interface(db):
 STUDENT_MENU_ITEMS = [
     "🏠 الرئيسية",
     "👤 ملفي الشخصي",
-    "🏆 المسابقات",
-    "📊 درجاتي",
-    "📋 سجل الامتحانات",
+    STUDENT_ASSESSMENTS_PAGE,
     "🔔 الإشعارات",
     "🚪 تسجيل الخروج",
+]
+
+ASSESSMENT_SESSION_KEYS = [
+    "selected_quiz_id", "selected_exam_id", "selected_assessment_type", "selected_assessment_id",
+    "quiz_interface_started", "quiz_confirmation_id", "assessment_confirmation",
+    "review_result_id", "review_result_type", "assessment_tab",
+    "assessment_attempt_id", "assessment_questions", "assessment_shuffled_options",
+    "assessment_answers", "assessment_question_index", "assessment_last_saved_answers",
+    "assessment_submitted", "assessment_result", "assessment_confirm_finish",
+    "assessment_questions_id", "assessment_end_time",
 ]
 
 
@@ -3806,6 +3609,261 @@ def build_unified_assessments(db):
                 "time_limit_minutes": time_limit,
             })
     return items
+
+
+def normalize_student_dashboard_page(page):
+    """Map legacy student assessment pages to the unified page."""
+    return LEGACY_STUDENT_ASSESSMENT_PAGES.get(page, page)
+
+
+def normalize_admin_menu_choice(choice):
+    """Map legacy admin exam menu to unified assessments page."""
+    if choice == LEGACY_ADMIN_ASSESSMENTS_PAGE:
+        return ADMIN_ASSESSMENTS_PAGE
+    return choice
+
+
+def _parse_assessment_datetime(value):
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    try:
+        dt = pd.to_datetime(value)
+        if pd.isna(dt):
+            return None
+        if hasattr(dt, "to_pydatetime"):
+            dt = dt.to_pydatetime()
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=CAIRO_TZ)
+        else:
+            dt = dt.astimezone(CAIRO_TZ)
+        return dt
+    except Exception:
+        return None
+
+
+def get_assessment_record(db, assessment_type, assessment_id):
+    """Load quiz or exam row as dict."""
+    if assessment_type == "exam":
+        df = db.get_exams()
+        id_col = "exam_id"
+    else:
+        df = db.get_quizzes()
+        id_col = "quiz_id"
+    if df.empty or id_col not in df.columns:
+        return None
+    match = df[df[id_col].astype(str) == str(assessment_id)]
+    if match.empty:
+        return None
+    return match.iloc[0].to_dict()
+
+
+def get_assessment_duration_minutes(assessment_row, assessment_type):
+    if not assessment_row:
+        return 15 if assessment_type == "quiz" else 30
+    if assessment_type == "exam":
+        raw = assessment_row.get("duration_minutes", assessment_row.get("time_limit_minutes", 30))
+    else:
+        raw = assessment_row.get("time_limit_minutes", 15)
+    try:
+        return max(1, int(float(raw or (15 if assessment_type == "quiz" else 30))))
+    except (TypeError, ValueError):
+        return 15 if assessment_type == "quiz" else 30
+
+
+def student_can_access_assessment(db, student, assessment_type, assessment_id):
+    """Backend eligibility: availability, dates, section/stage, publish rules."""
+    row = get_assessment_record(db, assessment_type, assessment_id)
+    if not row:
+        return False, "لم يتم العثور على الاختبار."
+
+    avail_col = get_availability_column(pd.DataFrame([row]))
+    if avail_col and not is_availability_true(row.get(avail_col)):
+        return False, "هذا الاختبار غير متاح حالياً."
+
+    student_section = str(student.get("section_id", "")).strip()
+    now = get_cairo_now()
+
+    if assessment_type == "quiz":
+        expiry = _parse_assessment_datetime(row.get("expiry_date"))
+        if expiry and now.date() > expiry.date():
+            return False, "انتهت صلاحية هذه المسابقة."
+        quiz_section = str(row.get("section_id", "")).strip()
+        if quiz_section and student_section and quiz_section != student_section:
+            return False, "هذه المسابقة غير مخصصة لفصلك."
+        return True, ""
+
+    if str(row.get("is_published", "False")).strip() != "True":
+        return False, "الامتحان غير منشور بعد."
+
+    start_dt = _parse_assessment_datetime(row.get("start_date") or row.get("exam_date"))
+    end_dt = _parse_assessment_datetime(row.get("end_date"))
+    if start_dt and now < start_dt:
+        return False, "لم يبدأ موعد هذا الامتحان بعد."
+    if end_dt and now.date() > end_dt.date():
+        return False, "انتهى موعد هذا الامتحان."
+
+    exam_section = str(row.get("section_id", "")).strip()
+    if exam_section and student_section and exam_section != student_section:
+        return False, "هذا الامتحان غير مخصص لفصلك."
+
+    if not exam_section and row.get("stage_id"):
+        sections = db.get_sections()
+        if not sections.empty and student_section:
+            sec_match = sections[sections["section_id"].astype(str) == student_section]
+            if not sec_match.empty:
+                student_stage = str(sec_match.iloc[0].get("stage_id", "")).strip()
+                if student_stage and str(row.get("stage_id", "")).strip() != student_stage:
+                    return False, "هذا الامتحان غير مخصص لمرحلتك."
+    return True, ""
+
+
+def build_unified_assessments_for_student(db, student):
+    """Assessments visible to the logged-in student after eligibility rules."""
+    eligible = []
+    for item in build_unified_assessments(db):
+        ok, _reason = student_can_access_assessment(
+            db, student, item["assessment_type"], item["assessment_id"]
+        )
+        if ok:
+            eligible.append(item)
+    return eligible
+
+
+def get_assessment_attempt_row(db, assessment_type, attempt_id):
+    if assessment_type == "exam":
+        df = db.get_exam_results()
+    else:
+        df = db.get_quiz_results()
+    if df.empty or "result_id" not in df.columns:
+        return None
+    match = df[df["result_id"].astype(str) == str(attempt_id)]
+    if match.empty:
+        return None
+    return match.iloc[0].to_dict()
+
+
+def get_attempt_deadline(db, assessment_type, assessment_id, attempt_id):
+    """Server-side deadline from stored start_time + configured duration."""
+    attempt = get_assessment_attempt_row(db, assessment_type, attempt_id)
+    if not attempt:
+        return None
+    start_time = _parse_assessment_datetime(attempt.get("start_time"))
+    if not start_time:
+        return None
+    assessment_row = get_assessment_record(db, assessment_type, assessment_id)
+    duration = get_assessment_duration_minutes(assessment_row, assessment_type)
+    return start_time + timedelta(minutes=duration)
+
+
+def grade_assessment_attempt(db, assessment_type, assessment_id, answers_dict):
+    """Server-side grading — never trust client-provided scores."""
+    if assessment_type == "exam":
+        score, total_marks, correct, wrong = db.grade_exam_attempt(assessment_id, answers_dict)
+        return {
+            "score": score, "total_marks": total_marks,
+            "correct_count": correct, "wrong_count": wrong,
+        }
+    score = grade_attempt(db, assessment_id, answers_dict)
+    assessment_row = get_assessment_record(db, assessment_type, assessment_id)
+    total_marks = assessment_row.get("total_marks", "20") if assessment_row else "20"
+    try:
+        total_marks = float(total_marks)
+    except (TypeError, ValueError):
+        total_marks = 20
+    return {"score": score, "total_marks": total_marks, "correct_count": None, "wrong_count": None}
+
+
+def save_assessment_answers(db, assessment_type, attempt_id, answers_dict):
+    if assessment_type == "exam":
+        db.save_exam_answers(attempt_id, answers_dict)
+    else:
+        db.save_answers(attempt_id, answers_dict)
+
+
+def submit_assessment_attempt(db, assessment_type, assessment_id, attempt_id, answers_dict, auto=False):
+    """Grade on server and persist submission."""
+    graded = grade_assessment_attempt(db, assessment_type, assessment_id, answers_dict)
+    answers_json = json.dumps(answers_dict, ensure_ascii=False)
+    if assessment_type == "exam":
+        db.submit_exam_attempt(attempt_id, graded["score"], answers_json)
+    else:
+        db.submit_quiz_attempt(attempt_id, graded["score"], answers_json)
+    graded["auto_submitted"] = auto
+    return graded
+
+
+def load_assessment_questions(db, assessment_type, assessment_id):
+    """Load questions with optional shuffle for quiz/exam engines."""
+    if assessment_type == "exam":
+        questions_df = db.shuffle_questions(assessment_id)
+    else:
+        questions_df = db.get_quiz_questions(assessment_id)
+    if questions_df is None or questions_df.empty:
+        return [], {}
+    questions = questions_df.to_dict("records")
+    random.shuffle(questions)
+    shuffled_options = {}
+    for q in questions:
+        q_id = q.get("question_id", "")
+        q_type = q.get("question_type", "")
+        if str(q_type).strip() == "صح وخطأ":
+            shuffled_options[q_id] = ["صح", "خطأ"]
+        else:
+            opts = [str(q.get(f"option{i}", "")).strip() for i in range(1, 5)]
+            opts = [o for o in opts if o]
+            random.shuffle(opts)
+            shuffled_options[q_id] = opts
+    return questions, shuffled_options
+
+
+def clear_assessment_session_state():
+    for key in ASSESSMENT_SESSION_KEYS:
+        st.session_state.pop(key, None)
+
+
+def render_assessment_timer_html(end_time_iso):
+    return f"""
+    <!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    body {{ font-family: 'Cairo', sans-serif; margin: 0; padding: 0; display: flex; justify-content: center; }}
+    #timer {{ font-size: 1.6rem; font-weight: bold; padding: 0.8rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; box-shadow: 0 4px 12px rgba(102,126,234,0.4); text-align: center; }}
+    </style></head><body>
+    <div id="timer">⏳ الوقت المتبقي: <span id="time"></span></div>
+    <script>
+    var endTime = new Date("{end_time_iso}").getTime();
+    function update() {{ var now = new Date().getTime(); var dist = endTime - now;
+        if (dist <= 0) {{ document.getElementById('time').innerHTML = "00:00"; setTimeout(function() {{ window.parent.location.reload(); }}, 800); return; }}
+        var mins = Math.floor((dist % (1000*60*60)) / (1000*60)); var secs = Math.floor((dist % (1000*60)) / 1000);
+        document.getElementById('time').innerHTML = (mins<10?'0'+mins:mins) + ":" + (secs<10?'0'+secs:secs); }}
+    update(); setInterval(update, 1000);
+    </script></body></html>
+    """
+
+
+def get_in_progress_attempt(db, student_id, assessment_type, assessment_id):
+    """Return (attempt_id, saved_answers) for a started-but-not-submitted attempt."""
+    if assessment_type == "exam":
+        results = db.get_exam_results()
+        id_col = "exam_id"
+    else:
+        results = db.get_quiz_results()
+        id_col = "quiz_id"
+    if results.empty or id_col not in results.columns or "student_id" not in results.columns:
+        return None, {}
+    attempts = results[
+        (results[id_col].astype(str) == str(assessment_id))
+        & (results["student_id"].astype(str) == str(student_id))
+    ]
+    if attempts.empty or "status" not in attempts.columns:
+        return None, {}
+    started = attempts[attempts["status"] == "started"]
+    if started.empty:
+        return None, {}
+    row = started.iloc[0].to_dict()
+    try:
+        saved = json.loads(row.get("answers", "{}") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        saved = {}
+    return row.get("result_id"), saved
 
 
 def get_student_submitted_results(db, student_id):
@@ -3953,7 +4011,11 @@ def show_student_dashboard(db):
         st.session_state.sidebar_open = False
 
     menu_items = STUDENT_MENU_ITEMS
-    current_page = st.session_state.get("student_dashboard_page", "🏠 الرئيسية")
+    current_page = normalize_student_dashboard_page(
+        st.session_state.get("student_dashboard_page", "🏠 الرئيسية")
+    )
+    if current_page != st.session_state.get("student_dashboard_page"):
+        st.session_state.student_dashboard_page = current_page
     if current_page not in menu_items:
         current_page = menu_items[0]
         st.session_state.student_dashboard_page = current_page
@@ -3966,12 +4028,8 @@ def show_student_dashboard(db):
 
     if current_page == "👤 ملفي الشخصي":
         show_student_profile_tab(db, student)
-    elif current_page == "🏆 المسابقات":
-        show_student_competitions_tab(db, student)
-    elif current_page == "📊 درجاتي":
-        show_student_grades_tab(db, student)
-    elif current_page == "📋 سجل الامتحانات":
-        show_student_exam_history_tab(db, student)
+    elif current_page == STUDENT_ASSESSMENTS_PAGE:
+        show_student_assessments_page(db, student)
     elif current_page == "🔔 الإشعارات":
         show_student_notifications_tab(db, student)
     elif current_page == "🚪 تسجيل الخروج":
@@ -4009,14 +4067,17 @@ def show_student_grades_tab(db, student):
 
     display = student_results.copy()
     display["المسابقة"] = ""
+    display["النوع"] = ""
     if not quizzes.empty and "quiz_id" in display.columns:
         quiz_titles = quizzes[["quiz_id", "title"]].rename(columns={"title": "quiz_title"})
         display = display.merge(quiz_titles, on="quiz_id", how="left")
         display.loc[display["result_source"] == "quiz", "المسابقة"] = display["quiz_title"]
+        display.loc[display["result_source"] == "quiz", "النوع"] = "مسابقة"
     if not exams.empty and "exam_id" in display.columns:
         exam_titles = exams[["exam_id", "title"]].rename(columns={"title": "exam_title"})
         display = display.merge(exam_titles, on="exam_id", how="left")
         display.loc[display["result_source"] == "exam", "المسابقة"] = display["exam_title"]
+        display.loc[display["result_source"] == "exam", "النوع"] = "امتحان"
 
     if "score" in display.columns:
         display["score"] = pd.to_numeric(display["score"], errors="coerce").fillna(0)
@@ -4025,7 +4086,7 @@ def show_student_grades_tab(db, student):
     if "score" in display.columns and "total_marks" in display.columns:
         display["النسبة"] = (display["score"] / display["total_marks"] * 100).round(1)
 
-    display_cols = ["المسابقة", "score", "total_marks", "النسبة", "submission_time", "status"]
+    display_cols = ["النوع", "المسابقة", "score", "total_marks", "النسبة", "submission_time", "status"]
     available_cols = [c for c in display_cols if c in display.columns]
     st.dataframe(
         display[available_cols].rename(columns={
@@ -4259,7 +4320,7 @@ def render_student_attempt_review(db, student, result_id, result_type):
             </div>
             """, unsafe_allow_html=True)
 
-    if st.button("⬅️ العودة إلى المسابقات", key=f"back_from_review_{result_id}", use_container_width=True):
+    if st.button("⬅️ العودة إلى المسابقات والاختبارات", key=f"back_from_review_{result_id}", use_container_width=True):
         st.session_state.review_result_id = None
         st.session_state.review_result_type = None
         st.rerun()
@@ -4272,7 +4333,7 @@ def show_student_home_tab(db, student):
 
     student_id = student.get("student_id", "")
     student_quiz, student_exam = get_student_submitted_results(db, student_id)
-    available_count = len(build_unified_assessments(db))
+    available_count = len(build_unified_assessments_for_student(db, student))
     completed_count = len(student_quiz) + len(student_exam)
 
     all_results = []
@@ -4516,8 +4577,8 @@ def render_competitions_hero():
     st.markdown(f"""
     <div class="comp-hero" style="background-image: {bg};">
         <div class="comp-hero-overlay">
-            <h2 class="comp-hero-title">المسابقات</h2>
-            <p class="comp-hero-sub">تابع إنجازاتك واطلع على مسابقاتك واختباراتك</p>
+            <h2 class="comp-hero-title">المسابقات والاختبارات</h2>
+            <p class="comp-hero-sub">تابع إنجازاتك واطلع على مسابقاتك واختباراتك في مكان واحد</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -4532,15 +4593,11 @@ def _comp_result_summary(score, total_marks, percent):
     return "تحتاج مراجعة ❌", "comp-result-fail"
 
 
-def show_student_competitions_tab(db, student):
-    """🏆 المسابقات — واجهة موحدة مطابقة للتصميم المرجعي."""
+def show_student_assessments_page(db, student):
+    """Unified student page: available assessments, grades, and attempt history."""
     inject_competitions_page_css()
     st.markdown('<div class="comp-page">', unsafe_allow_html=True)
     render_competitions_hero()
-
-    student_id = student.get("student_id", "")
-    quizzes = db.get_quizzes()
-    exams = db.get_exams()
 
     if st.session_state.get("review_result_id") and st.session_state.get("review_result_type"):
         render_student_attempt_review(db, student, st.session_state.review_result_id, st.session_state.review_result_type)
@@ -4549,68 +4606,113 @@ def show_student_competitions_tab(db, student):
 
     confirmation = st.session_state.get("assessment_confirmation")
     if confirmation:
-        a_type = confirmation.get("type", "quiz")
-        a_id = confirmation.get("id", "")
-        if a_type == "exam":
-            match_df = exams[exams["exam_id"] == a_id] if not exams.empty and "exam_id" in exams.columns else pd.DataFrame()
-        else:
-            match_df = quizzes[quizzes["quiz_id"] == a_id] if not quizzes.empty and "quiz_id" in quizzes.columns else pd.DataFrame()
-        if match_df.empty:
-            st.warning("تعذر العثور على بيانات الاختبار.")
-            st.session_state.assessment_confirmation = None
-            st.rerun()
-            return
-
-        item = match_df.iloc[0].to_dict()
-        num_q = get_assessment_question_count(db, a_type, a_id)
-        total_marks = item.get("total_marks", "20")
-        time_limit = item.get("time_limit_minutes") or item.get("duration_minutes", "—")
-
-        st.markdown('<div class="comp-card">', unsafe_allow_html=True)
-        st.markdown("## تأكيد دخول الاختبار")
-        st.markdown(f"**اسم الاختبار:** {item.get('title', '')}")
-        st.markdown(f"**عدد الأسئلة:** {num_q or '—'}")
-        st.markdown(f"**الدرجة الكلية:** {total_marks}")
-        st.markdown(f"**الوقت المحدد:** {time_limit} دقيقة")
-        st.markdown("---")
-        st.markdown("## تعليمات مهمة قبل بدء الاختبار")
-        instructions = [
-            "يجب قراءة التعليمات جيدًا قبل البدء.",
-            "بمجرد بدء الاختبار يبدأ احتساب الوقت.",
-            "يجب الالتزام بالوقت المحدد.",
-            "لا تقومي بإغلاق صفحة الاختبار.",
-            "لا تقومي بالخروج من صفحة الاختبار.",
-            "لا تقومي بإعادة تحميل الصفحة.",
-            "لا تقومي بمغادرة الاختبار أثناء أدائه.",
-            "سيتم التعامل مع انتهاء الوقت حسب نظام التسليم التلقائي.",
-            "تأكدي من إجاباتك قبل تسليم الاختبار.",
-        ]
-        for line in instructions:
-            st.markdown(f"- {line}")
-        st.markdown("---")
-
-        col_cancel, col_confirm = st.columns(2)
-        with col_cancel:
-            if st.button("إلغاء", use_container_width=True, key="cancel_assessment_start"):
-                st.session_state.assessment_confirmation = None
-                st.rerun()
-        with col_confirm:
-            if st.button("أوافق وأبدأ الاختبار", use_container_width=True, key="confirm_assessment_start"):
-                st.session_state.selected_assessment_type = a_type
-                st.session_state.selected_assessment_id = a_id
-                st.session_state.assessment_confirmation = None
-                st.session_state.quiz_interface_started = True
-                if a_type == "quiz":
-                    st.session_state.selected_quiz_id = a_id
-                else:
-                    st.session_state.selected_exam_id = a_id
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        _render_assessment_start_confirmation(db, student, confirmation)
         st.markdown('</div>', unsafe_allow_html=True)
         return
 
-    st.markdown('<p class="comp-section-title">⚽ المسابقات المتاحة</p>', unsafe_allow_html=True)
-    assessments = build_unified_assessments(db)
+    tab_labels = ["📋 المتاحة", "📊 درجاتي", "🗂️ السجل"]
+    tab_keys = ["available", "grades", "history"]
+    if "assessment_tab" not in st.session_state:
+        st.session_state.assessment_tab = "available"
+    selected_tab = st.radio(
+        "أقسام الصفحة",
+        tab_keys,
+        format_func=lambda x: tab_labels[tab_keys.index(x)],
+        horizontal=True,
+        key="assessment_tab_radio",
+        index=tab_keys.index(st.session_state.assessment_tab) if st.session_state.assessment_tab in tab_keys else 0,
+        label_visibility="collapsed",
+    )
+    st.session_state.assessment_tab = selected_tab
+    st.markdown("---")
+
+    if selected_tab == "available":
+        _render_student_available_assessments(db, student)
+    elif selected_tab == "grades":
+        show_student_grades_tab(db, student)
+    else:
+        show_student_exam_history_tab(db, student)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def show_student_competitions_tab(db, student):
+    """Legacy alias — redirects to unified assessments page."""
+    show_student_assessments_page(db, student)
+
+
+def _render_assessment_start_confirmation(db, student, confirmation):
+    a_type = confirmation.get("type", "quiz")
+    a_id = confirmation.get("id", "")
+    assessment_row = get_assessment_record(db, a_type, a_id)
+    if not assessment_row:
+        st.warning("تعذر العثور على بيانات الاختبار.")
+        st.session_state.assessment_confirmation = None
+        st.rerun()
+        return
+
+    can_access, deny_reason = student_can_access_assessment(db, student, a_type, a_id)
+    if not can_access:
+        st.warning(deny_reason or "غير مصرح بالدخول إلى هذا الاختبار.")
+        st.session_state.assessment_confirmation = None
+        return
+
+    num_q = get_assessment_question_count(db, a_type, a_id)
+    total_marks = assessment_row.get("total_marks", "20")
+    time_limit = assessment_row.get("time_limit_minutes") or assessment_row.get("duration_minutes", "—")
+    type_label = "امتحان" if a_type == "exam" else "مسابقة"
+
+    st.markdown('<div class="comp-card">', unsafe_allow_html=True)
+    st.markdown("## تأكيد دخول الاختبار")
+    st.markdown(f"**النوع:** {type_label}")
+    st.markdown(f"**اسم الاختبار:** {assessment_row.get('title', '')}")
+    st.markdown(f"**عدد الأسئلة:** {num_q or '—'}")
+    st.markdown(f"**الدرجة الكلية:** {total_marks}")
+    st.markdown(f"**الوقت المحدد:** {time_limit} دقيقة")
+    st.markdown("---")
+    st.markdown("## تعليمات مهمة قبل بدء الاختبار")
+    instructions = [
+        "يجب قراءة التعليمات جيدًا قبل البدء.",
+        "بمجرد بدء الاختبار يبدأ احتساب الوقت.",
+        "يجب الالتزام بالوقت المحدد.",
+        "لا تقومي بإغلاق صفحة الاختبار.",
+        "لا تقومي بالخروج من صفحة الاختبار.",
+        "لا تقومي بإعادة تحميل الصفحة.",
+        "لا تقومي بمغادرة الاختبار أثناء أدائه.",
+        "سيتم التعامل مع انتهاء الوقت حسب نظام التسليم التلقائي.",
+        "تأكدي من إجاباتك قبل تسليم الاختبار.",
+    ]
+    for line in instructions:
+        st.markdown(f"- {line}")
+    st.markdown("---")
+
+    col_cancel, col_confirm = st.columns(2)
+    with col_cancel:
+        if st.button("إلغاء", use_container_width=True, key="cancel_assessment_start"):
+            st.session_state.assessment_confirmation = None
+            st.rerun()
+    with col_confirm:
+        if st.button("أوافق وأبدأ الاختبار", use_container_width=True, key="confirm_assessment_start"):
+            clear_assessment_session_state()
+            st.session_state.selected_assessment_type = a_type
+            st.session_state.selected_assessment_id = a_id
+            st.session_state.assessment_confirmation = None
+            st.session_state.quiz_interface_started = True
+            if a_type == "quiz":
+                st.session_state.selected_quiz_id = a_id
+            else:
+                st.session_state.selected_exam_id = a_id
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def _render_student_available_assessments(db, student):
+    student_id = student.get("student_id", "")
+    quizzes = db.get_quizzes()
+    exams = db.get_exams()
+
+    st.markdown('<p class="comp-section-title">⚽ الاختبارات المتاحة</p>', unsafe_allow_html=True)
+    assessments = build_unified_assessments_for_student(db, student)
     available_items = []
     for item in assessments:
         a_type = item["assessment_type"]
@@ -4620,19 +4722,22 @@ def show_student_competitions_tab(db, student):
             available_items.append((item, status))
 
     if not available_items:
-        st.markdown('<div class="comp-empty">لا توجد مسابقات متاحة حالياً</div>', unsafe_allow_html=True)
+        st.markdown('<div class="comp-empty">لا توجد اختبارات متاحة حالياً</div>', unsafe_allow_html=True)
     else:
         for item, status in available_items:
             a_type = item["assessment_type"]
             a_id = item["assessment_id"]
+            type_badge = "امتحان" if a_type == "exam" else "مسابقة"
             if status == "started":
-                badge = '<span class="comp-badge-available comp-badge-started">الحالة: بدأت</span>'
+                badge = '<span class="comp-badge-available comp-badge-started">الحالة: بدأت — يمكنك المتابعة</span>'
+                btn_label = "متابعة الاختبار"
             else:
-                badge = '<span class="comp-badge-available">الحالة: متاحة</span>'
+                badge = f'<span class="comp-badge-available">النوع: {type_badge} | متاحة</span>'
+                btn_label = "بدء الاختبار"
             st.markdown(f"""
             <div class="comp-card">
                 <div class="comp-available-row">
-                    <div class="comp-icon-box">📄</div>
+                    <div class="comp-icon-box">{"📝" if a_type == "exam" else "⚽"}</div>
                     <div style="flex:1;">
                         <div class="comp-available-title">{item['title']}</div>
                         {badge}
@@ -4641,13 +4746,11 @@ def show_student_competitions_tab(db, student):
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            if status == "started":
-                st.caption("⏳ لديكِ محاولة سابقة — لا يمكن الدخول مرة أخرى.")
-            elif st.button("بدء الاختبار", key=f"start_{a_type}_{a_id}", use_container_width=True):
+            if st.button(btn_label, key=f"start_{a_type}_{a_id}", use_container_width=True):
                 st.session_state.assessment_confirmation = {"type": a_type, "id": a_id}
                 st.rerun()
 
-    st.markdown('<p class="comp-section-title">📋 مسابقاتي</p>', unsafe_allow_html=True)
+    st.markdown('<p class="comp-section-title">📋 نتائجي الأخيرة</p>', unsafe_allow_html=True)
     student_quiz, student_exam = get_student_submitted_results(db, student_id)
     history_rows = []
     if not student_quiz.empty:
@@ -4668,10 +4771,10 @@ def show_student_competitions_tab(db, student):
             history_rows.append({**row.to_dict(), "attempt_type": "exam", "title": title})
 
     if not history_rows:
-        st.markdown('<div class="comp-empty">لا توجد مسابقات منجزة بعد</div>', unsafe_allow_html=True)
+        st.markdown('<div class="comp-empty">لا توجد نتائج بعد</div>', unsafe_allow_html=True)
     else:
         history_rows.sort(key=lambda x: str(x.get("submission_time", "")), reverse=True)
-        for attempt in history_rows:
+        for attempt in history_rows[:5]:
             result_id = attempt.get("result_id", "")
             attempt_type = attempt.get("attempt_type", "quiz")
             title = attempt.get("title", "—")
@@ -4695,7 +4798,6 @@ def show_student_competitions_tab(db, student):
                     <div class="comp-stat-box">
                         <div class="comp-stat-label">⭐ الدرجة</div>
                         <div class="comp-stat-value">{score} / {total_marks}</div>
-                        <div class="comp-stat-sub">من {total_marks}</div>
                     </div>
                     <div class="comp-stat-box">
                         <div class="comp-stat-label">٪ النسبة</div>
@@ -4717,18 +4819,6 @@ def show_student_competitions_tab(db, student):
                 st.session_state.review_result_id = result_id
                 st.session_state.review_result_type = attempt_type
                 st.rerun()
-
-    nav1, nav2 = st.columns(2)
-    with nav1:
-        if st.button("درجاتي 🚲", key="comp_nav_grades", use_container_width=True):
-            st.session_state.student_dashboard_page = "📊 درجاتي"
-            st.rerun()
-    with nav2:
-        if st.button("سجل الامتحانات 📋", key="comp_nav_history", use_container_width=True):
-            st.session_state.student_dashboard_page = "📋 سجل الامتحانات"
-            st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =============================================================================
@@ -4797,9 +4887,10 @@ def show_sidebar_navigation(db):
             st.rerun()
 
         # ===== Menu items with Arabic icons only =====
-        current_choice = st.session_state.get("menu_choice", menu_items[0])
+        current_choice = normalize_admin_menu_choice(st.session_state.get("menu_choice", menu_items[0]))
         if current_choice not in menu_items:
             current_choice = menu_items[0]
+        if current_choice != st.session_state.get("menu_choice"):
             st.session_state.menu_choice = current_choice
 
         st.markdown('<div class="sidebar-nav nav-btn-container">', unsafe_allow_html=True)
@@ -6040,10 +6131,27 @@ def show_followup(db):
 
 
 # =============================================================================
+# Unified Admin — Competitions & Exams
+# =============================================================================
+def show_unified_assessments_admin(db):
+    """Single admin page for quizzes (competitions) and exams."""
+    st.markdown(
+        hero_header("المسابقات والاختبارات", "📝 إنشاء وإدارة المسابقات والامتحانات في مكان واحد"),
+        unsafe_allow_html=True,
+    )
+    tab_quizzes, tab_exams = st.tabs(["🏆 المسابقات", "📝 الامتحانات"])
+    with tab_quizzes:
+        show_quizzes(db, embedded=True)
+    with tab_exams:
+        show_exams_management(db, embedded=True)
+
+
+# =============================================================================
 # Quizzes
 # =============================================================================
-def show_quizzes(db):
-    st.markdown(hero_header("المسابقات والاختبارات", "📝 إنشاء وإدارة الاختبارات والمسابقات"), unsafe_allow_html=True)
+def show_quizzes(db, embedded=False):
+    if not embedded:
+        st.markdown(hero_header("المسابقات والاختبارات", "📝 إنشاء وإدارة الاختبارات والمسابقات"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
@@ -6257,8 +6365,9 @@ def show_quizzes(db):
 # grading, certificates, anti-cheating, analytics) are NOT yet implemented.
 # See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
-def show_exams_management(db):
-    st.markdown(hero_header("إدارة الامتحانات", "📝 إنشاء وإدارة الامتحانات وأسئلتها"), unsafe_allow_html=True)
+def show_exams_management(db, embedded=False):
+    if not embedded:
+        st.markdown(hero_header("إدارة الامتحانات", "📝 إنشاء وإدارة الامتحانات وأسئلتها"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
@@ -8344,335 +8453,16 @@ def change_password(db):
 # See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
 def show_student_exam_portal(db):
-    """
-    بوابة امتحانات الطالبات - قيد التطوير
-    """
-    under_development_page(
-        title="بوابة الامتحانات",
-        subtitle="📝 نظام الامتحانات الإلكتروني",
-        message="نعمل حاليًا على تطوير نظام امتحانات إلكتروني متكامل يضم:<br><br>"
-                "✅ إنشاء وإدارة الامتحانات<br>"
-                "✅ بنك أسئلة متعدد الأنواع<br>"
-                "✅ جدولة الامتحانات<br>"
-                "✅ التصحيح التلقائي الفوري<br>"
-                "✅ شهادات ونتائج تفاعلية<br>"
-                "✅ منع الغش ومراقبة الوقت<br><br>"
-                "سيتم إطلاق الميزة قريبًا بإذن الله. شكرًا لصبركم.",
-        button_label="العودة إلى لوحة التحكم",
-        button_key="exam_under_dev_back"
-    )
-    return
-
-
-# =============================================================================
-# PHASE 2 — EXAMS PORTAL (Future Feature — NOT yet active)
-# =============================================================================
-# This module is RESERVED for Phase 2 implementation.
-# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
-# =============================================================================
-def show_exam_interface(db):
-    """
-    واجهة أداء الامتحان الكاملة:
-    - سؤال واحد في الصفحة
-    - السابق / التالي
-    - Progress Bar
-    - Countdown Timer
-    - Auto Save
-    - ترتيب الأسئلة عشوائي
-    - ترتيب الخيارات عشوائي
-    - منع الخروج
-    - إنهاء الامتحان
-    - التسليم التلقائي عند انتهاء الوقت
-    """
-    exam_id = st.session_state.get("selected_exam_id", "")
-    if not exam_id:
-        st.error("❌ لم يتم اختيار امتحان. الرجاء العودة إلى بوابة الامتحانات.")
-        if st.button("🔙 العودة إلى البوابة", use_container_width=True, key="exam_back_no_exam"):
-            st.session_state.exam_start_requested = False
-            st.session_state.exam_phase = "portal"
-            st.rerun()
-        return
-
-    if not st.session_state.get("exam_student_logged_in", False):
-        st.error("❌ يجب تسجيل دخول الطالبة أولاً للدخول إلى الامتحان.")
-        return
-
-    student_id = st.session_state.get("exam_student_id", "")
-    student_name = st.session_state.get("exam_student_name", "طالبة")
-    exam_title = st.session_state.get("selected_exam_title", "امتحان")
-    try:
-        duration_minutes = int(float(st.session_state.get("selected_exam_duration", 30)))
-    except (TypeError, ValueError):
-        duration_minutes = 30
-
-    # ===== تهيئة حالة الجلسة الخاصة بالامتحان =====
-    defaults = {
-        "exam_phase": "taking",
-        "exam_question_index": 0,
-        "exam_answers": {},
-        "exam_last_saved_answers": "",
-        "exam_end_time": None,
-        "exam_start_time": None,
-        "exam_questions": None,
-        "exam_shuffled_options": {},
-        "exam_attempt_id": None,
-        "exam_submitted": False,
-        "exam_submit_time": None,
-        "exam_result": None,
-        "exam_confirm_finish": False,
-        "exam_last_save_time": None,
-    }
-    for k, v in defaults.items():
-        st.session_state.setdefault(k, v)
-
-    # ===== تحميل الأسئلة وخلطها مرة واحدة فقط =====
-    if st.session_state.exam_questions is None:
-        with st.spinner("🔄 جاري تجهيز الأسئلة..."):
-            questions_df = db.shuffle_questions(exam_id)
-            if questions_df is None or questions_df.empty:
-                st.warning("⚠️ لا توجد أسئلة في هذا الامتحان بعد.")
-                if st.button("🔙 العودة إلى البوابة", use_container_width=True, key="exam_back_no_questions"):
-                    st.session_state.exam_start_requested = False
-                    st.session_state.exam_questions = None
-                    st.rerun()
-                return
-            questions = questions_df.to_dict("records")
-            random.shuffle(questions)  # خلط إضافي لضمان العشوائية
-
-            # خلط خيارات كل سؤال
-            shuffled_options = {}
-            for q in questions:
-                q_id = q.get("question_id", "")
-                q_type = q.get("question_type", "")
-                if str(q_type).strip() == "صح وخطأ":
-                    shuffled_options[q_id] = ["صح", "خطأ"]
-                else:
-                    opts = [str(q.get(f"option{i}", "")).strip() for i in range(1, 5)]
-                    opts = [o for o in opts if o]
-                    random.shuffle(opts)
-                    shuffled_options[q_id] = opts
-
-            st.session_state.exam_questions = questions
-            st.session_state.exam_shuffled_options = shuffled_options
-
-    questions = st.session_state.exam_questions
-    total_questions = len(questions)
-    shuffled_options = st.session_state.exam_shuffled_options
-
-    # ===== بدء محاولة الامتحان وتسجيل الوقت =====
-    if st.session_state.exam_attempt_id is None:
-        st.session_state.exam_start_time = get_cairo_now()
-        st.session_state.exam_end_time = st.session_state.exam_start_time + timedelta(minutes=duration_minutes)
-        st.session_state.exam_attempt_id = db.start_exam_attempt(exam_id, student_id, student_name)
-
-    # ===== دالة الحفظ التلقائي =====
-    def auto_save_exam():
-        attempt_id = st.session_state.get("exam_attempt_id")
-        if not attempt_id:
-            return
-        answers_json = json.dumps(st.session_state.exam_answers, ensure_ascii=False)
-        if answers_json != st.session_state.exam_last_saved_answers:
-            db.save_exam_answers(attempt_id, st.session_state.exam_answers)
-            st.session_state.exam_last_saved_answers = answers_json
-            st.session_state.exam_last_save_time = get_cairo_now()
-
-    # ===== دالة التسليم النهائي =====
-    def submit_exam_internal(auto=False):
-        attempt_id = st.session_state.get("exam_attempt_id")
-        if not attempt_id or st.session_state.exam_submitted:
-            return
-        auto_save_exam()
-        score, total_marks, correct, wrong = db.grade_exam_attempt(exam_id, st.session_state.exam_answers)
-        answers_json = json.dumps(st.session_state.exam_answers, ensure_ascii=False)
-        db.submit_exam_attempt(attempt_id, score, answers_json)
-        st.session_state.exam_submitted = True
-        st.session_state.exam_submit_time = get_cairo_now()
-        st.session_state.exam_result = {
-            "score": score,
-            "total_marks": total_marks,
-            "correct_count": correct,
-            "wrong_count": wrong,
-            "auto_submitted": auto,
-        }
-
-    # ===== منع الخروج من الصفحة أثناء الامتحان =====
-    st.markdown("""
-    <script>
-    window.addEventListener('beforeunload', function (e) {
-        e.preventDefault();
-        e.returnValue = '⚠️ أنت في امتحان! إذا غادرت الآن قد تفقد تقدمك.';
-    });
-    </script>
-    """, unsafe_allow_html=True)
-
-    # ===== التسليم التلقائي عند انتهاء الوقت =====
-    now = get_cairo_now()
-    end_time = st.session_state.exam_end_time
-    if end_time is not None and now >= end_time and not st.session_state.exam_submitted:
-        st.warning("⏰ انتهى الوقت المخصص! جاري تسليم إجاباتك تلقائياً...")
-        submit_exam_internal(auto=True)
+    """Legacy redirect — exam portal merged into unified student assessments page."""
+    st.info("تم دمج بوابة الامتحانات مع صفحة المسابقات والاختبارات الموحدة.")
+    if st.session_state.get("student_logged_in"):
+        st.session_state.student_dashboard_page = STUDENT_ASSESSMENTS_PAGE
         st.rerun()
 
-    # ===== إذا تم التسليم - عرض النتيجة =====
-    if st.session_state.exam_submitted:
-        st.success("✅ تم تسليم الامتحان بنجاح!")
-        result = st.session_state.exam_result or {}
-        score = result.get("score", 0)
-        total_marks = result.get("total_marks", 0)
-        correct = result.get("correct_count", 0)
-        wrong = result.get("wrong_count", 0)
-        percentage = (score / total_marks * 100) if total_marks else 0
-        if percentage >= 90:
-            grade = "ممتاز"
-        elif percentage >= 80:
-            grade = "جيد جداً"
-        elif percentage >= 70:
-            grade = "جيد"
-        elif percentage >= 60:
-            grade = "مقبول"
-        else:
-            grade = "راسب"
 
-        col_r1, col_r2, col_r3, col_r4 = st.columns(4)
-        col_r1.metric("📝 الدرجة", f"{score}")
-        col_r2.metric("📊 الدرجة الكلية", f"{total_marks}")
-        col_r3.metric("✅ صحيحة", correct)
-        col_r4.metric("❌ خاطئة", wrong)
-        st.info(f"**النسبة المئوية:** {percentage:.1f}% | **التقدير:** {grade}")
-        if result.get("auto_submitted"):
-            st.warning("⏰ تم التسليم تلقائياً بعد انتهاء الوقت.")
-        st.markdown("---")
-        if st.button("🔙 العودة إلى بوابة الامتحانات", use_container_width=True, key="exam_finish_back"):
-            # تنظيف حالة الامتحان
-            for key in [
-                "exam_phase", "exam_question_index", "exam_answers", "exam_last_saved_answers",
-                "exam_end_time", "exam_start_time", "exam_questions", "exam_shuffled_options",
-                "exam_attempt_id", "exam_submitted", "exam_submit_time", "exam_result",
-                "exam_confirm_finish", "exam_last_save_time", "selected_exam_id",
-                "selected_exam_title", "selected_exam_duration", "selected_exam_total_marks",
-                "exam_start_requested"
-            ]:
-                st.session_state.pop(key, None)
-            st.rerun()
-        return
-
-    # ===== ترويسة الامتحان =====
-    st.markdown(
-        f"""
-        <div class="profile-header" style="padding:1.5rem 2rem;">
-            <h1 style="margin:0; font-size:1.4rem; font-weight:800;">📄 {exam_title}</h1>
-            <p style="margin:0.5rem 0 0; opacity:0.9; font-size:0.9rem;">
-                👤 {student_name} | 🆔 {student_id} | ⏱️ المدة: {duration_minutes} دقيقة
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # ===== شريط التقدم =====
-    current_index = st.session_state.exam_question_index
-    if total_questions > 0:
-        progress = (current_index + 1) / total_questions
-        st.progress(progress)
-        st.caption(f"📋 السؤال {current_index + 1} من {total_questions}")
-
-    # ===== عدّاد الوقت (Countdown Timer) مع إعادة تحميل تلقائية عند الانتهاء =====
-    if end_time is not None:
-        end_time_iso = end_time.isoformat()
-        countdown_html = f"""
-        <!DOCTYPE html>
-        <html><head><meta charset="utf-8"><style>
-        body {{ font-family: 'Cairo', sans-serif; margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100%; background: transparent; }}
-        #timer {{ font-size: 1.6rem; font-weight: bold; padding: 0.8rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; box-shadow: 0 4px 12px rgba(102,126,234,0.4); text-align: center; }}
-        </style></head><body>
-        <div id="timer">⏳ الوقت المتبقي: <span id="time"></span></div>
-        <script>
-        var endTime = new Date("{end_time_iso}").getTime();
-        function update() {{ var now = new Date().getTime(); var dist = endTime - now;
-            if (dist <= 0) {{ document.getElementById('time').innerHTML = "00:00";
-                clearInterval(intervalId);
-                setTimeout(function() {{ window.parent.location.reload(); }}, 800);
-                return; }}
-            var mins = Math.floor((dist % (1000*60*60)) / (1000*60)); var secs = Math.floor((dist % (1000*60)) / 1000);
-            document.getElementById('time').innerHTML = (mins<10?'0'+mins:mins) + ":" + (secs<10?'0'+secs:secs); }}
-        update(); var intervalId = setInterval(update, 1000);
-        </script></body></html>
-        """
-        st.components.v1.html(countdown_html, height=85, scrolling=False)
-
-    st.markdown("---")
-
-    # ===== عرض السؤال الحالي (سؤال واحد في الصفحة) =====
-    q = questions[current_index]
-    q_id = q.get("question_id", "")
-    q_text = q.get("question_text", "")
-    q_type = q.get("question_type", "")
-    q_marks = q.get("marks", 1)
-
-    st.markdown(
-        f"<div style='background:#f8fafc; border:1px solid #e2e8f0; border-right:4px solid #2563eb; "
-        f"border-radius:12px; padding:1.2rem 1.5rem; margin-bottom:1rem;'>"
-        f"<div style='font-size:1.1rem; font-weight:700; color:#0f172a;'>{current_index + 1}. {q_text}</div>"
-        f"<div style='margin-top:0.4rem; color:#64748b; font-size:0.8rem;'>"
-        f"الدرجة: {q_marks} | النوع: {q_type or 'اختيار من متعدد'}</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-
-    options = shuffled_options.get(q_id, [])
-    prev_answer = st.session_state.exam_answers.get(q_id, "")
-
-    if str(q_type).strip() == "صح وخطأ" or (options and len(options) > 0):
-        index = options.index(prev_answer) if prev_answer in options else None
-        ans = st.radio("اختر الإجابة", options, index=index, key=f"exam_q_{q_id}")
-        if ans is not None:
-            if st.session_state.exam_answers.get(q_id) != ans:
-                st.session_state.exam_answers[q_id] = ans
-                auto_save_exam()
-    else:
-        ans_text = st.text_input("الإجابة", value=prev_answer, key=f"exam_q_{q_id}")
-        if ans_text != prev_answer:
-            st.session_state.exam_answers[q_id] = ans_text
-            auto_save_exam()
-
-    # ===== مؤشر الحفظ التلقائي =====
-    last_save = st.session_state.exam_last_save_time
-    if last_save:
-        st.caption(f"💾 آخر حفظ تلقائي: {format_cairo_time(last_save)}")
-    else:
-        st.caption("💾 يتم حفظ إجاباتك تلقائياً")
-
-    st.markdown("---")
-
-    # ===== أزرار التنقل (السابق / التالي) والتسليم =====
-    col_prev, col_mid, col_next = st.columns([1, 2, 1])
-    with col_prev:
-        prev_disabled = current_index == 0
-        if st.button("⬅️ السابق", use_container_width=True, disabled=prev_disabled, key="exam_prev_btn"):
-            st.session_state.exam_question_index = max(0, current_index - 1)
-            st.rerun()
-    with col_mid:
-        if st.button("🚨 إنهاء الامتحان", use_container_width=True, key="exam_finish_btn"):
-            st.session_state.exam_confirm_finish = True
-            st.rerun()
-    with col_next:
-        next_disabled = current_index == total_questions - 1
-        if st.button("التالي ➡️", use_container_width=True, disabled=next_disabled, key="exam_next_btn"):
-            st.session_state.exam_question_index = min(total_questions - 1, current_index + 1)
-            st.rerun()
-
-    # ===== تأكيد إنهاء الامتحان =====
-    if st.session_state.exam_confirm_finish:
-        st.warning("⚠️ هل أنت متأكدة من إنهاء الامتحان؟ لن تتمكني من تعديل إجاباتك بعد التسليم.")
-        col_yes, col_no = st.columns(2)
-        with col_yes:
-            if st.button("✅ نعم، تسليم نهائي", use_container_width=True, key="exam_confirm_yes"):
-                submit_exam_internal(auto=False)
-                st.rerun()
-        with col_no:
-            if st.button("❌ تراجع", use_container_width=True, key="exam_confirm_no"):
-                st.session_state.exam_confirm_finish = False
-                st.rerun()
+def show_exam_interface(db):
+    """Legacy redirect — use unified assessment taking interface."""
+    show_unified_assessment_taking_interface(db)
 
 
 # =============================================================================
@@ -9706,7 +9496,9 @@ def main():
                 st.markdown("""<style>section[data-testid="stSidebar"] { transform: translateX(0) !important; }</style>""", unsafe_allow_html=True)
                 choice = show_sidebar_navigation(db)
             if not st.session_state.show_sidebar:
-                choice = st.session_state.get("menu_choice", "🏠 لوحة التحكم")
+                choice = normalize_admin_menu_choice(st.session_state.get("menu_choice", "🏠 لوحة التحكم"))
+                if choice != st.session_state.get("menu_choice"):
+                    st.session_state.menu_choice = choice
                 role = st.session_state.user.get("role", "")
                 menu_items = get_role_menu(role)
                 if choice not in menu_items:
@@ -9748,13 +9540,8 @@ def main():
                 show_attendance(db)
             elif choice == "💬 الافتقاد":
                 show_followup(db)
-            elif choice == "📝 المسابقات والاختبارات":
-                show_quizzes(db)
-            elif choice == "📝 إدارة الامتحانات":
-                if st.session_state.user.get("role") in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
-                    show_exams_management(db)
-                else:
-                    st.error("🚫 غير مصرح")
+            elif choice == ADMIN_ASSESSMENTS_PAGE or choice == LEGACY_ADMIN_ASSESSMENTS_PAGE:
+                show_unified_assessments_admin(db)
             elif choice == "📊 التقارير والإحصائيات":
                 show_reports_page(db)
             elif choice == "📅 إدارة الفعاليات":
