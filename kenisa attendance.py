@@ -6134,16 +6134,40 @@ def show_followup(db):
 # Unified Admin — Competitions & Exams
 # =============================================================================
 def show_unified_assessments_admin(db):
-    """Single admin page for quizzes (competitions) and exams."""
+    """Single admin page for quizzes (competitions) and exams — unified view, no nested tabs."""
     st.markdown(
         hero_header("المسابقات والاختبارات", "📝 إنشاء وإدارة المسابقات والامتحانات في مكان واحد"),
         unsafe_allow_html=True,
     )
-    tab_quizzes, tab_exams = st.tabs(["🏆 المسابقات", "📝 الامتحانات"])
-    with tab_quizzes:
-        show_quizzes(db, embedded=True)
-    with tab_exams:
-        show_exams_management(db, embedded=True)
+    st.markdown(
+        """
+        <div style="background:#eff6ff;border-right:4px solid #2563eb;padding:0.75rem 1rem;
+        border-radius:10px;margin-bottom:0.75rem;">
+            <h3 style="margin:0;color:#1e40af;font-size:1.1rem;">🏆 المسابقات والاختبارات</h3>
+            <p style="margin:0.35rem 0 0;color:#64748b;font-size:0.88rem;">
+                إنشاء وإدارة الاختبارات والمسابقات وأسئلتها ونتائجها
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    show_quizzes(db, embedded=True)
+
+    st.markdown("---")
+
+    st.markdown(
+        """
+        <div style="background:#f0fdf4;border-right:4px solid #16a34a;padding:0.75rem 1rem;
+        border-radius:10px;margin-bottom:0.75rem;">
+            <h3 style="margin:0;color:#166534;font-size:1.1rem;">📝 الامتحانات</h3>
+            <p style="margin:0.35rem 0 0;color:#64748b;font-size:0.88rem;">
+                إنشاء وإدارة الامتحانات وأسئلتها ونتائجها
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    show_exams_management(db, embedded=True)
 
 
 # =============================================================================
