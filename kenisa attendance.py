@@ -1425,9 +1425,9 @@ class Database:
             "Sections": self.SECTION_COLUMNS,
             "Attendance": self.ATTENDANCE_COLUMNS,
             "FollowUp": ["record_id", "student_id", "teacher_id", "followup_date", "followup_type", "notes", "regularity_status"],
-            "Quizzes": ["quiz_id", "title", "description", "created_by", "section_id", "num_questions", "time_limit_minutes", "total_marks", "expiry_date", "quiz_code", "password", "is_active"],
-            "QuizQuestions": ["question_id", "quiz_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer"],
-            "QuizResults": ["result_id", "quiz_id", "student_id", "student_name", "score", "total_marks", "start_time", "submission_time", "answers", "status"],
+            "Quizzes": self.QUIZ_COLUMNS,
+            "QuizQuestions": self.QUIZ_QUESTION_COLUMNS,
+            "QuizResults": self.QUIZ_RESULT_COLUMNS,
             "AuditLog": AUDIT_LOG_COLUMNS,
             "Events": self.EVENT_COLUMNS,
             "EventRSVP": self.EVENT_RSVP_COLUMNS,
@@ -1935,73 +1935,163 @@ class Database:
         self._df_to_sheet("FollowUp", df, ["record_id", "student_id", "teacher_id", "followup_date",
                                            "followup_type", "notes", "regularity_status"])
 
-    # --- Quizzes ---
+    # --- Quizzes / Unified Assessments ---
+    QUIZ_COLUMNS = [
+        "quiz_id", "title", "description", "created_by", "section_id",
+        "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
+        "quiz_code", "password", "is_active",
+        "assessment_type", "stage_id", "chapter_lesson", "exam_date",
+        "start_date", "end_date", "duration_minutes", "passing_score",
+        "is_published", "created_at"
+    ]
+    QUIZ_QUESTION_COLUMNS = [
+        "question_id", "quiz_id", "question_text", "question_type",
+        "option1", "option2", "option3", "option4", "correct_answer", "marks"
+    ]
+    QUIZ_RESULT_COLUMNS = [
+        "result_id", "quiz_id", "student_id", "student_name",
+        "score", "total_marks", "start_time", "submission_time", "answers", "status"
+    ]
+
+    def _normalize_assessment_type(self, value):
+        v = str(value or "").strip().lower()
+        if v in ("exam", "امتحان"):
+            return "exam"
+        return "quiz"
+
+    def _ensure_quiz_columns(self, df):
+        if df is None or df.empty:
+            return pd.DataFrame(columns=self.QUIZ_COLUMNS)
+        work = df.copy()
+        for col in self.QUIZ_COLUMNS:
+            if col not in work.columns:
+                work[col] = ""
+        if "assessment_type" not in work.columns:
+            work["assessment_type"] = "quiz"
+        work["assessment_type"] = work["assessment_type"].apply(self._normalize_assessment_type)
+        return work
+
+    def _migrate_legacy_exams_into_quizzes(self):
+        """Backfill legacy Exams rows into Quizzes as assessment_type=exam."""
+        try:
+            quizzes = self._sheet_to_df("Quizzes")
+            quizzes = self._ensure_quiz_columns(quizzes)
+            existing_ids = set(quizzes["quiz_id"].astype(str).tolist()) if not quizzes.empty else set()
+            exams = self._sheet_to_df("Exams")
+            if exams.empty:
+                return quizzes
+            changed = False
+            for _, row in exams.iterrows():
+                exam_id = str(row.get("exam_id", "")).strip()
+                if not exam_id or exam_id in existing_ids:
+                    continue
+                mapped = {
+                    "quiz_id": exam_id,
+                    "title": row.get("title", ""),
+                    "description": row.get("description", ""),
+                    "created_by": row.get("created_by", ""),
+                    "section_id": row.get("section_id", ""),
+                    "num_questions": "",
+                    "time_limit_minutes": row.get("duration_minutes", "30"),
+                    "total_marks": row.get("total_marks", "20"),
+                    "expiry_date": row.get("end_date", ""),
+                    "quiz_code": "",
+                    "password": "",
+                    "is_active": row.get("is_active", "True"),
+                    "assessment_type": "exam",
+                    "stage_id": row.get("stage_id", ""),
+                    "chapter_lesson": row.get("chapter_lesson", ""),
+                    "exam_date": row.get("exam_date", ""),
+                    "start_date": row.get("start_date", ""),
+                    "end_date": row.get("end_date", ""),
+                    "duration_minutes": row.get("duration_minutes", ""),
+                    "passing_score": row.get("passing_score", ""),
+                    "is_published": row.get("is_published", "False"),
+                    "created_at": row.get("created_at", ""),
+                }
+                quizzes = pd.concat([quizzes, pd.DataFrame([mapped])], ignore_index=True)
+                existing_ids.add(exam_id)
+                changed = True
+            if changed:
+                self._df_to_sheet("Quizzes", quizzes, self.QUIZ_COLUMNS)
+            return quizzes
+        except Exception:
+            return self._ensure_quiz_columns(self._sheet_to_df("Quizzes"))
+
     def get_quizzes(self):
-        return self._sheet_to_df("Quizzes")
+        quizzes = self._migrate_legacy_exams_into_quizzes()
+        return self._ensure_quiz_columns(quizzes)
 
     def add_quiz(self, quiz_data):
-        df = self.get_quizzes()
-        if df.empty:
-            df = pd.DataFrame(columns=["quiz_id", "title", "description", "created_by", "section_id",
-                                       "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
-                                       "quiz_code", "password", "is_active"])
+        df = self._ensure_quiz_columns(self.get_quizzes())
+        quiz_data = {**quiz_data}
+        quiz_data["assessment_type"] = self._normalize_assessment_type(quiz_data.get("assessment_type", "quiz"))
         df = pd.concat([df, pd.DataFrame([quiz_data])], ignore_index=True)
-        self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id",
-                                          "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
-                                          "quiz_code", "password", "is_active"])
+        self._df_to_sheet("Quizzes", self._ensure_quiz_columns(df), self.QUIZ_COLUMNS)
 
     def update_quiz(self, quiz_id, updates):
-        df = self.get_quizzes()
+        df = self._ensure_quiz_columns(self.get_quizzes())
         idx = df[df.quiz_id == quiz_id].index
         if len(idx) > 0:
             for k, v in updates.items():
-                df.at[idx[0], k] = self._safe_str(v)
-            self._df_to_sheet("Quizzes", df, df.columns.tolist())
+                if k == "assessment_type":
+                    df.at[idx[0], k] = self._normalize_assessment_type(v)
+                else:
+                    df.at[idx[0], k] = self._safe_str(v)
+            self._df_to_sheet("Quizzes", self._ensure_quiz_columns(df), self.QUIZ_COLUMNS)
 
     def delete_quiz_keep_results(self, quiz_id):
-        df = self.get_quizzes()
+        df = self._ensure_quiz_columns(self.get_quizzes())
         df = df[df.quiz_id != quiz_id]
-        self._df_to_sheet("Quizzes", df, ["quiz_id", "title", "description", "created_by", "section_id",
-                                          "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
-                                          "quiz_code", "password", "is_active"])
+        self._df_to_sheet("Quizzes", df, self.QUIZ_COLUMNS)
         qdf = self._sheet_to_df("QuizQuestions")
         qdf = qdf[qdf.quiz_id != quiz_id]
-        self._df_to_sheet("QuizQuestions", qdf, ["question_id", "quiz_id", "question_text", "question_type",
-                                                 "option1", "option2", "option3", "option4", "correct_answer"])
+        for col in self.QUIZ_QUESTION_COLUMNS:
+            if col not in qdf.columns:
+                qdf[col] = ""
+        self._df_to_sheet("QuizQuestions", qdf, self.QUIZ_QUESTION_COLUMNS)
 
     def delete_quiz(self, quiz_id):
         self.delete_quiz_keep_results(quiz_id)
         rdf = self._sheet_to_df("QuizResults")
         rdf = rdf[rdf.quiz_id != quiz_id]
-        self._df_to_sheet("QuizResults", rdf, ["result_id", "quiz_id", "student_id", "student_name",
-                                               "score", "total_marks", "start_time", "submission_time", "answers", "status"])
+        self._df_to_sheet("QuizResults", rdf, self.QUIZ_RESULT_COLUMNS)
 
     def get_quiz_questions(self, quiz_id):
         df = self._sheet_to_df("QuizQuestions")
         if df.empty:
             return pd.DataFrame()
+        for col in self.QUIZ_QUESTION_COLUMNS:
+            if col not in df.columns:
+                df[col] = ""
         return df[df.quiz_id == quiz_id]
 
     def add_question(self, q_data):
         df = self._sheet_to_df("QuizQuestions")
         if df.empty:
-            df = pd.DataFrame(columns=["question_id", "quiz_id", "question_text", "question_type",
-                                       "option1", "option2", "option3", "option4", "correct_answer"])
+            df = pd.DataFrame(columns=self.QUIZ_QUESTION_COLUMNS)
+        for col in self.QUIZ_QUESTION_COLUMNS:
+            if col not in df.columns:
+                df[col] = ""
         df = pd.concat([df, pd.DataFrame([q_data])], ignore_index=True)
-        self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type",
-                                                "option1", "option2", "option3", "option4", "correct_answer"])
+        self._df_to_sheet("QuizQuestions", df, self.QUIZ_QUESTION_COLUMNS)
 
     def delete_question(self, question_id):
         df = self._sheet_to_df("QuizQuestions")
         df = df[df.question_id != question_id]
-        self._df_to_sheet("QuizQuestions", df, ["question_id", "quiz_id", "question_text", "question_type",
-                                                "option1", "option2", "option3", "option4", "correct_answer"])
+        for col in self.QUIZ_QUESTION_COLUMNS:
+            if col not in df.columns:
+                df[col] = ""
+        self._df_to_sheet("QuizQuestions", df, self.QUIZ_QUESTION_COLUMNS)
 
     # --- Quiz Results ---
     def get_quiz_results(self, quiz_id=None):
         df = self._sheet_to_df("QuizResults")
         if df.empty:
             return pd.DataFrame()
+        for col in self.QUIZ_RESULT_COLUMNS:
+            if col not in df.columns:
+                df[col] = ""
         if quiz_id:
             return df[df.quiz_id == quiz_id]
         return df
@@ -2016,11 +2106,9 @@ class Database:
         }
         df = self._sheet_to_df("QuizResults")
         if df.empty:
-            df = pd.DataFrame(columns=["result_id", "quiz_id", "student_id", "student_name",
-                                       "score", "total_marks", "start_time", "submission_time", "answers", "status"])
+            df = pd.DataFrame(columns=self.QUIZ_RESULT_COLUMNS)
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-        self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                              "score", "total_marks", "start_time", "submission_time", "answers", "status"])
+        self._df_to_sheet("QuizResults", df, self.QUIZ_RESULT_COLUMNS)
         return result_id
 
     def save_answers(self, result_id, answers_dict):
@@ -2028,8 +2116,7 @@ class Database:
         idx = df[df.result_id == result_id].index
         if len(idx) > 0:
             df.at[idx[0], "answers"] = json.dumps(answers_dict, ensure_ascii=False)
-            self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                                  "score", "total_marks", "start_time", "submission_time", "answers", "status"])
+            self._df_to_sheet("QuizResults", df, self.QUIZ_RESULT_COLUMNS)
 
     def submit_quiz_attempt(self, result_id, score, answers_json):
         df = self._sheet_to_df("QuizResults")
@@ -2039,14 +2126,12 @@ class Database:
             df.at[idx[0], "answers"] = answers_json
             df.at[idx[0], "submission_time"] = get_cairo_now().isoformat()
             df.at[idx[0], "status"] = "submitted"
-            self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                                  "score", "total_marks", "start_time", "submission_time", "answers", "status"])
+            self._df_to_sheet("QuizResults", df, self.QUIZ_RESULT_COLUMNS)
 
     def delete_quiz_result(self, result_id):
         df = self._sheet_to_df("QuizResults")
         df = df[df.result_id != result_id]
-        self._df_to_sheet("QuizResults", df, ["result_id", "quiz_id", "student_id", "student_name",
-                                              "score", "total_marks", "start_time", "submission_time", "answers", "status"])
+        self._df_to_sheet("QuizResults", df, self.QUIZ_RESULT_COLUMNS)
 
     # =====================================================================
     # Audit Log - سجل التدقيق الجديد
@@ -2215,112 +2300,115 @@ class Database:
         df = df[df.record_id != record_id]
         self._df_to_sheet("EventAttendance", df, self.EVENT_ATTENDANCE_COLUMNS)
 
-    # --- Exams ---
+    # --- Exams (compatibility wrappers over unified quiz tables) ---
     EXAM_COLUMNS = ["exam_id", "title", "description", "created_by", "stage_id", "section_id", "chapter_lesson", "exam_date", "start_date", "end_date", "duration_minutes", "total_marks", "passing_score", "is_active", "is_published", "created_at"]
-
-    def get_exams(self):
-        return self._sheet_to_df("Exams")
-
-    def add_exam(self, exam_data):
-        df = self.get_exams()
-        if df.empty:
-            df = pd.DataFrame(columns=self.EXAM_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([exam_data])], ignore_index=True)
-        self._df_to_sheet("Exams", df, self.EXAM_COLUMNS)
-
-    def update_exam(self, exam_id, updates):
-        df = self.get_exams()
-        idx = df[df.exam_id == exam_id].index
-        if len(idx) > 0:
-            for k, v in updates.items():
-                df.at[idx[0], k] = self._safe_str(v)
-            self._df_to_sheet("Exams", df, self.EXAM_COLUMNS)
-
-    def delete_exam(self, exam_id):
-        df = self.get_exams()
-        df = df[df.exam_id != exam_id]
-        self._df_to_sheet("Exams", df, self.EXAM_COLUMNS)
-
-        # Delete related questions
-        qdf = self._sheet_to_df("ExamQuestions")
-        if not qdf.empty:
-            qdf = qdf[qdf.exam_id != exam_id]
-            self._df_to_sheet("ExamQuestions", qdf, self.EXAM_QUESTION_COLUMNS)
-
-        # Delete related results
-        rdf = self._sheet_to_df("ExamResults")
-        if not rdf.empty:
-            rdf = rdf[rdf.exam_id != exam_id]
-            self._df_to_sheet("ExamResults", rdf, self.EXAM_RESULT_COLUMNS)
-
-    # --- Exam Questions ---
     EXAM_QUESTION_COLUMNS = ["question_id", "exam_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer", "marks"]
-
-    def get_exam_questions(self, exam_id=None):
-        df = self._sheet_to_df("ExamQuestions")
-        if df.empty or not exam_id:
-            return df
-        return df[df.exam_id == exam_id]
-
-    def add_exam_question(self, q_data):
-        df = self._sheet_to_df("ExamQuestions")
-        if df.empty:
-            df = pd.DataFrame(columns=self.EXAM_QUESTION_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([q_data])], ignore_index=True)
-        self._df_to_sheet("ExamQuestions", df, self.EXAM_QUESTION_COLUMNS)
-
-    def delete_exam_question(self, question_id):
-        df = self._sheet_to_df("ExamQuestions")
-        df = df[df.question_id != question_id]
-        self._df_to_sheet("ExamQuestions", df, self.EXAM_QUESTION_COLUMNS)
-
-    # --- Exam Results ---
     EXAM_RESULT_COLUMNS = ["result_id", "exam_id", "student_id", "student_name", "score", "total_marks", "start_time", "submission_time", "answers", "status"]
 
+    def get_exams(self):
+        quizzes = self.get_quizzes()
+        if quizzes.empty:
+            return pd.DataFrame(columns=self.EXAM_COLUMNS)
+        exams = quizzes[quizzes["assessment_type"] == "exam"].copy() if "assessment_type" in quizzes.columns else pd.DataFrame()
+        if exams.empty:
+            return pd.DataFrame(columns=self.EXAM_COLUMNS)
+        exams["exam_id"] = exams["quiz_id"]
+        for col in self.EXAM_COLUMNS:
+            if col not in exams.columns:
+                exams[col] = ""
+        return exams[self.EXAM_COLUMNS]
+
+    def add_exam(self, exam_data):
+        mapped = {
+            "quiz_id": exam_data.get("exam_id", str(uuid.uuid4())),
+            "title": exam_data.get("title", ""),
+            "description": exam_data.get("description", ""),
+            "created_by": exam_data.get("created_by", ""),
+            "section_id": exam_data.get("section_id", ""),
+            "num_questions": "",
+            "time_limit_minutes": exam_data.get("duration_minutes", "30"),
+            "total_marks": exam_data.get("total_marks", "20"),
+            "expiry_date": exam_data.get("end_date", ""),
+            "quiz_code": "",
+            "password": "",
+            "is_active": exam_data.get("is_active", "True"),
+            "assessment_type": "exam",
+            "stage_id": exam_data.get("stage_id", ""),
+            "chapter_lesson": exam_data.get("chapter_lesson", ""),
+            "exam_date": exam_data.get("exam_date", ""),
+            "start_date": exam_data.get("start_date", ""),
+            "end_date": exam_data.get("end_date", ""),
+            "duration_minutes": exam_data.get("duration_minutes", ""),
+            "passing_score": exam_data.get("passing_score", ""),
+            "is_published": exam_data.get("is_published", "False"),
+            "created_at": exam_data.get("created_at", get_cairo_now().isoformat()),
+        }
+        self.add_quiz(mapped)
+
+    def update_exam(self, exam_id, updates):
+        mapped = {}
+        rename_map = {
+            "exam_id": "quiz_id",
+            "duration_minutes": "time_limit_minutes",
+        }
+        for k, v in updates.items():
+            mapped[rename_map.get(k, k)] = v
+        mapped["assessment_type"] = "exam"
+        self.update_quiz(exam_id, mapped)
+
+    def delete_exam(self, exam_id):
+        self.delete_quiz(exam_id)
+
+    def get_exam_questions(self, exam_id=None):
+        if not exam_id:
+            all_q = self._sheet_to_df("QuizQuestions")
+            for col in self.QUIZ_QUESTION_COLUMNS:
+                if col not in all_q.columns:
+                    all_q[col] = ""
+            all_q["exam_id"] = all_q["quiz_id"]
+            return all_q[self.EXAM_QUESTION_COLUMNS]
+        qdf = self.get_quiz_questions(exam_id).copy()
+        if qdf.empty:
+            return pd.DataFrame(columns=self.EXAM_QUESTION_COLUMNS)
+        qdf["exam_id"] = qdf["quiz_id"]
+        return qdf[self.EXAM_QUESTION_COLUMNS]
+
+    def add_exam_question(self, q_data):
+        mapped = {
+            "question_id": q_data.get("question_id", str(uuid.uuid4())),
+            "quiz_id": q_data.get("exam_id", ""),
+            "question_text": q_data.get("question_text", ""),
+            "question_type": q_data.get("question_type", ""),
+            "option1": q_data.get("option1", ""),
+            "option2": q_data.get("option2", ""),
+            "option3": q_data.get("option3", ""),
+            "option4": q_data.get("option4", ""),
+            "correct_answer": q_data.get("correct_answer", ""),
+            "marks": q_data.get("marks", "1"),
+        }
+        self.add_question(mapped)
+
+    def delete_exam_question(self, question_id):
+        self.delete_question(question_id)
+
     def get_exam_results(self, exam_id=None):
-        df = self._sheet_to_df("ExamResults")
-        if df.empty:
-            return pd.DataFrame()
-        if exam_id:
-            return df[df.exam_id == exam_id]
-        return df
+        results = self.get_quiz_results(exam_id).copy() if exam_id else self.get_quiz_results().copy()
+        if results.empty:
+            return pd.DataFrame(columns=self.EXAM_RESULT_COLUMNS)
+        results["exam_id"] = results["quiz_id"]
+        return results[self.EXAM_RESULT_COLUMNS]
 
     def start_exam_attempt(self, exam_id, student_id, student_name):
-        result_id = str(uuid.uuid4())
-        now_iso = get_cairo_now().isoformat()
-        new_row = {
-            "result_id": result_id, "exam_id": exam_id, "student_id": student_id,
-            "student_name": student_name, "score": "", "total_marks": "20",
-            "start_time": now_iso, "submission_time": now_iso, "answers": "{}", "status": "started"
-        }
-        df = self._sheet_to_df("ExamResults")
-        if df.empty:
-            df = pd.DataFrame(columns=self.EXAM_RESULT_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-        self._df_to_sheet("ExamResults", df, self.EXAM_RESULT_COLUMNS)
-        return result_id
+        return self.start_quiz_attempt(exam_id, student_id, student_name)
 
     def save_exam_answers(self, result_id, answers_dict):
-        df = self._sheet_to_df("ExamResults")
-        idx = df[df.result_id == result_id].index
-        if len(idx) > 0:
-            df.at[idx[0], "answers"] = json.dumps(answers_dict, ensure_ascii=False)
-            self._df_to_sheet("ExamResults", df, self.EXAM_RESULT_COLUMNS)
+        self.save_answers(result_id, answers_dict)
 
     def submit_exam_attempt(self, result_id, score, answers_json):
-        df = self._sheet_to_df("ExamResults")
-        idx = df[df.result_id == result_id].index
-        if len(idx) > 0:
-            df.at[idx[0], "score"] = str(score)
-            df.at[idx[0], "answers"] = answers_json
-            df.at[idx[0], "submission_time"] = get_cairo_now().isoformat()
-            df.at[idx[0], "status"] = "submitted"
-            self._df_to_sheet("ExamResults", df, self.EXAM_RESULT_COLUMNS)
+        self.submit_quiz_attempt(result_id, score, answers_json)
 
     def delete_exam_result(self, result_id):
-        df = self._sheet_to_df("ExamResults")
-        df = df[df.result_id != result_id]
-        self._df_to_sheet("ExamResults", df, self.EXAM_RESULT_COLUMNS)
+        self.delete_quiz_result(result_id)
 
     # --- Exam Engine ---
     def grade_exam_attempt(self, exam_id, answers_dict):
@@ -2357,13 +2445,13 @@ class Database:
         حساب النتيجة النهائية لامتحان.
         returns: dict with score, total_marks, percentage, grade
         """
-        df = self._sheet_to_df("ExamResults")
+        df = self.get_exam_results()
         idx = df[df.result_id == result_id].index
         if len(idx) == 0:
             return None
         
         row = df.iloc[idx[0]].to_dict()
-        exam_id = row.get("exam_id", "")
+        exam_id = row.get("exam_id", row.get("quiz_id", ""))
         answers_str = row.get("answers", "{}")
         
         try:
@@ -2452,7 +2540,7 @@ class Database:
         جلب إحصائيات الطالبة في الامتحانات.
         returns: dict with stats
         """
-        results = self._sheet_to_df("ExamResults")
+        results = self.get_exam_results()
         if results.empty:
             return {
                 "total_exams": 0,
@@ -2509,7 +2597,7 @@ class Database:
         تتبع الفصول/المواضيع في الامتحانات.
         returns: DataFrame with chapter tracking info
         """
-        questions = self._sheet_to_df("ExamQuestions")
+        questions = self.get_exam_questions()
         if questions.empty:
             return pd.DataFrame()
         
@@ -3559,16 +3647,13 @@ def filter_available_rows(df):
 
 
 def get_assessment_question_count(db, assessment_type, assessment_id):
-    """عدد أسئلة المسابقة أو الامتحان."""
-    if assessment_type == "exam":
-        qdf = db.get_exam_questions(assessment_id)
-    else:
-        qdf = db.get_quiz_questions(assessment_id)
+    """عدد أسئلة الاختبار أو الامتحان من QuizQuestions."""
+    qdf = db.get_quiz_questions(assessment_id)
     return len(qdf) if not qdf.empty else 0
 
 
 def build_unified_assessments(db):
-    """دمج Quizzes و Exams في قائمة موحدة للطالبة."""
+    """قائمة موحدة من Quizzes فقط مع type مدمج."""
     items = []
     quizzes = filter_available_rows(db.get_quizzes())
     if not quizzes.empty:
@@ -3576,37 +3661,20 @@ def build_unified_assessments(db):
             qid = str(row.get("quiz_id", "")).strip()
             if not qid:
                 continue
+            a_type = "exam" if str(row.get("assessment_type", "quiz")).strip() == "exam" else "quiz"
             num_q = row.get("num_questions", "")
             if not num_q or str(num_q).strip() == "":
-                num_q = get_assessment_question_count(db, "quiz", qid)
+                num_q = get_assessment_question_count(db, a_type, qid)
+            time_limit = row.get("duration_minutes") if a_type == "exam" else row.get("time_limit_minutes")
             items.append({
-                "assessment_type": "quiz",
+                "assessment_type": a_type,
                 "assessment_id": qid,
-                "title": row.get("title", "مسابقة"),
+                "title": row.get("title", "اختبار"),
                 "description": row.get("description", ""),
-                "type_label": "مسابقة",
+                "type_label": "امتحان" if a_type == "exam" else "اختبار",
                 "num_questions": num_q,
                 "total_marks": row.get("total_marks", "20"),
-                "time_limit_minutes": row.get("time_limit_minutes", ""),
-            })
-
-    exams = filter_available_rows(db.get_exams())
-    if not exams.empty:
-        for _, row in exams.iterrows():
-            eid = str(row.get("exam_id", "")).strip()
-            if not eid:
-                continue
-            num_q = get_assessment_question_count(db, "exam", eid)
-            time_limit = row.get("duration_minutes", row.get("time_limit_minutes", ""))
-            items.append({
-                "assessment_type": "exam",
-                "assessment_id": eid,
-                "title": row.get("title", "امتحان"),
-                "description": row.get("description", ""),
-                "type_label": "امتحان",
-                "num_questions": num_q,
-                "total_marks": row.get("total_marks", "20"),
-                "time_limit_minutes": time_limit,
+                "time_limit_minutes": time_limit or row.get("time_limit_minutes", ""),
             })
     return items
 
@@ -3642,13 +3710,9 @@ def _parse_assessment_datetime(value):
 
 
 def get_assessment_record(db, assessment_type, assessment_id):
-    """Load quiz or exam row as dict."""
-    if assessment_type == "exam":
-        df = db.get_exams()
-        id_col = "exam_id"
-    else:
-        df = db.get_quizzes()
-        id_col = "quiz_id"
+    """Load assessment row from unified Quizzes table."""
+    df = db.get_quizzes()
+    id_col = "quiz_id"
     if df.empty or id_col not in df.columns:
         return None
     match = df[df[id_col].astype(str) == str(assessment_id)]
@@ -3660,10 +3724,7 @@ def get_assessment_record(db, assessment_type, assessment_id):
 def get_assessment_duration_minutes(assessment_row, assessment_type):
     if not assessment_row:
         return 15 if assessment_type == "quiz" else 30
-    if assessment_type == "exam":
-        raw = assessment_row.get("duration_minutes", assessment_row.get("time_limit_minutes", 30))
-    else:
-        raw = assessment_row.get("time_limit_minutes", 15)
+    raw = assessment_row.get("duration_minutes", assessment_row.get("time_limit_minutes", 30 if assessment_type == "exam" else 15))
     try:
         return max(1, int(float(raw or (15 if assessment_type == "quiz" else 30))))
     except (TypeError, ValueError):
@@ -3730,10 +3791,7 @@ def build_unified_assessments_for_student(db, student):
 
 
 def get_assessment_attempt_row(db, assessment_type, attempt_id):
-    if assessment_type == "exam":
-        df = db.get_exam_results()
-    else:
-        df = db.get_quiz_results()
+    df = db.get_quiz_results()
     if df.empty or "result_id" not in df.columns:
         return None
     match = df[df["result_id"].astype(str) == str(attempt_id)]
@@ -3841,12 +3899,8 @@ def render_assessment_timer_html(end_time_iso):
 
 def get_in_progress_attempt(db, student_id, assessment_type, assessment_id):
     """Return (attempt_id, saved_answers) for a started-but-not-submitted attempt."""
-    if assessment_type == "exam":
-        results = db.get_exam_results()
-        id_col = "exam_id"
-    else:
-        results = db.get_quiz_results()
-        id_col = "quiz_id"
+    results = db.get_quiz_results()
+    id_col = "quiz_id"
     if results.empty or id_col not in results.columns or "student_id" not in results.columns:
         return None, {}
     attempts = results[
@@ -3869,22 +3923,28 @@ def get_in_progress_attempt(db, student_id, assessment_type, assessment_id):
 def get_student_submitted_results(db, student_id):
     """جمع نتائج المسابقات والامتحانات المسلّمة للطالبة."""
     quiz_results = db.get_quiz_results()
-    exam_results = db.get_exam_results()
-    student_quiz = quiz_results[quiz_results["student_id"] == student_id] if not quiz_results.empty and "student_id" in quiz_results.columns else pd.DataFrame()
-    student_exam = exam_results[exam_results["student_id"] == student_id] if not exam_results.empty and "student_id" in exam_results.columns else pd.DataFrame()
-    if "status" in student_quiz.columns:
-        student_quiz = student_quiz[student_quiz["status"] == "submitted"]
-    if "status" in student_exam.columns:
-        student_exam = student_exam[student_exam["status"] == "submitted"]
+    if quiz_results.empty or "student_id" not in quiz_results.columns:
+        return pd.DataFrame(), pd.DataFrame()
+    quizzes = db.get_quizzes()
+    type_map = {}
+    if not quizzes.empty and "quiz_id" in quizzes.columns:
+        type_map = quizzes.set_index("quiz_id")["assessment_type"].astype(str).to_dict()
+    all_student = quiz_results[quiz_results["student_id"] == student_id].copy()
+    if "status" in all_student.columns:
+        all_student = all_student[all_student["status"] == "submitted"]
+    all_student["assessment_type"] = all_student["quiz_id"].astype(str).map(
+        lambda qid: "exam" if str(type_map.get(qid, "quiz")).strip() == "exam" else "quiz"
+    )
+    student_quiz = all_student[all_student["assessment_type"] == "quiz"].copy()
+    student_exam = all_student[all_student["assessment_type"] == "exam"].copy()
+    if not student_exam.empty:
+        student_exam["exam_id"] = student_exam["quiz_id"]
     return student_quiz, student_exam
 
 
 def verify_student_owns_result(db, student_id, result_id, result_type):
     """التحقق من أن النتيجة تخص الطالبة الحالية."""
-    if result_type == "exam":
-        results_df = db.get_exam_results()
-    else:
-        results_df = db.get_quiz_results()
+    results_df = db.get_quiz_results()
     if results_df.empty or "result_id" not in results_df.columns:
         return None
     attempt_df = results_df[results_df["result_id"] == result_id]
@@ -3892,6 +3952,11 @@ def verify_student_owns_result(db, student_id, result_id, result_type):
         return None
     attempt = attempt_df.iloc[0].to_dict()
     if str(attempt.get("student_id", "")).strip() != str(student_id).strip():
+        return None
+    assessment = get_assessment_record(db, result_type, attempt.get("quiz_id", ""))
+    if result_type == "exam" and str((assessment or {}).get("assessment_type", "quiz")).strip() != "exam":
+        return None
+    if result_type == "quiz" and str((assessment or {}).get("assessment_type", "quiz")).strip() == "exam":
         return None
     return attempt
 
@@ -4217,18 +4282,10 @@ def render_student_attempt_review(db, student, result_id, result_type):
         st.error("🚫 غير مصرح بمراجعة هذه النتيجة.")
         return
 
-    if result_type == "exam":
-        assessment_id = attempt.get("exam_id", "")
-        exams_df = db.get_exams()
-        exam_row = exams_df[exams_df["exam_id"] == assessment_id] if not exams_df.empty else pd.DataFrame()
-        title = exam_row.iloc[0].get("title", "الامتحان") if not exam_row.empty else "الامتحان"
-        questions_df = db.get_exam_questions(assessment_id)
-    else:
-        assessment_id = attempt.get("quiz_id", "")
-        quiz_df = db.get_quizzes()
-        quiz_row = quiz_df[quiz_df["quiz_id"] == assessment_id] if not quiz_df.empty else pd.DataFrame()
-        title = quiz_row.iloc[0].get("title", "المسابقة") if not quiz_row.empty else "المسابقة"
-        questions_df = db.get_quiz_questions(assessment_id)
+    assessment_id = attempt.get("quiz_id", "")
+    assessment_row = get_assessment_record(db, result_type, assessment_id) or {}
+    title = assessment_row.get("title", "الامتحان" if result_type == "exam" else "الاختبار")
+    questions_df = db.get_quiz_questions(assessment_id)
 
     score = attempt.get("score", "")
     total_marks = attempt.get("total_marks", "") or "20"
@@ -6134,40 +6191,323 @@ def show_followup(db):
 # Unified Admin — Competitions & Exams
 # =============================================================================
 def show_unified_assessments_admin(db):
-    """Single admin page for quizzes (competitions) and exams — unified view, no nested tabs."""
+    """Unified admin page: one workflow for tests and exams."""
     st.markdown(
         hero_header("المسابقات والاختبارات", "📝 إنشاء وإدارة المسابقات والامتحانات في مكان واحد"),
         unsafe_allow_html=True,
     )
-    st.markdown(
-        """
-        <div style="background:#eff6ff;border-right:4px solid #2563eb;padding:0.75rem 1rem;
-        border-radius:10px;margin-bottom:0.75rem;">
-            <h3 style="margin:0;color:#1e40af;font-size:1.1rem;">🏆 المسابقات والاختبارات</h3>
-            <p style="margin:0.35rem 0 0;color:#64748b;font-size:0.88rem;">
-                إنشاء وإدارة الاختبارات والمسابقات وأسئلتها ونتائجها
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    show_quizzes(db, embedded=True)
+    user = st.session_state.user
+    role = user.get("role", "")
+    user_id = user.get("user_id", "")
+    section_id = user.get("section_id", "")
+    if role not in ["System Admin", "Father Account", "Service Manager", "Teacher", "Student"]:
+        st.error("🚫 غير مصرح")
+        return
+
+    quizzes = db.get_quizzes()
+    sections = db.get_sections()
+    stages = db.get_stages()
+    students = db.get_students()
+
+    def _type_label(a_type):
+        return "امتحان" if a_type == "exam" else "اختبار"
+
+    def _can_manage_row(row):
+        created_by = str(row.get("created_by", "")).strip()
+        if role == "Teacher":
+            return created_by == str(user_id).strip()
+        return role in ["System Admin", "Service Manager"]
+
+    if role in ["System Admin", "Service Manager"]:
+        st.subheader("➕ إنشاء جديد")
+        with st.form("unified_assessment_create_form"):
+            a_type_ui = st.selectbox("النوع*", ["اختبار", "امتحان"])
+            a_type = "exam" if a_type_ui == "امتحان" else "quiz"
+            col1, col2 = st.columns(2)
+            with col1:
+                title = st.text_input("العنوان*")
+                description = st.text_area("الوصف")
+                total_marks = st.number_input("الدرجة الكلية", min_value=1, max_value=500, value=20)
+            with col2:
+                duration = st.number_input("الوقت (بالدقائق)", min_value=1, max_value=240, value=30 if a_type == "exam" else 15)
+                selected_section = st.selectbox(
+                    "الفصل (اختياري)",
+                    [""] + (sections["section_id"].tolist() if not sections.empty else []),
+                    format_func=lambda x: "كل الفصول" if x == "" else (
+                        sections[sections["section_id"] == x]["section_name"].values[0]
+                        if not sections.empty and x in sections["section_id"].values else x
+                    )
+                )
+
+            num_questions = ""
+            expiry_date = ""
+            stage_id = ""
+            chapter_lesson = ""
+            start_date = ""
+            end_date = ""
+            passing_score = ""
+            is_published = "False"
+            if a_type == "quiz":
+                num_questions = st.selectbox("عدد الأسئلة", [10, 20, 30], index=1)
+                expiry_date = st.date_input("تاريخ الانتهاء", get_cairo_now().date() + timedelta(days=7)).strftime("%Y-%m-%d")
+            else:
+                c3, c4 = st.columns(2)
+                with c3:
+                    stage_options = stages["stage_id"].tolist() if not stages.empty else []
+                    stage_id = st.selectbox(
+                        "المرحلة المستهدفة*",
+                        stage_options,
+                        format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x
+                    ) if stage_options else ""
+                    chapter_lesson = st.text_input("الأصحاح أو الدرس")
+                    passing_score = str(st.number_input("درجة النجاح", min_value=1, max_value=500, value=50))
+                with c4:
+                    sd = st.date_input("تاريخ البداية", get_cairo_now().date())
+                    ed = st.date_input("تاريخ النهاية", get_cairo_now().date() + timedelta(days=7))
+                    start_date = sd.strftime("%Y-%m-%d")
+                    end_date = ed.strftime("%Y-%m-%d")
+                    expiry_date = end_date
+                    is_published = "True" if st.checkbox("منشور", value=False) else "False"
+
+            if st.form_submit_button("إنشاء", use_container_width=True):
+                if not title.strip():
+                    st.error("العنوان مطلوب.")
+                elif a_type == "exam" and not stage_id:
+                    st.error("المرحلة المستهدفة مطلوبة للامتحان.")
+                else:
+                    quiz_id = str(uuid.uuid4())
+                    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)) if a_type == "quiz" else ""
+                    pwd = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5)) if a_type == "quiz" else ""
+                    db.add_quiz({
+                        "quiz_id": quiz_id,
+                        "title": title.strip(),
+                        "description": description.strip(),
+                        "created_by": user_id,
+                        "section_id": selected_section,
+                        "num_questions": str(num_questions) if num_questions != "" else "",
+                        "time_limit_minutes": str(duration),
+                        "total_marks": str(total_marks),
+                        "expiry_date": expiry_date,
+                        "quiz_code": code,
+                        "password": pwd,
+                        "is_active": "True",
+                        "assessment_type": a_type,
+                        "stage_id": stage_id,
+                        "chapter_lesson": chapter_lesson.strip(),
+                        "exam_date": start_date or "",
+                        "start_date": start_date or "",
+                        "end_date": end_date or "",
+                        "duration_minutes": str(duration),
+                        "passing_score": passing_score,
+                        "is_published": is_published,
+                        "created_at": get_cairo_now().isoformat(),
+                    })
+                    st.success(f"✅ تم إنشاء {_type_label(a_type)} بنجاح.")
+                    st.rerun()
 
     st.markdown("---")
+    st.subheader("📝 إدارة الأسئلة")
+    if quizzes.empty:
+        st.info("لا توجد اختبارات/امتحانات بعد.")
+    else:
+        managed = quizzes.copy()
+        managed["assessment_type"] = managed["assessment_type"].apply(lambda x: "exam" if str(x).strip() == "exam" else "quiz")
+        type_filter = st.selectbox("فلتر النوع", ["الكل", "اختبار", "امتحان"], key="questions_type_filter")
+        if type_filter == "اختبار":
+            managed = managed[managed["assessment_type"] == "quiz"]
+        elif type_filter == "امتحان":
+            managed = managed[managed["assessment_type"] == "exam"]
+        if managed.empty:
+            st.info("لا عناصر مطابقة.")
+        else:
+            pick_id = st.selectbox("اختر العنصر لإدارة أسئلته", managed["quiz_id"], format_func=lambda x: managed[managed.quiz_id == x]["title"].values[0])
+            picked_row = managed[managed["quiz_id"] == pick_id].iloc[0].to_dict()
+            picked_type = "exam" if str(picked_row.get("assessment_type", "quiz")) == "exam" else "quiz"
+            questions = db.get_quiz_questions(pick_id)
+            st.markdown(f"**النوع:** {_type_label(picked_type)} | **عدد الأسئلة:** {len(questions)}")
+            if not questions.empty:
+                st.dataframe(questions[[c for c in ["question_text", "question_type", "correct_answer", "marks"] if c in questions.columns]], use_container_width=True)
+            with st.form("unified_add_question_form"):
+                qtext = st.text_area("نص السؤال*")
+                qtype = st.selectbox("نوع السؤال", ["اختيار من متعدد", "صح وخطأ", "أكمل", "إجابة قصيرة"])
+                opts = {"option1": "", "option2": "", "option3": "", "option4": ""}
+                if qtype == "اختيار من متعدد":
+                    c1, c2, c3, c4 = st.columns(4)
+                    opts["option1"] = c1.text_input("الخيار 1")
+                    opts["option2"] = c2.text_input("الخيار 2")
+                    opts["option3"] = c3.text_input("الخيار 3")
+                    opts["option4"] = c4.text_input("الخيار 4")
+                elif qtype == "صح وخطأ":
+                    opts["option1"], opts["option2"] = "صح", "خطأ"
+                correct = st.text_input("الإجابة الصحيحة*")
+                marks = st.number_input("درجة السؤال", min_value=1, max_value=100, value=5 if picked_type == "exam" else 1)
+                if st.form_submit_button("إضافة سؤال", use_container_width=True):
+                    if not qtext.strip() or not correct.strip():
+                        st.error("نص السؤال والإجابة الصحيحة مطلوبان.")
+                    else:
+                        db.add_question({
+                            "question_id": str(uuid.uuid4()),
+                            "quiz_id": pick_id,
+                            "question_text": qtext.strip(),
+                            "question_type": qtype,
+                            "option1": opts["option1"],
+                            "option2": opts["option2"],
+                            "option3": opts["option3"],
+                            "option4": opts["option4"],
+                            "correct_answer": correct.strip(),
+                            "marks": str(marks),
+                        })
+                        st.success("✅ تمت إضافة السؤال.")
+                        st.rerun()
+            if not questions.empty:
+                del_q = st.selectbox("اختر سؤالًا للحذف", questions["question_id"])
+                if st.button("حذف السؤال", key="unified_del_q_btn"):
+                    db.delete_question(del_q)
+                    st.success("✅ تم حذف السؤال.")
+                    st.rerun()
 
-    st.markdown(
-        """
-        <div style="background:#f0fdf4;border-right:4px solid #16a34a;padding:0.75rem 1rem;
-        border-radius:10px;margin-bottom:0.75rem;">
-            <h3 style="margin:0;color:#166534;font-size:1.1rem;">📝 الامتحانات</h3>
-            <p style="margin:0.35rem 0 0;color:#64748b;font-size:0.88rem;">
-                إنشاء وإدارة الامتحانات وأسئلتها ونتائجها
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    show_exams_management(db, embedded=True)
+    st.markdown("---")
+    st.subheader("📋 القائمة الموحدة")
+    if quizzes.empty:
+        st.info("لا توجد عناصر بعد.")
+    else:
+        display = quizzes.copy()
+        display["assessment_type"] = display["assessment_type"].apply(lambda x: "exam" if str(x).strip() == "exam" else "quiz")
+        c1, c2 = st.columns(2)
+        with c1:
+            list_type = st.selectbox("فلتر النوع", ["الكل", "اختبار", "امتحان"], key="list_type_filter")
+        with c2:
+            search_term = st.text_input("بحث بالعنوان", key="list_search_assessment")
+        if list_type == "اختبار":
+            display = display[display["assessment_type"] == "quiz"]
+        elif list_type == "امتحان":
+            display = display[display["assessment_type"] == "exam"]
+        if search_term:
+            display = display[display["title"].astype(str).str.contains(search_term, na=False, case=False)]
+        for _, row in display.iterrows():
+            a_id = row.get("quiz_id", "")
+            a_type = "exam" if str(row.get("assessment_type", "quiz")) == "exam" else "quiz"
+            can_manage = _can_manage_row(row)
+            sec_name = ""
+            if not sections.empty and str(row.get("section_id", "")).strip():
+                m = sections[sections["section_id"] == row.get("section_id")]
+                if not m.empty:
+                    sec_name = m.iloc[0].get("section_name", "")
+            st.markdown(f"**{row.get('title', '')}** | النوع: {_type_label(a_type)} | الوقت: {row.get('duration_minutes') or row.get('time_limit_minutes') or '—'} دقيقة | الدرجة: {row.get('total_marks', '—')}")
+            if sec_name:
+                st.caption(f"الفصل: {sec_name}")
+            act = st.columns(5)
+            if can_manage:
+                active = str(row.get("is_active", "True")).strip() == "True"
+                if act[0].button("إغلاق" if active else "تفعيل", key=f"u_toggle_{a_id}"):
+                    db.update_quiz(a_id, {"is_active": "False" if active else "True"})
+                    st.rerun()
+                if a_type == "exam":
+                    published = str(row.get("is_published", "False")).strip() == "True"
+                    if act[1].button("إلغاء النشر" if published else "نشر", key=f"u_pub_{a_id}"):
+                        db.update_quiz(a_id, {"is_published": "False" if published else "True"})
+                        st.rerun()
+                if act[2].button("تعديل", key=f"u_edit_{a_id}"):
+                    st.session_state[f"u_edit_open_{a_id}"] = not st.session_state.get(f"u_edit_open_{a_id}", False)
+                if role == "System Admin" and act[3].button("حذف (النتائج تبقى)", key=f"u_del_keep_{a_id}"):
+                    db.delete_quiz_keep_results(a_id)
+                    st.rerun()
+            else:
+                st.warning("⛔ لا يمكنك تعديل عنصر أنشأه شخص آخر.")
+
+            if st.session_state.get(f"u_edit_open_{a_id}", False) and can_manage:
+                with st.form(f"u_edit_form_{a_id}"):
+                    e_title = st.text_input("العنوان", value=row.get("title", ""))
+                    e_desc = st.text_area("الوصف", value=row.get("description", ""))
+                    e_marks = st.number_input("الدرجة الكلية", min_value=1, max_value=500, value=int(float(row.get("total_marks", "20") or 20)))
+                    e_duration = st.number_input("الوقت (بالدقائق)", min_value=1, max_value=240, value=int(float((row.get("duration_minutes") or row.get("time_limit_minutes") or "15"))))
+                    e_is_active = st.checkbox("نشط", value=str(row.get("is_active", "True")).strip() == "True")
+                    updates = {
+                        "title": e_title.strip(),
+                        "description": e_desc.strip(),
+                        "total_marks": str(e_marks),
+                        "time_limit_minutes": str(e_duration),
+                        "duration_minutes": str(e_duration),
+                        "is_active": "True" if e_is_active else "False",
+                    }
+                    if a_type == "quiz":
+                        e_num_q = st.number_input("عدد الأسئلة", min_value=1, max_value=300, value=int(float(row.get("num_questions", "20") or 20)))
+                        e_expiry = st.date_input("تاريخ الانتهاء", value=pd.to_datetime(row.get("expiry_date")).date() if str(row.get("expiry_date", "")).strip() else get_cairo_now().date())
+                        updates["num_questions"] = str(e_num_q)
+                        updates["expiry_date"] = e_expiry.strftime("%Y-%m-%d")
+                    else:
+                        e_chapter = st.text_input("الأصحاح أو الدرس", value=row.get("chapter_lesson", ""))
+                        e_pass = st.number_input("درجة النجاح", min_value=1, max_value=500, value=int(float(row.get("passing_score", "50") or 50)))
+                        e_pub = st.checkbox("منشور", value=str(row.get("is_published", "False")).strip() == "True")
+                        e_start = st.date_input("تاريخ البداية", value=pd.to_datetime(row.get("start_date")).date() if str(row.get("start_date", "")).strip() else get_cairo_now().date(), key=f"start_{a_id}")
+                        e_end = st.date_input("تاريخ النهاية", value=pd.to_datetime(row.get("end_date")).date() if str(row.get("end_date", "")).strip() else get_cairo_now().date(), key=f"end_{a_id}")
+                        updates.update({
+                            "chapter_lesson": e_chapter.strip(),
+                            "passing_score": str(e_pass),
+                            "is_published": "True" if e_pub else "False",
+                            "start_date": e_start.strftime("%Y-%m-%d"),
+                            "end_date": e_end.strftime("%Y-%m-%d"),
+                            "exam_date": e_start.strftime("%Y-%m-%d"),
+                            "expiry_date": e_end.strftime("%Y-%m-%d"),
+                        })
+                    if st.form_submit_button("💾 حفظ"):
+                        db.update_quiz(a_id, updates)
+                        st.session_state.pop(f"u_edit_open_{a_id}", None)
+                        st.rerun()
+            st.markdown("---")
+
+    st.subheader("📊 النتائج الموحدة")
+    results = db.get_quiz_results()
+    if results.empty:
+        st.info("لا توجد نتائج بعد.")
+        return
+    if "status" in results.columns:
+        results = results[results["status"] == "submitted"]
+    if results.empty:
+        st.info("لا توجد نتائج مسلّمة بعد.")
+        return
+    if role == "Teacher" and section_id and not students.empty and "student_id" in results.columns:
+        section_student_ids = students[students.section_id == section_id]["student_id"].tolist()
+        results = results[results.student_id.isin(section_student_ids)]
+    elif role == "Service Manager" and not students.empty and "student_id" in results.columns:
+        section_ids = get_sections_for_supervisor(db, user_id)
+        if section_ids:
+            section_student_ids = students[students.section_id.isin(section_ids)]["student_id"].tolist()
+            results = results[results.student_id.isin(section_student_ids)]
+    if results.empty:
+        st.info("لا توجد نتائج ضمن صلاحياتك.")
+        return
+    q_map = quizzes[["quiz_id", "title", "assessment_type"]].copy() if not quizzes.empty else pd.DataFrame(columns=["quiz_id", "title", "assessment_type"])
+    if not q_map.empty:
+        results = results.merge(q_map, on="quiz_id", how="left")
+    results["assessment_type"] = results["assessment_type"].apply(lambda x: "exam" if str(x).strip() == "exam" else "quiz")
+    if not students.empty:
+        results = results.merge(students[["student_id", "full_name", "section_id"]], on="student_id", how="left")
+    if not sections.empty and "section_id" in results.columns:
+        results = results.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
+    t_filter = st.selectbox("فلتر نتائج النوع", ["الكل", "اختبار", "امتحان"], key="results_type_filter")
+    if t_filter == "اختبار":
+        results = results[results["assessment_type"] == "quiz"]
+    elif t_filter == "امتحان":
+        results = results[results["assessment_type"] == "exam"]
+    if results.empty:
+        st.info("لا توجد نتائج مطابقة للتصفية.")
+        return
+    results["النوع"] = results["assessment_type"].apply(_type_label)
+    show_cols = [c for c in ["النوع", "title", "full_name", "section_name", "score", "total_marks", "submission_time"] if c in results.columns]
+    st.dataframe(results[show_cols].rename(columns={
+        "title": "الاختبار",
+        "full_name": "اسم الطالبة",
+        "section_name": "الفصل",
+        "score": "الدرجة",
+        "total_marks": "الدرجة الكلية",
+        "submission_time": "وقت التسليم",
+    }), use_container_width=True)
+    if "score" in results.columns:
+        results["score"] = pd.to_numeric(results["score"], errors="coerce").fillna(0)
+        if "full_name" in results.columns and st.button("🏆 ترتيب الطالبات حسب المجموع", key="unified_rank_btn"):
+            ranking = results.groupby("full_name")["score"].sum().reset_index().sort_values("score", ascending=False)
+            st.dataframe(ranking.rename(columns={"full_name": "اسم الطالبة", "score": "المجموع"}), use_container_width=True)
 
 
 # =============================================================================
