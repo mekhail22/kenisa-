@@ -6254,11 +6254,15 @@ def show_unified_assessments_admin(db):
                 c3, c4 = st.columns(2)
                 with c3:
                     stage_options = stages["stage_id"].tolist() if not stages.empty else []
-                    stage_id = st.selectbox(
-                        "المرحلة المستهدفة*",
-                        stage_options,
-                        format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x
-                    ) if stage_options else ""
+                    if stage_options:
+                        stage_id = st.selectbox(
+                            "المرحلة المستهدفة*",
+                            stage_options,
+                            format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x
+                        )
+                    else:
+                        st.warning("⚠️ لا توجد مراحل متاحة. يرجى إضافة مراحل أولاً.")
+                        stage_id = ""
                     chapter_lesson = st.text_input("الأصحاح أو الدرس")
                     passing_score = str(st.number_input("درجة النجاح", min_value=1, max_value=total_marks, value=min(50, total_marks)))
                 with c4:
@@ -6447,13 +6451,17 @@ def show_unified_assessments_admin(db):
                         # المرحلة المستهدفة
                         stage_options = stages["stage_id"].tolist() if not stages.empty else []
                         current_stage_id = row.get("stage_id", "")
-                        e_stage_id = st.selectbox(
-                            "المرحلة المستهدفة*",
-                            stage_options,
-                            index=stage_options.index(current_stage_id) if current_stage_id in stage_options else 0,
-                            format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x,
-                            key=f"stage_{a_id}"
-                        ) if stage_options else ""
+                        if stage_options:
+                            e_stage_id = st.selectbox(
+                                "المرحلة المستهدفة*",
+                                stage_options,
+                                index=stage_options.index(current_stage_id) if current_stage_id in stage_options else 0,
+                                format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x,
+                                key=f"stage_{a_id}"
+                            )
+                        else:
+                            st.warning("⚠️ لا توجد مراحل متاحة.")
+                            e_stage_id = ""
                         
                         e_pass = st.number_input("درجة النجاح", min_value=1, max_value=current_total_marks, value=min(int(float(row.get("passing_score", "50") or 50)), current_total_marks))
                         e_pub = st.checkbox("منشور", value=str(row.get("is_published", "False")).strip() == "True")
@@ -9960,3 +9968,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+        
