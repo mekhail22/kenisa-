@@ -6260,7 +6260,7 @@ def show_unified_assessments_admin(db):
                         format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x
                     ) if stage_options else ""
                     chapter_lesson = st.text_input("الأصحاح أو الدرس")
-                    passing_score = str(st.number_input("درجة النجاح", min_value=1, max_value=500, value=50))
+                    passing_score = str(st.number_input("درجة النجاح", min_value=1, max_value=total_marks, value=min(50, total_marks)))
                 with c4:
                     sd = st.date_input("تاريخ البداية", get_cairo_now().date())
                     ed = st.date_input("تاريخ النهاية", get_cairo_now().date() + timedelta(days=7))
@@ -6274,6 +6274,10 @@ def show_unified_assessments_admin(db):
                     st.error("العنوان مطلوب.")
                 elif a_type == "exam" and not stage_id:
                     st.error("المرحلة المستهدفة مطلوبة للامتحان.")
+                elif a_type == "exam" and (not passing_score or float(passing_score) <= 0):
+                    st.error("درجة النجاح مطلوبة ويجب أن تكون أكبر من صفر للامتحان.")
+                elif a_type == "exam" and float(passing_score) > total_marks:
+                    st.error("درجة النجاح لا يمكن أن تتجاوز الدرجة الكلية.")
                 else:
                     quiz_id = str(uuid.uuid4())
                     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)) if a_type == "quiz" else ""
@@ -6430,6 +6434,8 @@ def show_unified_assessments_admin(db):
                         "duration_minutes": str(e_duration),
                         "is_active": "True" if e_is_active else "False",
                     }
+                    # Store current total marks for passing score validation
+                    current_total_marks = e_marks
                     if a_type == "quiz":
                         e_num_q = st.number_input("عدد الأسئلة", min_value=1, max_value=300, value=int(float(row.get("num_questions", "20") or 20)))
                         e_expiry = st.date_input("تاريخ الانتهاء", value=pd.to_datetime(row.get("expiry_date")).date() if str(row.get("expiry_date", "")).strip() else get_cairo_now().date())
@@ -6437,12 +6443,25 @@ def show_unified_assessments_admin(db):
                         updates["expiry_date"] = e_expiry.strftime("%Y-%m-%d")
                     else:
                         e_chapter = st.text_input("الأصحاح أو الدرس", value=row.get("chapter_lesson", ""))
-                        e_pass = st.number_input("درجة النجاح", min_value=1, max_value=500, value=int(float(row.get("passing_score", "50") or 50)))
+                        
+                        # المرحلة المستهدفة
+                        stage_options = stages["stage_id"].tolist() if not stages.empty else []
+                        current_stage_id = row.get("stage_id", "")
+                        e_stage_id = st.selectbox(
+                            "المرحلة المستهدفة*",
+                            stage_options,
+                            index=stage_options.index(current_stage_id) if current_stage_id in stage_options else 0,
+                            format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x,
+                            key=f"stage_{a_id}"
+                        ) if stage_options else ""
+                        
+                        e_pass = st.number_input("درجة النجاح", min_value=1, max_value=current_total_marks, value=min(int(float(row.get("passing_score", "50") or 50)), current_total_marks))
                         e_pub = st.checkbox("منشور", value=str(row.get("is_published", "False")).strip() == "True")
                         e_start = st.date_input("تاريخ البداية", value=pd.to_datetime(row.get("start_date")).date() if str(row.get("start_date", "")).strip() else get_cairo_now().date(), key=f"start_{a_id}")
                         e_end = st.date_input("تاريخ النهاية", value=pd.to_datetime(row.get("end_date")).date() if str(row.get("end_date", "")).strip() else get_cairo_now().date(), key=f"end_{a_id}")
                         updates.update({
                             "chapter_lesson": e_chapter.strip(),
+                            "stage_id": e_stage_id,
                             "passing_score": str(e_pass),
                             "is_published": "True" if e_pub else "False",
                             "start_date": e_start.strftime("%Y-%m-%d"),
@@ -6451,6 +6470,20 @@ def show_unified_assessments_admin(db):
                             "expiry_date": e_end.strftime("%Y-%m-%d"),
                         })
                     if st.form_submit_button("💾 حفظ"):
+                        # Validation for exams
+                        if a_type == "exam":
+                            if not updates.get("stage_id"):
+                                st.error("المرحلة المستهدفة مطلوبة للامتحان.")
+                                return
+                            passing_score_val = float(updates.get("passing_score", "0"))
+                            total_marks_val = float(updates.get("total_marks", "0"))
+                            if passing_score_val <= 0:
+                                st.error("درجة النجاح يجب أن تكون أكبر من صفر.")
+                                return
+                            if passing_score_val > total_marks_val:
+                                st.error("درجة النجاح لا يمكن أن تتجاوز الدرجة الكلية.")
+                                return
+                        
                         db.update_quiz(a_id, updates)
                         st.session_state.pop(f"u_edit_open_{a_id}", None)
                         st.rerun()
