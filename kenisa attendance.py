@@ -6221,10 +6221,7 @@ def show_unified_assessments_admin(db):
     if role in ["System Admin", "Service Manager"]:
         st.subheader("➕ إنشاء جديد")
         
-        # Type selection OUTSIDE the form to enable dynamic UI
-        a_type_ui = st.selectbox("النوع*", ["اختبار", "امتحان"], key="assessment_type_selector")
-        a_type = "exam" if a_type_ui == "امتحان" else "quiz"
-        
+        # Unified form - no type selection needed
         with st.form("unified_assessment_create_form"):
             col1, col2 = st.columns(2)
             with col1:
@@ -6232,7 +6229,7 @@ def show_unified_assessments_admin(db):
                 description = st.text_area("الوصف")
                 total_marks = st.number_input("الدرجة الكلية", min_value=1, max_value=500, value=20)
             with col2:
-                duration = st.number_input("الوقت (بالدقائق)", min_value=1, max_value=240, value=30 if a_type == "exam" else 15)
+                duration = st.number_input("الوقت (بالدقائق)", min_value=1, max_value=240, value=30)
                 selected_section = st.selectbox(
                     "الفصل (اختياري)",
                     [""] + (sections["section_id"].tolist() if not sections.empty else []),
@@ -6242,68 +6239,55 @@ def show_unified_assessments_admin(db):
                     )
                 )
 
-            num_questions = ""
-            expiry_date = ""
-            stage_id = ""
-            chapter_lesson = ""
-            start_date = ""
-            end_date = ""
-            passing_score = ""
-            is_published = "False"
-            
-            if a_type == "quiz":
-                num_questions = st.selectbox("عدد الأسئلة", [10, 20, 30], index=1)
-                expiry_date = st.date_input("تاريخ الانتهاء", get_cairo_now().date() + timedelta(days=7)).strftime("%Y-%m-%d")
-            else:
-                c3, c4 = st.columns(2)
-                with c3:
-                    stage_options = stages["stage_id"].tolist() if not stages.empty else []
-                    if stage_options:
-                        stage_id = st.selectbox(
-                            "المرحلة المستهدفة*",
-                            stage_options,
-                            format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x
-                        )
-                    else:
-                        st.warning("⚠️ لا توجد مراحل متاحة. يرجى إضافة مراحل أولاً.")
-                        stage_id = ""
-                    chapter_lesson = st.text_input("الأصحاح أو الدرس")
-                    passing_score = str(st.number_input("درجة النجاح", min_value=1, max_value=total_marks, value=min(50, total_marks)))
-                with c4:
-                    sd = st.date_input("تاريخ البداية", get_cairo_now().date())
-                    ed = st.date_input("تاريخ النهاية", get_cairo_now().date() + timedelta(days=7))
-                    start_date = sd.strftime("%Y-%m-%d")
-                    end_date = ed.strftime("%Y-%m-%d")
-                    expiry_date = end_date
-                    is_published = "True" if st.checkbox("منشور", value=False) else "False"
+            # All fields visible immediately - no conditional rendering
+            c3, c4 = st.columns(2)
+            with c3:
+                stage_options = stages["stage_id"].tolist() if not stages.empty else []
+                if stage_options:
+                    stage_id = st.selectbox(
+                        "المرحلة المستهدفة*",
+                        stage_options,
+                        format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x
+                    )
+                else:
+                    st.warning("⚠️ لا توجد مراحل متاحة. يرجى إضافة مراحل أولاً.")
+                    stage_id = ""
+                chapter_lesson = st.text_input("الأصحاح أو الدرس")
+                passing_score = str(st.number_input("درجة النجاح", min_value=1, max_value=total_marks, value=min(50, total_marks)))
+            with c4:
+                sd = st.date_input("تاريخ البداية", get_cairo_now().date())
+                ed = st.date_input("تاريخ النهاية", get_cairo_now().date() + timedelta(days=7))
+                start_date = sd.strftime("%Y-%m-%d")
+                end_date = ed.strftime("%Y-%m-%d")
+                expiry_date = end_date
 
             if st.form_submit_button("إنشاء", use_container_width=True):
                 if not title.strip():
                     st.error("العنوان مطلوب.")
-                elif a_type == "exam" and not stage_id:
-                    st.error("المرحلة المستهدفة مطلوبة للامتحان.")
-                elif a_type == "exam" and (not passing_score or float(passing_score) <= 0):
-                    st.error("درجة النجاح مطلوبة ويجب أن تكون أكبر من صفر للامتحان.")
-                elif a_type == "exam" and float(passing_score) > total_marks:
+                elif not stage_id:
+                    st.error("المرحلة المستهدفة مطلوبة.")
+                elif not passing_score or float(passing_score) <= 0:
+                    st.error("درجة النجاح مطلوبة ويجب أن تكون أكبر من صفر.")
+                elif float(passing_score) > total_marks:
                     st.error("درجة النجاح لا يمكن أن تتجاوز الدرجة الكلية.")
                 else:
                     quiz_id = str(uuid.uuid4())
-                    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)) if a_type == "quiz" else ""
-                    pwd = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5)) if a_type == "quiz" else ""
+                    # Use default exam type for unified assessments
+                    assessment_type = "exam"
                     db.add_quiz({
                         "quiz_id": quiz_id,
                         "title": title.strip(),
                         "description": description.strip(),
                         "created_by": user_id,
                         "section_id": selected_section,
-                        "num_questions": str(num_questions) if num_questions != "" else "",
+                        "num_questions": "",  # Not used in unified form
                         "time_limit_minutes": str(duration),
                         "total_marks": str(total_marks),
                         "expiry_date": expiry_date,
-                        "quiz_code": code,
-                        "password": pwd,
+                        "quiz_code": "",  # Not used in unified form
+                        "password": "",  # Not used in unified form
                         "is_active": "True",
-                        "assessment_type": a_type,
+                        "assessment_type": assessment_type,
                         "stage_id": stage_id,
                         "chapter_lesson": chapter_lesson.strip(),
                         "exam_date": start_date or "",
@@ -6311,10 +6295,10 @@ def show_unified_assessments_admin(db):
                         "end_date": end_date or "",
                         "duration_minutes": str(duration),
                         "passing_score": passing_score,
-                        "is_published": is_published,
+                        "is_published": "True",  # Auto-publish for unified assessments
                         "created_at": get_cairo_now().isoformat(),
                     })
-                    st.success(f"✅ تم إنشاء {_type_label(a_type)} بنجاح.")
+                    st.success("✅ تم إنشاء الاختبار بنجاح.")
                     st.rerun()
 
     st.markdown("---")
@@ -6334,9 +6318,8 @@ def show_unified_assessments_admin(db):
         else:
             pick_id = st.selectbox("اختر العنصر لإدارة أسئلته", managed["quiz_id"], format_func=lambda x: managed[managed.quiz_id == x]["title"].values[0])
             picked_row = managed[managed["quiz_id"] == pick_id].iloc[0].to_dict()
-            picked_type = "exam" if str(picked_row.get("assessment_type", "quiz")) == "exam" else "quiz"
             questions = db.get_quiz_questions(pick_id)
-            st.markdown(f"**النوع:** {_type_label(picked_type)} | **عدد الأسئلة:** {len(questions)}")
+            st.markdown(f"**عدد الأسئلة:** {len(questions)}")
             if not questions.empty:
                 st.dataframe(questions[[c for c in ["question_text", "question_type", "correct_answer", "marks"] if c in questions.columns]], use_container_width=True)
             with st.form("unified_add_question_form"):
@@ -6384,44 +6367,29 @@ def show_unified_assessments_admin(db):
         st.info("لا توجد عناصر بعد.")
     else:
         display = quizzes.copy()
-        display["assessment_type"] = display["assessment_type"].apply(lambda x: "exam" if str(x).strip() == "exam" else "quiz")
-        c1, c2 = st.columns(2)
-        with c1:
-            list_type = st.selectbox("فلتر النوع", ["الكل", "اختبار", "امتحان"], key="list_type_filter")
-        with c2:
-            search_term = st.text_input("بحث بالعنوان", key="list_search_assessment")
-        if list_type == "اختبار":
-            display = display[display["assessment_type"] == "quiz"]
-        elif list_type == "امتحان":
-            display = display[display["assessment_type"] == "exam"]
+        search_term = st.text_input("بحث بالعنوان", key="list_search_assessment")
         if search_term:
             display = display[display["title"].astype(str).str.contains(search_term, na=False, case=False)]
         for _, row in display.iterrows():
             a_id = row.get("quiz_id", "")
-            a_type = "exam" if str(row.get("assessment_type", "quiz")) == "exam" else "quiz"
             can_manage = _can_manage_row(row)
             sec_name = ""
             if not sections.empty and str(row.get("section_id", "")).strip():
                 m = sections[sections["section_id"] == row.get("section_id")]
                 if not m.empty:
                     sec_name = m.iloc[0].get("section_name", "")
-            st.markdown(f"**{row.get('title', '')}** | النوع: {_type_label(a_type)} | الوقت: {row.get('duration_minutes') or row.get('time_limit_minutes') or '—'} دقيقة | الدرجة: {row.get('total_marks', '—')}")
+            st.markdown(f"**{row.get('title', '')}** | الوقت: {row.get('duration_minutes') or row.get('time_limit_minutes') or '—'} دقيقة | الدرجة: {row.get('total_marks', '—')}")
             if sec_name:
                 st.caption(f"الفصل: {sec_name}")
-            act = st.columns(5)
+            act = st.columns(4)
             if can_manage:
                 active = str(row.get("is_active", "True")).strip() == "True"
                 if act[0].button("إغلاق" if active else "تفعيل", key=f"u_toggle_{a_id}"):
                     db.update_quiz(a_id, {"is_active": "False" if active else "True"})
                     st.rerun()
-                if a_type == "exam":
-                    published = str(row.get("is_published", "False")).strip() == "True"
-                    if act[1].button("إلغاء النشر" if published else "نشر", key=f"u_pub_{a_id}"):
-                        db.update_quiz(a_id, {"is_published": "False" if published else "True"})
-                        st.rerun()
-                if act[2].button("تعديل", key=f"u_edit_{a_id}"):
+                if act[1].button("تعديل", key=f"u_edit_{a_id}"):
                     st.session_state[f"u_edit_open_{a_id}"] = not st.session_state.get(f"u_edit_open_{a_id}", False)
-                if role == "System Admin" and act[3].button("حذف (النتائج تبقى)", key=f"u_del_keep_{a_id}"):
+                if role == "System Admin" and act[2].button("حذف (النتائج تبقى)", key=f"u_del_keep_{a_id}"):
                     db.delete_quiz_keep_results(a_id)
                     st.rerun()
             else:
@@ -6434,6 +6402,32 @@ def show_unified_assessments_admin(db):
                     e_marks = st.number_input("الدرجة الكلية", min_value=1, max_value=500, value=int(float(row.get("total_marks", "20") or 20)))
                     e_duration = st.number_input("الوقت (بالدقائق)", min_value=1, max_value=240, value=int(float((row.get("duration_minutes") or row.get("time_limit_minutes") or "15"))))
                     e_is_active = st.checkbox("نشط", value=str(row.get("is_active", "True")).strip() == "True")
+                    
+                    # Store current total marks for passing score validation
+                    current_total_marks = e_marks
+                    
+                    # All fields visible immediately - no conditional rendering
+                    e_chapter = st.text_input("الأصحاح أو الدرس", value=row.get("chapter_lesson", ""))
+                    
+                    # المرحلة المستهدفة
+                    stage_options = stages["stage_id"].tolist() if not stages.empty else []
+                    current_stage_id = row.get("stage_id", "")
+                    if stage_options:
+                        e_stage_id = st.selectbox(
+                            "المرحلة المستهدفة*",
+                            stage_options,
+                            index=stage_options.index(current_stage_id) if current_stage_id in stage_options else 0,
+                            format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x,
+                            key=f"stage_{a_id}"
+                        )
+                    else:
+                        st.warning("⚠️ لا توجد مراحل متاحة.")
+                        e_stage_id = ""
+                    
+                    e_pass = st.number_input("درجة النجاح", min_value=1, max_value=current_total_marks, value=min(int(float(row.get("passing_score", "50") or 50)), current_total_marks))
+                    e_start = st.date_input("تاريخ البداية", value=pd.to_datetime(row.get("start_date")).date() if str(row.get("start_date", "")).strip() else get_cairo_now().date(), key=f"start_{a_id}")
+                    e_end = st.date_input("تاريخ النهاية", value=pd.to_datetime(row.get("end_date")).date() if str(row.get("end_date", "")).strip() else get_cairo_now().date(), key=f"end_{a_id}")
+                    
                     updates = {
                         "title": e_title.strip(),
                         "description": e_desc.strip(),
@@ -6441,60 +6435,27 @@ def show_unified_assessments_admin(db):
                         "time_limit_minutes": str(e_duration),
                         "duration_minutes": str(e_duration),
                         "is_active": "True" if e_is_active else "False",
+                        "chapter_lesson": e_chapter.strip(),
+                        "stage_id": e_stage_id,
+                        "passing_score": str(e_pass),
+                        "start_date": e_start.strftime("%Y-%m-%d"),
+                        "end_date": e_end.strftime("%Y-%m-%d"),
+                        "exam_date": e_start.strftime("%Y-%m-%d"),
+                        "expiry_date": e_end.strftime("%Y-%m-%d"),
                     }
-                    # Store current total marks for passing score validation
-                    current_total_marks = e_marks
-                    if a_type == "quiz":
-                        e_num_q = st.number_input("عدد الأسئلة", min_value=1, max_value=300, value=int(float(row.get("num_questions", "20") or 20)))
-                        e_expiry = st.date_input("تاريخ الانتهاء", value=pd.to_datetime(row.get("expiry_date")).date() if str(row.get("expiry_date", "")).strip() else get_cairo_now().date())
-                        updates["num_questions"] = str(e_num_q)
-                        updates["expiry_date"] = e_expiry.strftime("%Y-%m-%d")
-                    else:
-                        e_chapter = st.text_input("الأصحاح أو الدرس", value=row.get("chapter_lesson", ""))
-                        
-                        # المرحلة المستهدفة
-                        stage_options = stages["stage_id"].tolist() if not stages.empty else []
-                        current_stage_id = row.get("stage_id", "")
-                        if stage_options:
-                            e_stage_id = st.selectbox(
-                                "المرحلة المستهدفة*",
-                                stage_options,
-                                index=stage_options.index(current_stage_id) if current_stage_id in stage_options else 0,
-                                format_func=lambda x: stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x,
-                                key=f"stage_{a_id}"
-                            )
-                        else:
-                            st.warning("⚠️ لا توجد مراحل متاحة.")
-                            e_stage_id = ""
-                        
-                        e_pass = st.number_input("درجة النجاح", min_value=1, max_value=current_total_marks, value=min(int(float(row.get("passing_score", "50") or 50)), current_total_marks))
-                        e_pub = st.checkbox("منشور", value=str(row.get("is_published", "False")).strip() == "True")
-                        e_start = st.date_input("تاريخ البداية", value=pd.to_datetime(row.get("start_date")).date() if str(row.get("start_date", "")).strip() else get_cairo_now().date(), key=f"start_{a_id}")
-                        e_end = st.date_input("تاريخ النهاية", value=pd.to_datetime(row.get("end_date")).date() if str(row.get("end_date", "")).strip() else get_cairo_now().date(), key=f"end_{a_id}")
-                        updates.update({
-                            "chapter_lesson": e_chapter.strip(),
-                            "stage_id": e_stage_id,
-                            "passing_score": str(e_pass),
-                            "is_published": "True" if e_pub else "False",
-                            "start_date": e_start.strftime("%Y-%m-%d"),
-                            "end_date": e_end.strftime("%Y-%m-%d"),
-                            "exam_date": e_start.strftime("%Y-%m-%d"),
-                            "expiry_date": e_end.strftime("%Y-%m-%d"),
-                        })
                     if st.form_submit_button("💾 حفظ"):
-                        # Validation for exams
-                        if a_type == "exam":
-                            if not updates.get("stage_id"):
-                                st.error("المرحلة المستهدفة مطلوبة للامتحان.")
-                                return
-                            passing_score_val = float(updates.get("passing_score", "0"))
-                            total_marks_val = float(updates.get("total_marks", "0"))
-                            if passing_score_val <= 0:
-                                st.error("درجة النجاح يجب أن تكون أكبر من صفر.")
-                                return
-                            if passing_score_val > total_marks_val:
-                                st.error("درجة النجاح لا يمكن أن تتجاوز الدرجة الكلية.")
-                                return
+                        # Unified validation
+                        if not updates.get("stage_id"):
+                            st.error("المرحلة المستهدفة مطلوبة.")
+                            return
+                        passing_score_val = float(updates.get("passing_score", "0"))
+                        total_marks_val = float(updates.get("total_marks", "0"))
+                        if passing_score_val <= 0:
+                            st.error("درجة النجاح يجب أن تكون أكبر من صفر.")
+                            return
+                        if passing_score_val > total_marks_val:
+                            st.error("درجة النجاح لا يمكن أن تتجاوز الدرجة الكلية.")
+                            return
                         
                         db.update_quiz(a_id, updates)
                         st.session_state.pop(f"u_edit_open_{a_id}", None)
@@ -6538,8 +6499,7 @@ def show_unified_assessments_admin(db):
     if results.empty:
         st.info("لا توجد نتائج مطابقة للتصفية.")
         return
-    results["النوع"] = results["assessment_type"].apply(_type_label)
-    show_cols = [c for c in ["النوع", "title", "full_name", "section_name", "score", "total_marks", "submission_time"] if c in results.columns]
+    show_cols = [c for c in ["title", "full_name", "section_name", "score", "total_marks", "submission_time"] if c in results.columns]
     st.dataframe(results[show_cols].rename(columns={
         "title": "الاختبار",
         "full_name": "اسم الطالبة",
