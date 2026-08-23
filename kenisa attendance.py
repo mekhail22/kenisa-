@@ -6220,9 +6220,12 @@ def show_unified_assessments_admin(db):
 
     if role in ["System Admin", "Service Manager"]:
         st.subheader("➕ إنشاء جديد")
+        
+        # Type selection OUTSIDE the form to enable dynamic UI
+        a_type_ui = st.selectbox("النوع*", ["اختبار", "امتحان"], key="assessment_type_selector")
+        a_type = "exam" if a_type_ui == "امتحان" else "quiz"
+        
         with st.form("unified_assessment_create_form"):
-            a_type_ui = st.selectbox("النوع*", ["اختبار", "امتحان"])
-            a_type = "exam" if a_type_ui == "امتحان" else "quiz"
             col1, col2 = st.columns(2)
             with col1:
                 title = st.text_input("العنوان*")
@@ -6247,6 +6250,7 @@ def show_unified_assessments_admin(db):
             end_date = ""
             passing_score = ""
             is_published = "False"
+            
             if a_type == "quiz":
                 num_questions = st.selectbox("عدد الأسئلة", [10, 20, 30], index=1)
                 expiry_date = st.date_input("تاريخ الانتهاء", get_cairo_now().date() + timedelta(days=7)).strftime("%Y-%m-%d")
@@ -9968,4 +9972,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
