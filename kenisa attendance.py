@@ -17,7 +17,8 @@ import hmac
 import os
 import io
 import zipfile
-from functools import wraps
+from functools import wraps, lru_cache
+import functools
 import threading
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -30,6 +31,8 @@ import re
 import html
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
+import arabic_reshaper
+from bidi.algorithm import get_display as _bidi_get_display
 
 # Auto-load background image as base64 from image1.jpg
 _BG_IMG_PATH = os.path.join(os.path.dirname(__file__), "image1.jpg")
@@ -1480,7 +1483,9 @@ class Database:
             "ExamResults": ["result_id", "exam_id", "student_id", "student_name", "score", "total_marks", "start_time", "submission_time", "answers", "status"],
             "Homeworks": ["homework_id", "title", "description", "created_by", "section_id", "subject", "due_date", "total_marks", "is_active", "created_at"],
             "HomeworkSubmissions": ["submission_id", "homework_id", "student_id", "student_name", "section_id", "image_data", "image_name", "submission_note", "status", "grade", "feedback", "submitted_at", "reviewed_by", "reviewed_at"],
-            "Notifications": ["notification_id", "user_id", "title", "message", "notification_type", "is_read", "created_at"]
+            "Notifications": ["notification_id", "user_id", "title", "message", "notification_type", "is_read", "created_at"],
+            "CardTemplates": self.CARD_TEMPLATE_COLUMNS,
+            "MemberCards": self.MEMBER_CARD_COLUMNS
         }
         for sheet_name, columns in sheets_config.items():
             try:
@@ -2755,6 +2760,95 @@ class Database:
             df.at[idx[0], "is_read"] = "True"
             self._df_to_sheet("Notifications", df, self.NOTIFICATION_COLUMNS)
 
+    # =====================================================================
+    # Card Templates & Member Cards (نظام بطاقات التعريف)
+    # =====================================================================
+    CARD_TEMPLATE_COLUMNS = [
+        "template_id", "template_name", "image_ref", "width", "height",
+        "elements_json", "is_default", "created_by", "created_at", "updated_at"
+    ]
+    MEMBER_CARD_COLUMNS = [
+        "card_id", "member_id", "member_type", "member_name",
+        "template_id", "template_name", "issued_at", "issued_by"
+    ]
+
+    def get_card_templates(self):
+        return self._sheet_to_df("CardTemplates")
+
+    def get_card_template(self, template_id):
+        df = self.get_card_templates()
+        if df.empty or "template_id" not in df.columns:
+            return None
+        match = df[df["template_id"].astype(str) == str(template_id)]
+        if match.empty:
+            return None
+        return match.iloc[0].to_dict()
+
+    def add_card_template(self, tpl_data):
+        df = self.get_card_templates()
+        if df.empty:
+            df = pd.DataFrame(columns=self.CARD_TEMPLATE_COLUMNS)
+        row = {col: self._safe_str(tpl_data.get(col, "")) for col in self.CARD_TEMPLATE_COLUMNS}
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        self._df_to_sheet("CardTemplates", df, self.CARD_TEMPLATE_COLUMNS)
+
+    def update_card_template(self, template_id, updates):
+        df = self.get_card_templates()
+        idx = df[df["template_id"].astype(str) == str(template_id)].index
+        if len(idx) > 0:
+            for k, v in updates.items():
+                df.at[idx[0], k] = self._safe_str(v)
+            df.at[idx[0], "updated_at"] = get_cairo_now().isoformat()
+            self._df_to_sheet("CardTemplates", df, self.CARD_TEMPLATE_COLUMNS)
+
+    def delete_card_template(self, template_id):
+        df = self.get_card_templates()
+        if df.empty:
+            return
+        df = df[df["template_id"].astype(str) != str(template_id)]
+        self._df_to_sheet("CardTemplates", df, self.CARD_TEMPLATE_COLUMNS)
+
+    def set_default_card_template(self, template_id):
+        """تعيين قالب واحد كافتراضي وإلغاء الافتراضي عن البقية."""
+        df = self.get_card_templates()
+        if df.empty:
+            return
+        df["is_default"] = df["template_id"].astype(str).apply(
+            lambda tid: "True" if tid == str(template_id) else "False"
+        )
+        self._df_to_sheet("CardTemplates", df, self.CARD_TEMPLATE_COLUMNS)
+
+    def get_member_cards(self):
+        return self._sheet_to_df("MemberCards")
+
+    def issue_member_card(self, member_id, member_type, member_name, template_id, template_name="", issued_by=""):
+        """تسجيل/تحديث حالة إصدار بطاقة عضو (سجل واحد لكل عضو)."""
+        df = self.get_member_cards()
+        now_iso = get_cairo_now().isoformat()
+        if df.empty or "member_id" not in df.columns:
+            df = pd.DataFrame(columns=self.MEMBER_CARD_COLUMNS)
+        idx = df[df["member_id"].astype(str) == str(member_id)].index
+        if len(idx) > 0:
+            df.at[idx[0], "member_type"] = self._safe_str(member_type)
+            df.at[idx[0], "member_name"] = self._safe_str(member_name)
+            df.at[idx[0], "template_id"] = self._safe_str(template_id)
+            df.at[idx[0], "template_name"] = self._safe_str(template_name)
+            df.at[idx[0], "issued_at"] = now_iso
+            df.at[idx[0], "issued_by"] = self._safe_str(issued_by)
+        else:
+            new_row = {
+                "card_id": str(uuid.uuid4()),
+                "member_id": self._safe_str(member_id),
+                "member_type": self._safe_str(member_type),
+                "member_name": self._safe_str(member_name),
+                "template_id": self._safe_str(template_id),
+                "template_name": self._safe_str(template_name),
+                "issued_at": now_iso,
+                "issued_by": self._safe_str(issued_by),
+            }
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        self._df_to_sheet("MemberCards", df, self.MEMBER_CARD_COLUMNS)
+
 
 # =============================================================================
 # JWT & Session Helpers
@@ -2963,7 +3057,7 @@ def get_user_status(user_row):
 def get_role_menu(role):
     menus = {
         "System Admin": [
-            "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "🏫 إدارة المراحل الدراسية", "📚 إدارة الفصول",
+            "🏠 لوحة التحكم", "🔔 الإشعارات", "👥 إدارة الأعضاء", "🪪 تجهيز البطاقات", "🏫 إدارة المراحل الدراسية", "📚 إدارة الفصول",
             "📋 الحضور", "💬 الافتقاد", "📷 ماسح QR",
             ADMIN_ASSESSMENTS_PAGE, "📊 التقارير والإحصائيات",
             "📅 إدارة الفعاليات", "📜 سجل العمليات", "🔒 تغيير كلمة المرور"
@@ -5193,6 +5287,14 @@ def show_members_cards_page(db):
     sections = db.get_sections()
     stages = db.get_stages()
 
+    # ===== بيانات نظام بطاقات التعريف =====
+    card_tpls = db.get_card_templates()
+    member_cards_df = db.get_member_cards()
+    member_cards_map = {}
+    if not member_cards_df.empty and "member_id" in member_cards_df.columns:
+        for _, cr in member_cards_df.iterrows():
+            member_cards_map[str(cr.get("member_id", ""))] = cr.to_dict()
+
     # Build unified members list (exclude System Admin and Father Account)
     members = []
     if not users.empty:
@@ -5251,6 +5353,27 @@ def show_members_cards_page(db):
         section_ids = get_sections_for_supervisor(db, user_id)
         if section_ids and not members_df.empty:
             members_df = members_df[members_df["section_id"].isin(section_ids)]
+
+    # ===== اختيار Template البطاقات المستخدم عند الإصدار =====
+    selected_card_tpl = None
+    if not card_tpls.empty and "template_id" in card_tpls.columns:
+        tpl_names_m = card_tpls.set_index(card_tpls["template_id"].astype(str))["template_name"].to_dict()
+        cur_sel_m = str(st.session_state.get("selected_card_template_id", "") or "")
+        if cur_sel_m not in tpl_names_m:
+            defaults_m = card_tpls[card_tpls.get("is_default", "").astype(str).str.lower() == "true"] if "is_default" in card_tpls.columns else pd.DataFrame()
+            cur_sel_m = str(defaults_m.iloc[0]["template_id"]) if not defaults_m.empty else list(tpl_names_m.keys())[0]
+            st.session_state.selected_card_template_id = cur_sel_m
+        st.selectbox(
+            "🪪 Template البطاقات المستخدم عند الإصدار",
+            list(tpl_names_m.keys()),
+            index=list(tpl_names_m.keys()).index(cur_sel_m),
+            format_func=lambda x: tpl_names_m[x],
+            key="members_card_tpl_select",
+        )
+        st.session_state.selected_card_template_id = st.session_state.members_card_tpl_select
+        trow_m = card_tpls[card_tpls["template_id"].astype(str) == st.session_state.selected_card_template_id]
+        if not trow_m.empty:
+            selected_card_tpl = trow_m.iloc[0].to_dict()
 
     # Search
     search_term = st.text_input("🔍 بحث", placeholder="ابحث في الاسم والتليفون...", label_visibility="collapsed")
@@ -5337,6 +5460,9 @@ def show_members_cards_page(db):
                 initials = get_initials(full_name)
                 role_class = get_role_css_class(member_role)
                 status_class = get_status_css_class(status)
+
+                # ☑️ اختيار العضو لإصدار البطاقات بالجملة
+                st.checkbox("☑️ تحديد لإصدار البطاقة", key=f"bulk_sel_{mid}")
 
                 section_name = ""
                 if not sections.empty and sec_id:
@@ -5436,6 +5562,11 @@ def show_members_cards_page(db):
                     if st.button("📋", key=f"view_{mid}"):
                         st.session_state.profile_user_id = mid
                         st.rerun()
+                with action_cols[4]:
+                    if st.button("🪪", help="عرض / إصدار بطاقة التعريف", key=f"idcard_{mid}", use_container_width=True):
+                        st.session_state.card_preview_member = str(mid)
+                        st.session_state.pop("card_download_member", None)
+                        st.rerun()
                 
                 # Check if teacher can edit/delete
                 can_edit_delete = True
@@ -5500,6 +5631,43 @@ def show_members_cards_page(db):
                                 st.success("✅ تم الحذف")
                                 time.sleep(1)
                                 st.rerun()
+
+                # حالة بطاقة التعريف (نظام البطاقات)
+                card_rec = member_cards_map.get(str(mid))
+                if card_rec is not None:
+                    st.markdown("<span class='card-badge active'>🪪 البطاقة: جاهزة</span>", unsafe_allow_html=True)
+                    cc1, cc2, cc3 = st.columns(3)
+                    with cc1:
+                        if st.button("👁️ عرض", help="عرض البطاقة", key=f"card_view_{mid}", use_container_width=True):
+                            st.session_state.card_preview_member = str(mid)
+                            st.session_state.pop("card_download_member", None)
+                            st.rerun()
+                    with cc2:
+                        if st.button("🔄 إعادة", help="إعادة إنشاء البطاقة", key=f"card_regen_{mid}", use_container_width=True):
+                            if selected_card_tpl is None:
+                                st.error("⚠️ لا يوجد Template صالح للبطاقات.")
+                            else:
+                                try:
+                                    cdata_r = build_member_card_data(m, sections, stages)
+                                    render_member_card(selected_card_tpl, cdata_r)
+                                    db.issue_member_card(str(mid), member_type, full_name,
+                                                         selected_card_tpl.get("template_id", ""),
+                                                         selected_card_tpl.get("template_name", ""),
+                                                         user.get("user_id", ""))
+                                    st.success("✅ تمت إعادة إنشاء البطاقة")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except ValueError as ve:
+                                    st.error(f"❌ {ve}")
+                                except Exception as e:
+                                    st.error(f"❌ فشل إنشاء البطاقة: {e}")
+                    with cc3:
+                        if st.button("⬇️ تحميل", help="تحميل البطاقة PNG", key=f"card_dl_{mid}", use_container_width=True):
+                            st.session_state.card_download_member = str(mid)
+                            st.session_state.pop("card_preview_member", None)
+                            st.rerun()
+                else:
+                    st.markdown("<span class='card-badge inactive'>🪪 البطاقة: غير صادرة</span>", unsafe_allow_html=True)
 
                 # Edit form
                 if st.session_state.get(f"edit_mode_{mid}", False):
@@ -5566,6 +5734,115 @@ def show_members_cards_page(db):
                                 time.sleep(1)
                                 st.rerun()
                 st.markdown("---")
+
+    # =====================================================================
+    # نظام بطاقات التعريف — معاينة فردية + تجهيز جماعي ZIP
+    # =====================================================================
+    target_mid = st.session_state.get("card_preview_member") or st.session_state.get("card_download_member")
+    if target_mid:
+        st.markdown("---")
+        st.subheader("🪪 معاينة بطاقة التعريف")
+        if selected_card_tpl is not None:
+            mrow_p = members_df[members_df["member_id"].astype(str) == str(target_mid)]
+            if mrow_p.empty:
+                st.warning("⚠️ العضو غير موجود.")
+            else:
+                mm_p = mrow_p.iloc[0].to_dict()
+                cdata_p = build_member_card_data(mm_p, sections, stages)
+                try:
+                    png_p = render_member_card(selected_card_tpl, cdata_p)
+                    st.image(png_p, caption=f"{cdata_p['name']} | {cdata_p['stage']} | {cdata_p['section']}", width=520)
+                    pcol1, pcol2, _pcol3 = st.columns([1, 1, 2])
+                    with pcol1:
+                        st.download_button(
+                            label="⬇️ تحميل البطاقة",
+                            data=png_p,
+                            file_name=_card_filename_for(mm_p),
+                            mime="image/png",
+                            use_container_width=True,
+                            key="single_card_dl_btn",
+                        )
+                    with pcol2:
+                        if st.button("✕ إغلاق المعاينة", use_container_width=True, key="close_card_preview"):
+                            st.session_state.pop("card_preview_member", None)
+                            st.session_state.pop("card_download_member", None)
+                            st.rerun()
+                    try:
+                        db.issue_member_card(str(target_mid), str(mm_p.get("type", "user")), str(mm_p.get("full_name", "")),
+                                             selected_card_tpl.get("template_id", ""),
+                                             selected_card_tpl.get("template_name", ""),
+                                             user.get("user_id", ""))
+                    except Exception:
+                        pass
+                except ValueError as ve:
+                    st.error(f"❌ {ve}")
+                except Exception as e:
+                    st.error(f"❌ فشل إنشاء البطاقة: {e}")
+        else:
+            st.error("⚠️ لا يوجد Template للبطاقات. الرجاء إنشاء قالب من صفحة '🪪 تجهيز البطاقات' أولاً.")
+
+    # ===== تجهيز البطاقات المحددة بالجملة =====
+    selected_ids = [k[len("bulk_sel_"):] for k, v in st.session_state.items() if k.startswith("bulk_sel_") and v]
+    if selected_ids:
+        st.markdown("---")
+        st.subheader(f"🪪 تجهيز البطاقات المحددة ({len(selected_ids)} عضو)")
+        if len(selected_ids) > 150:
+            st.warning(f"⚠️ عدد كبير من الأعضاء ({len(selected_ids)}). قد تستغرق العملية وقتاً أطول.")
+        bcol1, _bcol2 = st.columns(2)
+        if bcol1.button("🛠️ تجهيز البطاقات المحددة", use_container_width=True, key="bulk_cards_prepare"):
+            if selected_card_tpl is None:
+                st.error("⚠️ لا يوجد Template للبطاقات. أنشئ قالباً من صفحة '🪪 تجهيز البطاقات' أولاً.")
+            else:
+                generated = {}
+                errors_bulk = []
+                progress_bar = st.progress(0.0)
+                for i_b, sel_id in enumerate(selected_ids):
+                    mrow_b = members_df[members_df["member_id"].astype(str) == str(sel_id)]
+                    if mrow_b.empty:
+                        errors_bulk.append(f"العضو {sel_id}: غير موجود")
+                        continue
+                    mb_b = mrow_b.iloc[0].to_dict()
+                    try:
+                        bd_b = build_member_card_data(mb_b, sections, stages)
+                        png_b = render_member_card(selected_card_tpl, bd_b)
+                        fname_b = _card_filename_for(mb_b)
+                        generated[fname_b] = png_b
+                        try:
+                            db.issue_member_card(str(sel_id), str(mb_b.get("type", "user")), str(mb_b.get("full_name", "")),
+                                                 selected_card_tpl.get("template_id", ""),
+                                                 selected_card_tpl.get("template_name", ""),
+                                                 user.get("user_id", ""))
+                        except Exception:
+                            pass
+                    except ValueError as ve:
+                        errors_bulk.append(f"{mb_b.get('full_name', sel_id)}: {ve}")
+                    except Exception as e:
+                        errors_bulk.append(f"{mb_b.get('full_name', sel_id)}: فشل غير متوقع ({e})")
+                    progress_bar.progress((i_b + 1) / len(selected_ids))
+                progress_bar.empty()
+                st.session_state.bulk_cards = generated
+                st.session_state.bulk_cards_errors = errors_bulk
+                if generated:
+                    st.success(f"✅ تم تجهيز {len(generated)} بطاقة بنجاح.")
+                else:
+                    st.error("❌ لم يتم تجهيز أي بطاقة.")
+        bulk_data = st.session_state.get("bulk_cards") or {}
+        if bulk_data:
+            zip_buf = BytesIO()
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for fname_z, bytes_z in bulk_data.items():
+                    zf.writestr(fname_z, bytes_z)
+            zip_buf.seek(0)
+            st.download_button(
+                label=f"📥 تحميل الكل ({len(bulk_data)} بطاقة - ZIP)",
+                data=zip_buf.getvalue(),
+                file_name="cards.zip",
+                mime="application/zip",
+                use_container_width=True,
+                key="bulk_cards_zip_dl",
+            )
+        for err_line in (st.session_state.get("bulk_cards_errors") or [])[:10]:
+            st.warning(f"⚠️ {err_line}")
 
     # Add new member
     with st.expander("➕ إضافة عضو جديد"):
@@ -9951,6 +10228,582 @@ def show_notifications_panel(db):
 
 
 # =============================================================================
+# نظام بطاقات التعريف - ID Cards System
+# =============================================================================
+# محرك توليد بطاقات PNG عالية الجودة + صفحة "تجهيز البطاقات" (Template Designer)
+# العناصر قابلة للتوسعة مستقبلاً عبر إضافة مفاتيح جديدة إلى CARD_ELEMENT_TYPES
+# =============================================================================
+
+CARD_TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "card_templates")
+
+# أنواع عناصر البطاقة المدعومة — يمكن إضافة عناصر جديدة هنا مستقبلاً بدون إعادة بناء النظام
+CARD_ELEMENT_TYPES = {
+    "name": {"label": "الاسم"},
+    "stage": {"label": "المرحلة"},
+    "section": {"label": "الفصل"},
+    "photo": {"label": "الصورة الشخصية (اختياري)"},
+}
+
+# خطوط عربية مرشحة بالترتيب (Windows + محلي)
+_CARD_FONT_CANDIDATES_BOLD = [
+    os.path.join(os.path.dirname(__file__), "Cairo-Bold.ttf"),
+    r"C:\Windows\Fonts\arialbd.ttf",
+    r"C:\Windows\Fonts\tahomabd.ttf",
+    r"C:\Windows\Fonts\segoeuib.ttf",
+    r"C:\Windows\Fonts\timesbd.ttf",
+]
+_CARD_FONT_CANDIDATES_REGULAR = [
+    os.path.join(os.path.dirname(__file__), "Cairo-Regular.ttf"),
+    r"C:\Windows\Fonts\arial.ttf",
+    r"C:\Windows\Fonts\tahoma.ttf",
+    r"C:\Windows\Fonts\segoeui.ttf",
+    r"C:\Windows\Fonts\times.ttf",
+]
+
+
+def shape_arabic_text(text):
+    """تشكيل النص العربي وترتيبه للعرض الصحيح داخل صور PIL."""
+    try:
+        return _bidi_get_display(arabic_reshaper.reshape(str(text)))
+    except Exception:
+        return str(text)
+
+
+@lru_cache(maxsize=128)
+def _load_font_cached(path, size):
+    return ImageFont.truetype(path, size)
+
+
+def get_card_font(size, bold=False):
+    """تحميل خط عربي مناسب مع سلسلة بدائل آمنة."""
+    size = max(8, int(size))
+    candidates = _CARD_FONT_CANDIDATES_BOLD if bold else _CARD_FONT_CANDIDATES_REGULAR
+    for path in candidates:
+        try:
+            if path and os.path.exists(path):
+                return _load_font_cached(path, size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.load_default()
+    except Exception:
+        return None
+
+
+def _fit_card_font(draw, text, start_size, max_width, bold):
+    """تصغير حجم الخط تدريجياً حتى يتسع النص داخل عرض المستطيل المحدد."""
+    size = int(start_size)
+    while size > 8:
+        font = get_card_font(size, bold)
+        if font is not None:
+            try:
+                if draw.textlength(text, font=font) <= max_width:
+                    return font
+            except Exception:
+                return font
+        size -= 2
+    return get_card_font(8, bold)
+
+
+@st.cache_data(show_spinner=False)
+def _load_card_template_image_cached(image_ref, mtime):
+    """تحميل صورة تصميم القالب مع تخزين مؤقت (caching) لتسريع توليد البطاقات."""
+    try:
+        ref = str(image_ref or "").strip()
+        if not ref:
+            return None
+        if ref.startswith("base64:"):
+            img_bytes = base64.b64decode(ref[len("base64:"):])
+            return Image.open(BytesIO(img_bytes)).convert("RGB")
+        # مرجع ملف محلي داخل مجلد card_templates
+        fname = os.path.basename(ref.replace("file:", ""))
+        path = os.path.join(CARD_TEMPLATES_DIR, fname)
+        if not os.path.exists(path):
+            return None
+        return Image.open(path).convert("RGB")
+    except Exception:
+        return None
+
+
+def load_card_template_image(template_row):
+    """إرجاع PIL.Image لقالب البطاقة أو None إذا لم توجد الصورة."""
+    image_ref = str((template_row or {}).get("image_ref", "") or "").strip()
+    if not image_ref:
+        return None
+    mtime = 0
+    try:
+        fname = os.path.basename(image_ref.replace("file:", "").replace("base64:", ""))
+        p = os.path.join(CARD_TEMPLATES_DIR, fname)
+        if os.path.exists(p):
+            mtime = os.path.getmtime(p)
+    except Exception:
+        pass
+    return _load_card_template_image_cached(image_ref, mtime)
+
+
+def save_card_template_image(uploaded_file):
+    """
+    حفظ صورة تصميم مرفوعة داخل مجلد card_templates بعد تصغيرها.
+    Returns: (image_ref, width, height) أو يرفع ValueError برسالة عربية.
+    """
+    try:
+        img = Image.open(uploaded_file).convert("RGB")
+    except Exception:
+        raise ValueError("تعذر قراءة ملف الصورة. تأكد من أنه صورة PNG أو JPG صحيحة.")
+    w, h = img.size
+    max_w = 1400
+    if w > max_w:
+        img = img.resize((max_w, max(1, int(h * max_w / w))), Image.LANCZOS)
+    os.makedirs(CARD_TEMPLATES_DIR, exist_ok=True)
+    fname = f"tpl_{uuid.uuid4().hex[:10]}.jpg"
+    path = os.path.join(CARD_TEMPLATES_DIR, fname)
+    img.save(path, format="JPEG", quality=88)
+    return fname, img.size[0], img.size[1]
+
+
+def build_member_card_data(member, sections_df=None, stages_df=None):
+    """
+    بناء بيانات البطاقة من بيانات العضو الأصلية في قاعدة البيانات.
+    لا يتم إدخال أي بيانات يدوياً — الاسم/المرحلة/الفصل تُقرأ من مصادرها الحالية.
+    """
+    sec_id = str(member.get("section_id", "") or "").strip()
+    section_name = ""
+    if sections_df is not None and not sections_df.empty and sec_id:
+        try:
+            match = sections_df[sections_df["section_id"].astype(str) == sec_id]
+            if not match.empty:
+                section_name = str(match.iloc[0].get("section_name", "")).strip()
+        except Exception:
+            pass
+    stage_name = resolve_member_stage_name(member.get("stage_id", ""), sec_id, sections_df, stages_df)
+    return {
+        "name": str(member.get("full_name", "") or "").strip() or "—",
+        "stage": stage_name or "—",
+        "section": section_name or "—",
+    }
+
+
+def render_member_card(template_row, data):
+    """
+    توليد بطاقة PNG عالية الجودة (بمقياس القالب الأصلي + DPI 300).
+    template_row: dict من ورقة CardTemplates
+    data: dict يحتوي name/stage/section (+ photo اختيارياً كـ PIL Image)
+    Raises ValueError برسالة عربية عند فشل أي خطوة.
+    """
+    if not template_row:
+        raise ValueError("لم يتم اختيار Template للبطاقة.")
+    img = load_card_template_image(template_row)
+    if img is None:
+        raise ValueError("صورة تصميم البطاقة غير موجودة. الرجاء رفعها من صفحة 'تجهيز البطاقات'.")
+    try:
+        elements = json.loads(str(template_row.get("elements_json", "") or "{}"))
+    except Exception:
+        elements = {}
+    if not isinstance(elements, dict) or not elements:
+        raise ValueError("لم يتم تحديد أماكن البيانات في هذا القالب بعد. حددها أولاً من صفحة 'تجهيز البطاقات'.")
+
+    img = img.convert("RGB")
+    draw = ImageDraw.Draw(img)
+    W, H = img.size
+
+    for key, spec in elements.items():
+        if not isinstance(spec, dict):
+            continue
+        try:
+            x = float(spec.get("x", 0)) * W
+            y = float(spec.get("y", 0)) * H
+            w = float(spec.get("w", 0)) * W
+            h = float(spec.get("h", 0)) * H
+        except (TypeError, ValueError):
+            continue
+        if w <= 1 or h <= 1:
+            continue
+
+        # عنصر الصورة الشخصية (اختياري — لا يعتمد عليه النظام إن لم تتوفر بياناته)
+        if key == "photo":
+            photo = data.get("photo") if isinstance(data, dict) else None
+            if photo is not None:
+                try:
+                    ph = photo.convert("RGB").copy()
+                    ph.thumbnail((max(2, int(w)), max(2, int(h))), Image.LANCZOS)
+                    px = int(x + (w - ph.width) / 2)
+                    py = int(y + (h - ph.height) / 2)
+                    img.paste(ph, (px, py))
+                    draw = ImageDraw.Draw(img)
+                except Exception:
+                    pass
+            continue
+
+        raw = str((data or {}).get(key, "") or "").strip()
+        if not raw:
+            continue
+        text = shape_arabic_text(raw)
+        try:
+            font_size = int(float(spec.get("font_size", 36)))
+        except (TypeError, ValueError):
+            font_size = 36
+        bold = bool(spec.get("bold", False))
+        color = str(spec.get("font_color", "#111111")) or "#111111"
+        align = str(spec.get("align", "center")) or "center"
+
+        font = _fit_card_font(draw, text, font_size, max(10, w - 12), bold)
+        if font is None:
+            continue
+        cy = y + h / 2
+        try:
+            if align == "right":
+                draw.text((x + w - 6, cy), text, font=font, fill=color, anchor="rm")
+            elif align == "left":
+                draw.text((x + 6, cy), text, font=font, fill=color, anchor="lm")
+            else:
+                draw.text((x + w / 2, cy), text, font=font, fill=color, anchor="mm")
+        except Exception:
+            # fallback بدون anchor
+            draw.text((x + 6, y), text, font=font, fill=color)
+
+    buf = BytesIO()
+    img.save(buf, format="PNG", dpi=(300, 300))
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def _card_filename_for(member):
+    """اسم ملف بطاقة واضح: كود الطالبة إن وجد، وإلا اسم مطهّر + جزء من المعرف."""
+    code = str((member or {}).get("student_code", "") or "").strip()
+    if code and code.lower() != "nan":
+        return f"{code}.png"
+    name = re.sub(r"[^\w\u0600-\u06FF]+", "_", str((member or {}).get("full_name", "")).strip())[:40] or "member"
+    mid = str((member or {}).get("member_id", ""))[:8] or uuid.uuid4().hex[:8]
+    return f"{name}_{mid}.png"
+
+
+def _parse_template_elements(template_row):
+    try:
+        elements = json.loads(str((template_row or {}).get("elements_json", "") or "{}"))
+        return elements if isinstance(elements, dict) else {}
+    except Exception:
+        return {}
+
+
+def _template_image_data_url(template_row):
+    """تحويل صورة القالب إلى Data URL لعرضها داخل مكوّن المصمم."""
+    img = load_card_template_image(template_row)
+    if img is None:
+        return ""
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+@st.cache_resource(show_spinner=False)
+def _get_card_designer_component():
+    comp_dir = os.path.join(os.path.dirname(__file__), "card_designer_component")
+    return components.declare_component("card_designer", path=comp_dir)
+
+
+def card_designer_component(template_row, elements, selected_key, tpl_key):
+    """مكوّن تحديد أماكن العناصر بالماوس فوق صورة تصميم البطاقة."""
+    image_url = _template_image_data_url(template_row)
+    if not image_url:
+        st.error("❌ صورة تصميم البطاقة غير موجودة.")
+        return None
+    labels = {k: v.get("label", k) for k, v in CARD_ELEMENT_TYPES.items()}
+    comp = _get_card_designer_component()
+    return comp(
+        image=image_url,
+        elements_json=json.dumps(elements, ensure_ascii=False),
+        labels_json=json.dumps(labels, ensure_ascii=False),
+        selected_key=selected_key,
+        default=None,
+        key=f"designer_{tpl_key}",
+    )
+
+
+def _resolve_selected_card_template(card_tpls):
+    """إرجاع صف القالب المختار حالياً (من الجلسة أو الافتراضي أو الأول)."""
+    if card_tpls is None or card_tpls.empty or "template_id" not in card_tpls.columns:
+        return None
+    ids = card_tpls["template_id"].astype(str).tolist()
+    sel = str(st.session_state.get("selected_card_template_id", "") or "")
+    if sel not in ids:
+        defaults = card_tpls[card_tpls.get("is_default", "").astype(str).str.lower() == "true"] if "is_default" in card_tpls.columns else pd.DataFrame()
+        sel = str(defaults.iloc[0]["template_id"]) if not defaults.empty else ids[0]
+        st.session_state.selected_card_template_id = sel
+    row = card_tpls[card_tpls["template_id"].astype(str) == sel]
+    return row.iloc[0].to_dict() if not row.empty else None
+
+
+def _handle_designer_result(result, tpl_id, elements):
+    """معالجة نتيجة مكوّن المصمم: حفظ المكان أو تحديد العنصر."""
+    action = result.get("action", "")
+    key = result.get("key", "")
+    if action == "update" and key:
+        rect = result.get("rect", {}) or {}
+        try:
+            rect_norm = {
+                "x": round(max(0.0, min(1.0, float(rect.get("x", 0)))), 4),
+                "y": round(max(0.0, min(1.0, float(rect.get("y", 0)))), 4),
+                "w": round(max(0.005, min(1.0, float(rect.get("w", 0)))), 4),
+                "h": round(max(0.005, min(1.0, float(rect.get("h", 0)))), 4),
+            }
+        except (TypeError, ValueError):
+            return False
+        existing = elements.get(key, {})
+        merged = {
+            "x": rect_norm["x"], "y": rect_norm["y"],
+            "w": rect_norm["w"], "h": rect_norm["h"],
+            "font_size": existing.get("font_size", 36),
+            "font_color": existing.get("font_color", "#111111"),
+            "align": existing.get("align", "center"),
+            "bold": existing.get("bold", False),
+        }
+        elements[key] = merged
+        return True
+    if action == "select" and key:
+        st.session_state[f"designer_sel_{tpl_id}"] = key
+    return False
+
+
+def show_card_templates_page(db):
+    """صفحة 'تجهيز البطاقات' — Card Template Designer (System Admin فقط)."""
+    user = st.session_state.user
+    role = user.get("role", "")
+    if role != "System Admin":
+        st.error("🚫 هذه الصفحة متاحة لمدير النظام فقط.")
+        return
+
+    st.markdown(hero_header("تجهيز البطاقات", "🪪 تصميم قوالب بطاقات التعريف وتحديد أماكن البيانات بالماوس"), unsafe_allow_html=True)
+
+    card_tpls = db.get_card_templates()
+
+    # ===== إضافة Template جديد =====
+    with st.expander("➕ إضافة Template جديد", expanded=card_tpls.empty):
+        new_name = st.text_input("اسم القالب*", placeholder="مثال: بطاقة بنات - إعدادي", key="new_tpl_name")
+        new_img = st.file_uploader("🖼️ ارفع صورة تصميم البطاقة الجاهزة (PNG / JPG)", type=["png", "jpg", "jpeg"], key="new_tpl_img")
+        if st.button("💾 حفظ التصميم", use_container_width=True, key="save_new_tpl"):
+            if not new_name.strip():
+                st.error("⚠️ اسم القالب مطلوب.")
+            elif new_img is None:
+                st.error("⚠️ يجب رفع صورة تصميم البطاقة أولاً.")
+            else:
+                try:
+                    ref, tw, th = save_card_template_image(new_img)
+                    tpl_id = str(uuid.uuid4())
+                    make_default = card_tpls.empty
+                    db.add_card_template({
+                        "template_id": tpl_id,
+                        "template_name": new_name.strip(),
+                        "image_ref": ref,
+                        "width": tw,
+                        "height": th,
+                        "elements_json": "{}",
+                        "is_default": "True" if make_default else "False",
+                        "created_by": user.get("user_id", ""),
+                        "created_at": get_cairo_now().isoformat(),
+                        "updated_at": get_cairo_now().isoformat(),
+                    })
+                    db.add_log(user.get("user_id", ""), "إنشاء Template بطاقة", f"تم إنشاء قالب: {new_name.strip()}")
+                    st.success("✅ تم حفظ القالب بنجاح! يمكنك الآن تحديد أماكن البيانات بالماوس.")
+                    time.sleep(1)
+                    st.rerun()
+                except ValueError as ve:
+                    st.error(f"❌ {ve}")
+                except Exception as e:
+                    st.error(f"❌ فشل حفظ القالب: {e}")
+
+    if card_tpls.empty:
+        st.info("📭 لا توجد قوالب بعد. ابدأ بإضافة Template جديد من الأعلى.")
+        return
+
+    # ===== اختيار القالب =====
+    tpl_names = card_tpls.set_index(card_tpls["template_id"].astype(str))["template_name"].to_dict()
+    cur_sel = str(st.session_state.get("selected_card_template_id", "") or "")
+    if cur_sel not in tpl_names:
+        resolved = _resolve_selected_card_template(card_tpls)
+        cur_sel = str(resolved["template_id"]) if resolved else list(tpl_names.keys())[0]
+    chosen_id = st.selectbox(
+        "📋 اختر Template للعمل عليه",
+        list(tpl_names.keys()),
+        index=list(tpl_names.keys()).index(cur_sel) if cur_sel in tpl_names else 0,
+        format_func=lambda x: ("⭐ " if str(card_tpls[card_tpls["template_id"].astype(str) == x].iloc[0].get("is_default", "")).lower() == "true" else "") + tpl_names[x],
+        key="designer_tpl_select",
+    )
+    st.session_state.selected_card_template_id = chosen_id
+    tpl_row = card_tpls[card_tpls["template_id"].astype(str) == chosen_id].iloc[0].to_dict()
+    tpl_id = str(tpl_row.get("template_id", ""))
+    elements = _parse_template_elements(tpl_row)
+
+    # ===== إعدادات القالب =====
+    with st.expander("⚙️ إعدادات القالب (اسم / صورة / افتراضي / حذف)"):
+        c_set1, c_set2 = st.columns(2)
+        with c_set1:
+            rename_val = st.text_input("اسم القالب", value=str(tpl_row.get("template_name", "")), key=f"rename_{tpl_id}")
+            if st.button("✏️ حفظ الاسم الجديد", key=f"rename_btn_{tpl_id}", use_container_width=True):
+                if rename_val.strip():
+                    db.update_card_template(tpl_id, {"template_name": rename_val.strip()})
+                    st.success("✅ تم تحديث اسم القالب")
+                    time.sleep(1)
+                    st.rerun()
+            if str(tpl_row.get("is_default", "")).lower() == "true":
+                st.success("⭐ هذا القالب هو الافتراضي")
+            else:
+                if st.button("⭐ تعيين كافتراضي", key=f"default_btn_{tpl_id}", use_container_width=True):
+                    db.set_default_card_template(tpl_id)
+                    st.success("✅ تم التعيين كافتراضي")
+                    time.sleep(1)
+                    st.rerun()
+        with c_set2:
+            replace_img = st.file_uploader("🔄 استبدال صورة التصميم", type=["png", "jpg", "jpeg"], key=f"repl_img_{tpl_id}")
+            if st.button("🔄 استبدال الصورة", key=f"repl_btn_{tpl_id}", use_container_width=True):
+                if replace_img is None:
+                    st.error("⚠️ اختر صورة جديدة أولاً.")
+                else:
+                    try:
+                        ref, tw, th = save_card_template_image(replace_img)
+                        db.update_card_template(tpl_id, {"image_ref": ref, "width": tw, "height": th})
+                        st.success("✅ تم استبدال صورة التصميم")
+                        time.sleep(1)
+                        st.rerun()
+                    except ValueError as ve:
+                        st.error(f"❌ {ve}")
+        confirm_del = st.checkbox("أنا متأكد من حذف هذا القالب نهائياً", key=f"del_confirm_{tpl_id}")
+        if st.button("🗑️ حذف القالب", disabled=not confirm_del, key=f"del_btn_{tpl_id}", use_container_width=True):
+            try:
+                fname = os.path.basename(str(tpl_row.get("image_ref", "")).replace("file:", ""))
+                p = os.path.join(CARD_TEMPLATES_DIR, fname)
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+            db.delete_card_template(tpl_id)
+            db.add_log(user.get("user_id", ""), "حذف Template بطاقة", f"تم حذف قالب: {tpl_row.get('template_name', '')}")
+            st.session_state.pop("selected_card_template_id", None)
+            st.success("🗑️ تم حذف القالب")
+            time.sleep(1)
+            st.rerun()
+
+    st.markdown("---")
+
+    # ===== تحديد أماكن البيانات بالماوس =====
+    st.subheader("🎯 تحديد أماكن البيانات بالماوس")
+    placed_keys = [k for k in CARD_ELEMENT_TYPES if k in elements]
+    status_line = " | ".join([f"{CARD_ELEMENT_TYPES[k]['label']} ✅" for k in placed_keys]) or "لا توجد عناصر محددة بعد"
+    st.caption(f"العناصر المحددة: {status_line}")
+
+    el_options = [k for k in CARD_ELEMENT_TYPES.keys()]
+    current_el = st.session_state.get(f"designer_sel_{tpl_id}", "")
+    if current_el not in el_options:
+        current_el = el_options[0]
+    selected_el = st.selectbox(
+        "🧩 اختر العنصر الذي تريد تحديد مكانه",
+        el_options,
+        index=el_options.index(current_el),
+        format_func=lambda k: f"{CARD_ELEMENT_TYPES[k]['label']} {'✅' if k in elements else '—'}",
+        key=f"designer_el_{tpl_id}",
+    )
+    st.session_state[f"designer_sel_{tpl_id}"] = selected_el
+
+    result = card_designer_component(tpl_row, elements, selected_el, tpl_id)
+    sig_key = f"designer_last_{tpl_id}"
+    if result:
+        sig = json.dumps(result, sort_keys=True, ensure_ascii=False)
+        if sig != st.session_state.get(sig_key):
+            st.session_state[sig_key] = sig
+            changed = _handle_designer_result(result, tpl_id, elements)
+            if changed:
+                try:
+                    db.update_card_template(tpl_id, {"elements_json": json.dumps(elements, ensure_ascii=False)})
+                    st.success(f"✅ تم حفظ مكان العنصر: {CARD_ELEMENT_TYPES.get(selected_el, {}).get('label', selected_el)}")
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ فشل حفظ المكان: {e}")
+
+    # خصائص العنصر المحدد
+    if selected_el in elements:
+        spec = elements[selected_el]
+        with st.expander(f"⚙️ خصائص العنصر: {CARD_ELEMENT_TYPES[selected_el]['label']}", expanded=True):
+            with st.form(f"el_settings_form_{tpl_id}_{selected_el}"):
+                s1, s2 = st.columns(2)
+                with s1:
+                    fs = st.number_input("حجم الخط", min_value=8, max_value=400, value=int(spec.get("font_size", 36)))
+                    fc = st.color_picker("لون النص", value=str(spec.get("font_color", "#111111")))
+                with s2:
+                    align_opts = ["center", "right", "left"]
+                    al = st.radio(
+                        "المحاذاة",
+                        align_opts,
+                        index=align_opts.index(str(spec.get("align", "center"))) if str(spec.get("align", "center")) in align_opts else 0,
+                        format_func=lambda x: {"center": "وسط", "right": "يمين", "left": "يسار"}[x],
+                        horizontal=True,
+                    )
+                    bd = st.checkbox("خط عريض (Bold)", value=bool(spec.get("bold", False)))
+                if st.form_submit_button("💾 حفظ الخصائص", use_container_width=True):
+                    elements[selected_el].update({
+                        "font_size": int(fs), "font_color": fc, "align": al, "bold": bool(bd),
+                    })
+                    try:
+                        db.update_card_template(tpl_id, {"elements_json": json.dumps(elements, ensure_ascii=False)})
+                        st.success("✅ تم حفظ الخصائص")
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ فشل حفظ الخصائص: {e}")
+            if st.button("🗑️ حذف هذا العنصر من القالب", key=f"el_del_{tpl_id}_{selected_el}", use_container_width=True):
+                elements.pop(selected_el, None)
+                try:
+                    db.update_card_template(tpl_id, {"elements_json": json.dumps(elements, ensure_ascii=False)})
+                    st.success("🗑️ تم حذف العنصر")
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ فشل حذف العنصر: {e}")
+
+    st.markdown("---")
+
+    # ===== معاينة حقيقية ببيانات عضو فعلي =====
+    st.subheader("👁️ معاينة البطاقة ببيانات حقيقية")
+    users_prev = db.get_users()
+    students_prev = db.get_students()
+    members_map = {}
+    if not students_prev.empty and "student_id" in students_prev.columns:
+        for _, s in students_prev.iterrows():
+            members_map[str(s.get("student_id", ""))] = {"member": s.to_dict(), "sections": db.get_sections(), "stages": db.get_stages()}
+    if not users_prev.empty and "user_id" in users_prev.columns:
+        for _, u in users_prev.iterrows():
+            if u.get("role", "") in ["Teacher", "Service Manager"]:
+                members_map.setdefault(str(u.get("user_id", "")), {"member": u.to_dict(), "sections": db.get_sections(), "stages": db.get_stages()})
+    if not members_map:
+        st.info("لا يوجد أعضاء للمعاينة بعد.")
+    else:
+        prev_ids = list(members_map.keys())
+        prev_pick = st.selectbox(
+            "👤 اختر عضواً تجريبياً للمعاينة",
+            prev_ids,
+            format_func=lambda x: f"{members_map[x]['member'].get('full_name', '')} ({members_map[x]['member'].get('section_id', '') or 'بدون فصل'})",
+            key=f"preview_member_{tpl_id}",
+        )
+        if st.button("🔍 إنشاء المعاينة", use_container_width=True, key=f"preview_btn_{tpl_id}"):
+            entry = members_map[prev_pick]
+            data = build_member_card_data(entry["member"], entry["sections"], entry["stages"])
+            try:
+                png = render_member_card(tpl_row, data)
+                st.image(png, caption=f"معاينة: {data['name']}", use_container_width=False)
+                st.download_button(
+                    label="⬇️ تحميل البطاقة (PNG)",
+                    data=png,
+                    file_name=_card_filename_for({**entry["member"], "member_id": prev_pick}),
+                    mime="image/png",
+                    use_container_width=True,
+                    key=f"preview_dl_{tpl_id}",
+                )
+            except ValueError as ve:
+                st.error(f"❌ {ve}")
+            except Exception as e:
+                st.error(f"❌ فشل إنشاء البطاقة: {e}")
+
+
+# =============================================================================
 # Main App
 # =============================================================================
 def main():
@@ -10038,6 +10891,11 @@ def main():
                     show_members_cards_page(db)
                 else:
                     st.error("🚫 غير مصرح")
+            elif choice == "🪪 تجهيز البطاقات":
+                if st.session_state.user.get("role") == "System Admin":
+                    show_card_templates_page(db)
+                else:
+                    st.error("🚫 هذه الصفحة متاحة لمدير النظام فقط")
             elif choice == "📋 الحضور":
                 show_attendance(db)
             elif choice == "💬 الافتقاد":
