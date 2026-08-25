@@ -10495,10 +10495,38 @@ def _template_image_data_url(template_row):
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-@st.cache_resource(show_spinner=False)
-def _get_card_designer_component():
-    comp_dir = os.path.join(os.path.dirname(__file__), "card_designer_component")
-    return components.declare_component("card_designer", path=comp_dir)
+@st.cache_data(show_spinner=False)
+def _load_card_designer_assets():
+    """قراءة أجزاء مكوّن المصمم من ملف card_designer.html الموجود بجانب هذا الملف."""
+    import re
+    path = os.path.join(os.path.dirname(__file__), "card_designer.html")
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+    css_m = re.search(r"<style>([\s\S]*?)</style>", src)
+    body_m = re.search(r"<body[^>]*>([\s\S]*?)</body>", src)
+    js_m = re.search(r"<script>([\s\S]*?)</script>", src)
+    return (
+        css_m.group(1).strip() if css_m else "",
+        body_m.group(1).strip() if body_m else "",
+        js_m.group(1).strip() if js_m else "",
+    )
+
+
+_CARD_DESIGNER_RENDERER = None
+
+
+def _get_card_designer_renderer():
+    """تسجيل مكوّن المصمم مرة واحدة فقط (CCv2 — ملف HTML واحد، بدون أي مجلد مكوّنات)."""
+    global _CARD_DESIGNER_RENDERER
+    if _CARD_DESIGNER_RENDERER is None:
+        css_src, html_src, js_src = _load_card_designer_assets()
+        _CARD_DESIGNER_RENDERER = st.components.v2.component(
+            "card_designer",
+            html=html_src,
+            css=css_src,
+            js=js_src,
+        )
+    return _CARD_DESIGNER_RENDERER
 
 
 def card_designer_component(template_row, elements, selected_key, tpl_key):
@@ -10508,15 +10536,18 @@ def card_designer_component(template_row, elements, selected_key, tpl_key):
         st.error("❌ صورة تصميم البطاقة غير موجودة.")
         return None
     labels = {k: v.get("label", k) for k, v in CARD_ELEMENT_TYPES.items()}
-    comp = _get_card_designer_component()
-    return comp(
-        image=image_url,
-        elements_json=json.dumps(elements, ensure_ascii=False),
-        labels_json=json.dumps(labels, ensure_ascii=False),
-        selected_key=selected_key,
-        default=None,
+    renderer = _get_card_designer_renderer()
+    mounted = renderer(
+        data={
+            "image": image_url,
+            "elements": elements,
+            "labels": labels,
+            "selected_key": selected_key,
+        },
         key=f"designer_{tpl_key}",
+        on_action_change=lambda: None,
     )
+    return getattr(mounted, "action", None) or None
 
 
 def _resolve_selected_card_template(card_tpls):
