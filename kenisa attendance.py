@@ -291,6 +291,50 @@ def get_stage_color(stage_name):
 
 
 # =============================================================================
+# Unified Member Stage Helpers — مصدر واحد موحد لبيانات المرحلة لكل الأعضاء
+# =============================================================================
+def resolve_member_stage_id(stage_id, section_id, sections_df=None):
+    """
+    إرجاع معرف المرحلة الفعلي لأي عضو (مستخدم أو طالبة).
+    الأولوية: stage_id المخزن على العضو نفسه، وإلا يُشتق من مرحلة الفصل.
+    يعالج البيانات القديمة بأمان (أعضاء بدون مرحلة).
+    """
+    sid = str(stage_id or "").strip()
+    if not sid or str(sid).lower() in ("nan", "none"):
+        sid = ""
+        try:
+            if sections_df is not None and not sections_df.empty:
+                sec = sections_df[sections_df["section_id"] == str(section_id or "").strip()]
+                if not sec.empty:
+                    candidate = str(sec.iloc[0].get("stage_id", "")).strip()
+                    if candidate and candidate.lower() not in ("nan", "none"):
+                        sid = candidate
+        except Exception:
+            pass
+    return sid
+
+
+def resolve_member_stage_name(stage_id, section_id, sections_df=None, stages_df=None):
+    """
+    إرجاع اسم المرحلة الموحد لأي عضو (مستخدم أو طالبة) بالاعتماد على
+    نظام المراحل الموجود مسبقاً في النظام (ورقة Stages) دون تكرار بيانات.
+    """
+    try:
+        if stages_df is None or stages_df.empty:
+            return ""
+        sid = resolve_member_stage_id(stage_id, section_id, sections_df)
+        if not sid:
+            return ""
+        match = stages_df[stages_df["stage_id"].astype(str) == sid]
+        if match.empty:
+            return ""
+        name = str(match.iloc[0].get("stage_name", "")).strip()
+        return "" if name.lower() in ("nan", "none") else name
+    except Exception:
+        return ""
+
+
+# =============================================================================
 # Premium Design System - Unified CSS
 # =============================================================================
 def get_design_css():
@@ -1416,8 +1460,8 @@ class Database:
     def ensure_all_sheets_exist(self):
         """Ensure all required sheets exist with proper columns."""
         sheets_config = {
-            "Users": ["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email"],
-            "Students": ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used"],
+            "Users": ["user_id", "username", "password", "role", "full_name", "section_id", "phone", "email", "stage_id"],
+            "Students": ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id", "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used", "stage_id"],
             "Exams": ["exam_id", "title", "description", "created_by", "stage_id", "section_id", "chapter_lesson", "exam_date", "start_date", "end_date", "duration_minutes", "total_marks", "passing_score", "is_active", "is_published", "created_at"],
             "Stages": self.STAGE_COLUMNS,
             "StageSupervisors": self.STAGE_SUPERVISOR_COLUMNS,
@@ -1448,10 +1492,10 @@ class Database:
         df = self.get_users()
         if df.empty:
             df = pd.DataFrame(columns=["user_id", "username", "password", "role",
-                                       "full_name", "section_id", "phone", "email"])
+                                       "full_name", "section_id", "phone", "email", "stage_id"])
         df = pd.concat([df, pd.DataFrame([user_data])], ignore_index=True)
         self._df_to_sheet("Users", df, ["user_id", "username", "password", "role",
-                                        "full_name", "section_id", "phone", "email"])
+                                        "full_name", "section_id", "phone", "email", "stage_id"])
 
     def update_user(self, user_id, updates):
         df = self.get_users()
@@ -1607,13 +1651,15 @@ class Database:
                 count += 1
                 updated = True
         
-        # التأكد من وجود عمود profile_edit_used
+        # التأكد من وجود عمود profile_edit_used وعمود المرحلة stage_id
         if "profile_edit_used" not in students.columns:
             students["profile_edit_used"] = ""
+        if "stage_id" not in students.columns:
+            students["stage_id"] = ""
 
         if updated:
             self._df_to_sheet("Students", students, ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
-                                                     "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used"])
+                                                     "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used", "stage_id"])
         return count, f"تم تحديث {count} طالبة"
 
     def get_stages_for_supervisor(self, supervisor_id):
@@ -1761,8 +1807,10 @@ class Database:
             idx = students[students.student_id == sid].index
             if len(idx) > 0:
                 students.at[idx[0], "section_id"] = new_section_id
+        if "stage_id" not in students.columns:
+            students["stage_id"] = ""
         self._df_to_sheet("Students", students, ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
-                                                 "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used"])
+                                                 "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used", "stage_id"])
 
     # --- Students ---
     def get_students(self):
@@ -1784,13 +1832,36 @@ class Database:
         except Exception:
             pass
 
+    def ensure_member_stage_column(self):
+        """
+        ترحيل آمن: التأكد من وجود عمود المرحلة (stage_id) في ورقتي Users و Students.
+        لا يحذف أو يغير أي بيانات موجودة — فقط يضيف العمود بقيم فارغة إن لم يكن موجوداً.
+        """
+        try:
+            users = self.get_users()
+            if not users.empty and "stage_id" not in users.columns:
+                users["stage_id"] = ""
+                self._df_to_sheet("Users", users, ["user_id", "username", "password", "role",
+                                                   "full_name", "section_id", "phone", "email", "stage_id"])
+        except Exception:
+            pass
+        try:
+            students = self.get_students()
+            if not students.empty and "stage_id" not in students.columns:
+                students["stage_id"] = ""
+                self._df_to_sheet("Students", students, ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
+                                                         "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used", "stage_id"])
+        except Exception:
+            pass
+
     def add_student(self, student_data):
         df = self.get_students()
         if df.empty:
             df = pd.DataFrame(columns=["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
-                                       "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used"])
+                                       "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used", "stage_id"])
         student_data["teacher_id"] = ""
         student_data.setdefault("profile_edit_used", "")
+        student_data.setdefault("stage_id", "")
         # توليد كود فريد إذا لم يكن موجوداً
         if not student_data.get("student_code"):
             student_data["student_code"] = generate_student_code(self)
@@ -1802,7 +1873,7 @@ class Database:
                 student_data["student_password"] = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
         df = pd.concat([df, pd.DataFrame([student_data])], ignore_index=True)
         self._df_to_sheet("Students", df, ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
-                                           "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used"])
+                                           "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used", "stage_id"])
 
     def update_student(self, student_id, updates):
         df = self.get_students()
@@ -5103,6 +5174,12 @@ def show_members_cards_page(db):
         st.error("🚫 غير مصرح")
         return
 
+    # ترحيل آمن: التأكد من وجود عمود المرحلة (stage_id) للأعضاء والطالبات
+    try:
+        db.ensure_member_stage_column()
+    except Exception:
+        pass
+
     # تشغيل الترحيل التلقائي لكود وكلمة مرور الطالبات
     try:
         migrated_count, migrate_msg = db.migrate_student_codes_and_passwords()
@@ -5135,7 +5212,8 @@ def show_members_cards_page(db):
                 "email": u.get("email", ""),
                 "status": u.get("status", "active"),
                 "type": "user",
-                "created_by": u.get("created_by", "")
+                "created_by": u.get("created_by", ""),
+                "stage_id": u.get("stage_id", "")
             })
     if not students.empty:
         for _, s in students.iterrows():
@@ -5266,6 +5344,9 @@ def show_members_cards_page(db):
                     if not sec_match.empty:
                         section_name = sec_match.iloc[0].get("section_name", "")
 
+                # المرحلة الموحدة لكل الأعضاء (مخزنة على العضو أو مشتقة من الفصل)
+                stage_display = resolve_member_stage_name(m.get("stage_id", ""), sec_id, sections, stages)
+
                 role_label = {"Service Manager": "أمين خدمة", "Teacher": "مدرسة", "Student": "طالبة", "System Admin": "مدير نظام"}.get(member_role, member_role)
                 status_label = {"active": "نشط", "inactive": "غير نشط"}.get(status, "نشط")
 
@@ -5278,16 +5359,6 @@ def show_members_cards_page(db):
                     student_notes = m.get("notes", "")
                     student_code = m.get("student_code", "")
                     student_password = m.get("student_password", "")
-                    # الحصول على المرحلة من الفصل
-                    stage_name_card = ""
-                    if not stages.empty:
-                        sec_for_stage = sections[sections["section_id"] == sec_id] if not sections.empty and sec_id else pd.DataFrame()
-                        if not sec_for_stage.empty:
-                            stg_id = sec_for_stage.iloc[0].get("stage_id", "")
-                            if stg_id:
-                                stg_match = stages[stages["stage_id"] == stg_id]
-                                if not stg_match.empty:
-                                    stage_name_card = stg_match.iloc[0].get("stage_name", "")
                     
                     st.markdown(f"""
                     <div class='user-card' id='card-{mid}'>
@@ -5301,7 +5372,10 @@ def show_members_cards_page(db):
                             </div>
                         </div>
                         <div class='student-info-row' style='margin-top:0.8rem;'>
-                            <span>🏫 {section_name if section_name else '—'} {('| 📚 ' + stage_name_card) if stage_name_card else ''}</span>
+                            <span>📚 المرحلة: <strong>{stage_display if stage_display else '—'}</strong></span>
+                        </div>
+                        <div class='student-info-row'>
+                            <span>🏫 {section_name if section_name else '—'}</span>
                         </div>
                         <div class='student-info-row'>
                             <span>🆔 الكود: <strong dir='ltr'>{student_code if student_code else '—'}</strong></span>
@@ -5321,7 +5395,7 @@ def show_members_cards_page(db):
                             "full_name": full_name,
                             "student_code": student_code,
                             "student_password": student_password
-                        }, section_name)
+                        }, section_name, stage_display)
                         st.download_button(
                             label="📷 تحميل بطاقة QR",
                             data=qr_bytes,
@@ -5331,7 +5405,7 @@ def show_members_cards_page(db):
                             key=f"qr_dl_{mid}"
                         )
                 else:
-                    # User card - show name, phone, section
+                    # User card - show name, phone, section + المرحلة لكل الأعضاء
                     email = m.get("email", "")
                     st.markdown(f"""
                     <div class='user-card' id='card-{mid}'>
@@ -5345,6 +5419,9 @@ def show_members_cards_page(db):
                             </div>
                         </div>
                         <div class='student-info-row' style='margin-top:0.8rem;'>
+                            <span>📚 المرحلة: <strong>{stage_display if stage_display else '—'}</strong></span>
+                        </div>
+                        <div class='student-info-row'>
                             <span>📱 {phone if phone else '—'}</span>
                         </div>
                         <div class='student-info-row'>
@@ -5435,6 +5512,22 @@ def show_members_cards_page(db):
                             current_sec = sec_id if sec_id in sec_options else (sec_options[0] if sec_options else "")
                             edit_section = st.selectbox("الفصل", sec_options, index=sec_options.index(current_sec) if current_sec in sec_options else 0, format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0]) if sec_options else ""
                             
+                            # خانة المرحلة — متاحة لجميع أنواع الأعضاء ومرتبطة بنظام المراحل الموجود
+                            stage_ids_edit = stages["stage_id"].tolist() if not stages.empty else []
+                            eff_stage_id_edit = resolve_member_stage_id(m.get("stage_id", ""), sec_id, sections)
+                            stage_choices_edit = [""] + stage_ids_edit
+                            stage_index_edit = stage_choices_edit.index(eff_stage_id_edit) if eff_stage_id_edit in stage_choices_edit else 0
+                            edit_stage = st.selectbox(
+                                "المرحلة",
+                                stage_choices_edit,
+                                index=stage_index_edit,
+                                format_func=lambda x: "— بدون مرحلة —" if x == "" else (
+                                    stages[stages.stage_id == x]["stage_name"].values[0]
+                                    if not stages.empty and x in stages["stage_id"].values else x
+                                ),
+                                key=f"edit_stage_{mid}"
+                            ) if stage_ids_edit else ""
+                            
                             # Student specific fields
                             edit_parent_phone = ""
                             edit_birthdate = None
@@ -5462,10 +5555,11 @@ def show_members_cards_page(db):
                                         "address": edit_address,
                                         "school": edit_school,
                                         "notes": edit_notes,
-                                        "status": "active" if edit_status == "نشطة" else "inactive"
+                                        "status": "active" if edit_status == "نشطة" else "inactive",
+                                        "stage_id": edit_stage
                                     })
                                 else:
-                                    db.update_user(mid, {"full_name": edit_name, "phone": edit_phone, "email": edit_email, "section_id": edit_section})
+                                    db.update_user(mid, {"full_name": edit_name, "phone": edit_phone, "email": edit_email, "section_id": edit_section, "stage_id": edit_stage})
                                 db.add_log(user.get("user_id", ""), "تعديل عضو", f"تم تعديل {edit_name}")
                                 st.session_state[f"edit_mode_{mid}"] = False
                                 st.success("✅ تم التحديث")
@@ -5482,6 +5576,19 @@ def show_members_cards_page(db):
             new_section_id = ""
             if not sections.empty:
                 new_section_id = st.selectbox("الفصل", sections["section_id"], format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0])
+            
+            # خانة المرحلة — متاحة لجميع أنواع الأعضاء الجدد ومرتبطة بنظام المراحل الموجود
+            new_stage_id = ""
+            if not stages.empty:
+                new_stage_id = st.selectbox(
+                    "المرحلة",
+                    [""] + stages["stage_id"].tolist(),
+                    format_func=lambda x: "— بدون مرحلة —" if x == "" else (
+                        stages[stages.stage_id == x]["stage_name"].values[0]
+                        if x in stages["stage_id"].values else x
+                    ),
+                    key="add_member_stage"
+                )
             
             # Student specific fields
             new_parent_phone = ""
@@ -5515,7 +5622,8 @@ def show_members_cards_page(db):
                             "school": new_school,
                             "notes": new_notes,
                             "status": "active" if new_status == "نشطة" else "inactive",
-                            "created_by": user_id
+                            "created_by": user_id,
+                            "stage_id": new_stage_id
                         }
                         db.add_student(student_data)
                     else:
@@ -5528,7 +5636,8 @@ def show_members_cards_page(db):
                             "full_name": new_name.strip(),
                             "section_id": new_section_id,
                             "phone": new_phone,
-                            "email": ""
+                            "email": "",
+                            "stage_id": new_stage_id
                         })
                     db.add_log(user.get("user_id", ""), "إضافة عضو", f"تمت إضافة {new_name}")
                     st.success("✅ تمت الإضافة بنجاح")
@@ -8033,10 +8142,10 @@ def generate_qr_image(data: str, size: int = 250) -> Image.Image:
     return img
 
 
-def generate_student_id_card(student: dict, section_name: str) -> bytes:
+def generate_student_id_card(student: dict, section_name: str, stage_name: str = "") -> bytes:
     """
     Generate a vertical student ID card (600x900) as PNG bytes.
-    Contains: header, name, code, section, QR code, footer.
+    Contains: header, name, code, section, stage, QR code, footer.
     """
     width, height = 600, 900
     img = Image.new('RGB', (width, height), color='white')
@@ -8070,24 +8179,30 @@ def generate_student_id_card(student: dict, section_name: str) -> bytes:
     
     # Student Name
     full_name = student.get("full_name", "غير معروف")
-    y_pos = 160
+    y_pos = 150
     draw.text((width // 2, y_pos), full_name, fill="#0f172a", font=font_name, anchor="mm")
     
     # Student Code
-    y_pos = 260
+    y_pos = 240
     student_code = student.get("student_code", "")
     code_text = f"الكود: {student_code}"
     draw.text((width // 2, y_pos), code_text, fill="#64748b", font=font_info, anchor="mm")
     
     # Section Name
-    y_pos = 320
+    y_pos = 295
     section_text = f"الفصل: {section_name if section_name else 'غير محدد'}"
     draw.text((width // 2, y_pos), section_text, fill="#64748b", font=font_info, anchor="mm")
+    
+    # Stage Name (المرحلة)
+    if stage_name:
+        y_pos = 345
+        stage_text = f"المرحلة: {stage_name}"
+        draw.text((width // 2, y_pos), stage_text, fill="#64748b", font=font_info, anchor="mm")
     
     # QR Code
     qr_data = f"SCODE:{student.get('student_code', '')}|PWD:{student.get('student_password', '')}"
     qr_img = generate_qr_image(qr_data, size=250)
-    qr_y = 400
+    qr_y = 410
     img.paste(qr_img, ((width - 250) // 2, qr_y))
     
     # Footer
@@ -8348,15 +8463,8 @@ def render_user_card(user, sections_df=None, stages_df=None, is_selected=False, 
         sec = sections_df[sections_df.section_id == section_id]
         if not sec.empty:
             section_name = sec.iloc[0].get("section_name", "")
-    stage_name = ""
-    if stages_df is not None and not stages_df.empty and section_id:
-        sec = sections_df[sections_df.section_id == section_id] if sections_df is not None else pd.DataFrame()
-        if not sec.empty:
-            stage_id = sec.iloc[0].get("stage_id", "")
-            if stage_id:
-                stage = stages_df[stages_df.stage_id == stage_id]
-                if not stage.empty:
-                    stage_name = stage.iloc[0].get("stage_name", "")
+    # المرحلة الموحدة: تُقرأ من العضو نفسه أولاً ثم من الفصل (نفس مصدر البيانات في كل النظام)
+    stage_name = resolve_member_stage_name(user.get("stage_id", ""), section_id, sections_df, stages_df)
     role_label = {"System Admin": "مدير النظام", "Father Account": "أب كاهن", "Service Manager": "أمين الخدمة", "Teacher": "مدرسة", "Student": "طالبة"}.get(role, role)
     status_label = {"active": "نشط", "inactive": "غير نشط", "suspended": "موقوف", "archived": "مؤرشف"}.get(status, "نشط")
     border = "2px solid #667eea" if is_selected else "1px solid rgba(0,0,0,0.05)"
@@ -8445,6 +8553,10 @@ def show_student_profile(db, student_id):
         if not sec_match.empty:
             section_name = sec_match.iloc[0].get("section_name", "")
     
+    # المرحلة الموحدة للبطاقة الشخصية (نفس مصدر بيانات إدارة الأعضاء)
+    stages_profile = db.get_stages()
+    stage_name_profile = resolve_member_stage_name(student.get("stage_id", ""), sec_id, sections, stages_profile)
+    
     full_name = student.get("full_name", "غير معروف")
     initials = get_initials(full_name)
     status = student.get("status", "active")
@@ -8490,6 +8602,7 @@ def show_student_profile(db, student_id):
             st.markdown(f"**📱 رقم ولي الأمر:** {student.get('parent_phone', '—') or '—'}")
             st.markdown(f"**🎂 تاريخ الميلاد:** {birthdate or '—'}")
         with info_cols[1]:
+            st.markdown(f"**📚 المرحلة:** {stage_name_profile or '—'}")
             st.markdown(f"**🏫 الفصل:** {section_name or '—'}")
             st.markdown(f"**🏫 المدرسة:** {student.get('school', '—') or '—'}")
             st.markdown(f"**📍 العنوان:** {student.get('address', '—') or '—'}")
@@ -8559,6 +8672,22 @@ def show_student_profile(db, student_id):
                                            index=sec_options.index(current_sec) if current_sec in sec_options else 0,
                                            format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0]) if sec_options else ""
                 
+                # خانة المرحلة — مرتبطة بنظام المراحل الموجود مسبقاً
+                stage_ids_prof = stages_profile["stage_id"].tolist() if not stages_profile.empty else []
+                eff_stage_id_prof = resolve_member_stage_id(student.get("stage_id", ""), sec_id, sections)
+                stage_choices_prof = [""] + stage_ids_prof
+                stage_index_prof = stage_choices_prof.index(eff_stage_id_prof) if eff_stage_id_prof in stage_choices_prof else 0
+                edit_stage_profile = st.selectbox(
+                    "المرحلة",
+                    stage_choices_prof,
+                    index=stage_index_prof,
+                    format_func=lambda x: "— بدون مرحلة —" if x == "" else (
+                        stages_profile[stages_profile.stage_id == x]["stage_name"].values[0]
+                        if not stages_profile.empty and x in stages_profile["stage_id"].values else x
+                    ),
+                    key="edit_student_stage_profile"
+                ) if stage_ids_prof else ""
+                
                 edit_status = st.selectbox("الحالة", ["نشطة", "غير نشطة"], index=0 if status == "active" else 1)
                 
                 if st.form_submit_button("💾 حفظ التعديلات"):
@@ -8571,7 +8700,8 @@ def show_student_profile(db, student_id):
                         "address": edit_address,
                         "school": edit_school,
                         "notes": edit_notes,
-                        "status": "active" if edit_status == "نشطة" else "inactive"
+                        "status": "active" if edit_status == "نشطة" else "inactive",
+                        "stage_id": edit_stage_profile
                     })
                     db.add_log(user.get("user_id", ""), "تعديل طالبة", f"تم تعديل {edit_name}")
                     st.session_state.edit_student_id = None
@@ -8601,6 +8731,8 @@ def show_user_profile(db, user_id):
     if not sections.empty:
         sec = sections[sections.section_id == user.get("section_id", "")]
         section_name = sec.iloc[0]["section_name"] if not sec.empty else ""
+    # المرحلة الموحدة للبطاقة الشخصية (نفس مصدر بيانات إدارة الأعضاء)
+    stage_name_uprofile = resolve_member_stage_name(user.get("stage_id", ""), user.get("section_id", ""), sections, stages)
     initials = get_initials(user.get("full_name", ""))
     role = user.get("role", "")
     role_label = {"System Admin": "مدير النظام", "Father Account": "أب كاهن", "Service Manager": "أمين الخدمة", "Teacher": "مدرسة"}.get(role, role)
@@ -8653,6 +8785,7 @@ def show_user_profile(db, user_id):
             st.markdown(f"**📧 البريد:** {user.get('email', '—')}")
         with info_cols[1]:
             st.markdown(f"**🎭 الدور:** {role_label}")
+            st.markdown(f"**📚 المرحلة:** {stage_name_uprofile or '—'}")
             st.markdown(f"**🏫 الفصل:** {section_name or '—'}")
             st.markdown(f"**📌 الحالة:** {status_label}")
             st.markdown(f"**🆔 المعرف:** {user.get('user_id', '')}")
