@@ -10312,14 +10312,24 @@ def _resolve_selected_card_template(card_tpls):
     return row.iloc[0].to_dict() if not row.empty else None
 
 
+def _sync_designer_selection(tpl_id):
+    """مزامنة اختيار قائمة العناصر (Widget) إلى حالة التطبيق (Single Source of Truth)."""
+    w_key = f"designer_widget_{tpl_id}"
+    s_key = f"designer_selected_{tpl_id}"
+    if w_key in st.session_state and st.session_state[w_key] in CARD_ELEMENT_TYPES:
+        st.session_state[s_key] = st.session_state[w_key]
+
+
 def _handle_designer_result(result, tpl_id, elements):
-    """معالجة نتيجة مكوّن المصمم: حفظ المكان أو تحديد العنصر."""
+    """معالجة نتيجة مكوّن المصمم: حفظ المكان أو تحديد العنصر في حالة التطبيق."""
     if not isinstance(result, dict):
         return False, None
     action = str(result.get("action", "") or "").strip()
     key = str(result.get("key", "") or "").strip()
     if not key or key not in CARD_ELEMENT_TYPES:
         return False, None
+
+    state_key = f"designer_selected_{tpl_id}"
 
     if action == "update":
         rect = result.get("rect", {}) or {}
@@ -10342,14 +10352,13 @@ def _handle_designer_result(result, tpl_id, elements):
             "bold": existing.get("bold", False),
         }
         elements[key] = merged
-        sel_key = f"designer_el_{tpl_id}"
-        st.session_state[sel_key] = key
+        # Set only application state — NEVER mutate widget-owned key after widget instantiation
+        st.session_state[state_key] = key
         return True, key
 
     if action == "select":
-        sel_key = f"designer_el_{tpl_id}"
-        if st.session_state.get(sel_key) != key:
-            st.session_state[sel_key] = key
+        if st.session_state.get(state_key) != key:
+            st.session_state[state_key] = key
             return False, "select"
     return False, None
 
@@ -10481,17 +10490,26 @@ def show_card_templates_page(db):
     st.caption(f"العناصر المحددة: {status_line}")
 
     el_options = list(CARD_ELEMENT_TYPES.keys())
-    sel_key = f"designer_el_{tpl_id}"
-    if sel_key not in st.session_state or st.session_state[sel_key] not in el_options:
-        st.session_state[sel_key] = el_options[0]
+    state_key = f"designer_selected_{tpl_id}"
+    widget_key = f"designer_widget_{tpl_id}"
 
-    selected_el = st.selectbox(
+    # Single source of truth initialization
+    if state_key not in st.session_state or st.session_state[state_key] not in el_options:
+        st.session_state[state_key] = el_options[0]
+
+    # Pre-sync application state into widget state before widget instantiation
+    if widget_key not in st.session_state or st.session_state[widget_key] != st.session_state[state_key]:
+        st.session_state[widget_key] = st.session_state[state_key]
+
+    st.selectbox(
         "🧩 اختر العنصر الذي تريد تحديد مكانه",
         el_options,
-        index=el_options.index(st.session_state[sel_key]),
         format_func=lambda k: f"{CARD_ELEMENT_TYPES[k]['label']} {'✅' if k in elements else '—'}",
-        key=sel_key,
+        key=widget_key,
+        on_change=_sync_designer_selection,
+        args=(tpl_id,),
     )
+    selected_el = st.session_state[state_key]
 
     result = card_designer_component(tpl_row, elements, selected_el, tpl_id)
     sig_key = f"designer_last_{tpl_id}"
