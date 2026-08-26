@@ -5411,41 +5411,21 @@ def show_members_cards_page(db):
     st.markdown(f"<p style='text-align:left; color:#666;'>عدد الأعضاء: {len(filtered)}</p>", unsafe_allow_html=True)
 
     if not filtered.empty:
-        # Bulk QR download button for admins
-        if role == "System Admin":
-            st.markdown("### 📷 بطاقات QR للحضور")
-            if st.button("📥 تحميل بطاقات QR للفصل", use_container_width=True, key="bulk_qr_btn"):
-                # Generate QR codes for all students in filtered results
-                students_for_qr = []
-                for _, m in filtered.iterrows():
-                    if m.get("type") == "student":
-                        students_for_qr.append({
-                            "full_name": m.get("full_name", ""),
-                            "student_code": m.get("student_code", ""),
-                            "student_password": m.get("student_password", ""),
-                            "section_id": m.get("section_id", "")
-                        })
-                
-                if students_for_qr:
-                    # Get section name
-                    section_name = ""
-                    if section_filter != "الكل" and not sections.empty:
-                        sec_match = sections[sections.section_id == section_filter]
-                        if not sec_match.empty:
-                            section_name = sec_match.iloc[0].get("section_name", "")
-                    
-                    # Generate A4 QR page
-                    qr_page_bytes = generate_a4_qr_printable_page(students_for_qr[:6], section_name)
-                    st.download_button(
-                        label="💾 تحميل صفحة A4 ببطاقات QR",
-                        data=qr_page_bytes,
-                        file_name=f"QR_cards_{section_name or 'students'}_{get_cairo_now().strftime('%Y-%m-%d')}.png",
-                        mime="image/png",
-                        use_container_width=True,
-                        key="download_qr_a4"
-                    )
-            st.markdown("---")
-        
+        # ☑️ تحديد الكل لإصدار بطاقات جميع الأعضاء الظاهرين (بديل ميزة QR القديمة)
+        _all_mids = [str(m.get("member_id", "")) for _, m in filtered.iterrows()]
+        select_all_cards = st.checkbox(
+            "☑️ تحديد الكل",
+            value=False,
+            key="bulk_select_all",
+            help="تحديد جميع الأعضاء الظاهرين لإصدار بطاقاتهم دفعة واحدة",
+        )
+        _prev_all = st.session_state.get("_bulk_prev_all", False)
+        if select_all_cards != _prev_all:
+            st.session_state["_bulk_prev_all"] = select_all_cards
+            for _amid in _all_mids:
+                st.session_state[f"bulk_sel_{_amid}"] = select_all_cards
+            st.rerun()
+
         cols = st.columns(3)
         for idx, (_, m) in enumerate(filtered.iterrows()):
             col = cols[idx % 3]
@@ -5462,7 +5442,7 @@ def show_members_cards_page(db):
                 status_class = get_status_css_class(status)
 
                 # ☑️ اختيار العضو لإصدار البطاقات بالجملة
-                st.checkbox("☑️ تحديد لإصدار البطاقة", key=f"bulk_sel_{mid}")
+                st.checkbox("☑️ تحديد لإصدار البطاقة", key=f"bulk_sel_{mid}", value=st.session_state.get("bulk_select_all", False))
 
                 section_name = ""
                 if not sections.empty and sec_id:
@@ -5514,22 +5494,6 @@ def show_members_cards_page(db):
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-                    
-                    # QR download button for student card
-                    if student_code:
-                        qr_bytes = generate_student_id_card({
-                            "full_name": full_name,
-                            "student_code": student_code,
-                            "student_password": student_password
-                        }, section_name, stage_display)
-                        st.download_button(
-                            label="📷 تحميل بطاقة QR",
-                            data=qr_bytes,
-                            file_name=f"QR_{full_name}_{student_code}.png",
-                            mime="image/png",
-                            use_container_width=True,
-                            key=f"qr_dl_{mid}"
-                        )
                 else:
                     # User card - show name, phone, section + المرحلة لكل الأعضاء
                     email = m.get("email", "")
@@ -5555,6 +5519,12 @@ def show_members_cards_page(db):
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+
+                # 🪪 بطاقة العضو — بديل ميزة تحميل QR القديمة (يستخدم نفس QR النظام داخل البطاقة)
+                if st.button("🪪 بطاقة العضو", help="إنشاء / تحميل بطاقة العضو PNG", key=f"card_open_{mid}", use_container_width=True):
+                    st.session_state.card_download_member = str(mid)
+                    st.session_state.pop("card_preview_member", None)
+                    st.rerun()
 
                 # Action buttons
                 action_cols = st.columns(5)
@@ -8403,9 +8373,9 @@ def show_events_page(db):
 # PHASE 2 — QR CODE ATTENDANCE SYSTEM (Future Feature — NOT yet active)
 # =============================================================================
 # This module is RESERVED for Phase 2 implementation.
-# The scaffolding (record_qr_attendance, generate_qr_image, generate_student_id_card,
-# generate_a4_qr_printable_page, process_qr_scan, show_qr_scanner_page) is in place,
-# but the full QR attendance system features (encrypted JWT tokens, opening/closing
+# Active helpers kept: record_qr_attendance (Database), generate_qr_image (used by
+# the member card system), show_qr_scanner_page (menu page placeholder).
+# The full QR attendance system features (encrypted JWT tokens, opening/closing
 # times, sound feedback, dashboard widgets, advanced reports) are NOT yet implemented.
 # See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE A: QR CODE ATTENDANCE SYSTEM"
 # =============================================================================
@@ -8419,282 +8389,6 @@ def generate_qr_image(data: str, size: int = 250) -> Image.Image:
     return img
 
 
-def generate_student_id_card(student: dict, section_name: str, stage_name: str = "") -> bytes:
-    """
-    Generate a vertical student ID card (600x900) as PNG bytes.
-    Contains: header, name, code, section, stage, QR code, footer.
-    """
-    width, height = 600, 900
-    img = Image.new('RGB', (width, height), color='white')
-    draw = ImageDraw.Draw(img)
-    
-    # Try to load Arabic font, fallback to default
-    try:
-        font_title = ImageFont.truetype("Cairo-Bold.ttf", 36)
-        font_name = ImageFont.truetype("Cairo-Bold.ttf", 48)
-        font_info = ImageFont.truetype("Cairo-Regular.ttf", 28)
-        font_footer = ImageFont.truetype("Cairo-Bold.ttf", 24)
-    except Exception:
-        try:
-            font_title = ImageFont.truetype("arial.ttf", 36)
-            font_name = ImageFont.truetype("arial.ttf", 48)
-            font_info = ImageFont.truetype("arial.ttf", 28)
-            font_footer = ImageFont.truetype("arial.ttf", 24)
-        except Exception:
-            font_title = ImageFont.load_default()
-            font_name = ImageFont.load_default()
-            font_info = ImageFont.load_default()
-            font_footer = ImageFont.load_default()
-    
-    # Header - Church name
-    header_height = 120
-    draw.rectangle([0, 0, width, header_height], fill="#2563eb")
-    header_text = "كنيسة الشهيدة دميانة"
-    bbox = draw.textbbox((0, 0), header_text, font=font_title)
-    text_width = bbox[2] - bbox[0]
-    draw.text(((width - text_width) // 2, 40), header_text, fill="white", font=font_title)
-    
-    # Student Name
-    full_name = student.get("full_name", "غير معروف")
-    y_pos = 150
-    draw.text((width // 2, y_pos), full_name, fill="#0f172a", font=font_name, anchor="mm")
-    
-    # Student Code
-    y_pos = 240
-    student_code = student.get("student_code", "")
-    code_text = f"الكود: {student_code}"
-    draw.text((width // 2, y_pos), code_text, fill="#64748b", font=font_info, anchor="mm")
-    
-    # Section Name
-    y_pos = 295
-    section_text = f"الفصل: {section_name if section_name else 'غير محدد'}"
-    draw.text((width // 2, y_pos), section_text, fill="#64748b", font=font_info, anchor="mm")
-    
-    # Stage Name (المرحلة)
-    if stage_name:
-        y_pos = 345
-        stage_text = f"المرحلة: {stage_name}"
-        draw.text((width // 2, y_pos), stage_text, fill="#64748b", font=font_info, anchor="mm")
-    
-    # QR Code
-    qr_data = f"SCODE:{student.get('student_code', '')}|PWD:{student.get('student_password', '')}"
-    qr_img = generate_qr_image(qr_data, size=250)
-    qr_y = 410
-    img.paste(qr_img, ((width - 250) // 2, qr_y))
-    
-    # Footer
-    footer_y = 820
-    draw.rectangle([0, footer_y, width, height], fill="#7c3aed")
-    footer_text = "نظام الحضور الذكي"
-    bbox = draw.textbbox((0, 0), footer_text, font=font_footer)
-    text_width = bbox[2] - bbox[0]
-    draw.text(((width - text_width) // 2, footer_y + 45), footer_text, fill="white", font=font_footer)
-    
-    # Convert to bytes
-    buf = BytesIO()
-    img.save(buf, format='PNG')
-    buf.seek(0)
-    return buf.getvalue()
-
-
-def generate_a4_qr_printable_page(students_list: list, section_name: str) -> bytes:
-    """
-    Generate A4 landscape page (3508x2480px @ 300dpi) with 6 student QR cards arranged in 2x3 grid.
-    Each cell: student name, section name, QR code (300x300).
-    Return PNG bytes.
-    """
-    # A4 landscape at 300dpi: 3508x2480
-    width, height = 3508, 2480
-    img = Image.new('RGB', (width, height), color='white')
-    draw = ImageDraw.Draw(img)
-    
-    # Try to load fonts
-    try:
-        font_name = ImageFont.truetype("Cairo-Bold.ttf", 60)
-        font_section = ImageFont.truetype("Cairo-Regular.ttf", 48)
-    except Exception:
-        try:
-            font_name = ImageFont.truetype("arial.ttf", 60)
-            font_section = ImageFont.truetype("arial.ttf", 48)
-        except Exception:
-            font_name = ImageFont.load_default()
-            font_section = ImageFont.load_default()
-    
-    # Calculate grid: 2 columns x 3 rows
-    cols, rows = 2, 3
-    cell_width = width // cols
-    cell_height = height // rows
-    
-    for idx, student in enumerate(students_list[:6]):
-        row = idx // cols
-        col = idx % cols
-        
-        x_offset = col * cell_width
-        y_offset = row * cell_height
-        
-        # Draw cell border
-        draw.rectangle([x_offset + 20, y_offset + 20, x_offset + cell_width - 20, y_offset + cell_height - 20], 
-                      outline="#e2e8f0", width=5)
-        
-        # Student Name
-        full_name = student.get("full_name", "غير معروف")
-        y_pos = y_offset + 60
-        bbox = draw.textbbox((0, 0), full_name, font=font_name)
-        text_width = bbox[2] - bbox[0]
-        draw.text((x_offset + (cell_width - text_width) // 2, y_pos), full_name, fill="#0f172a", font=font_name)
-        
-        # Section Name
-        y_pos = y_pos + 80
-        section_text = section_name if section_name else "غير محدد"
-        bbox = draw.textbbox((0, 0), section_text, font=font_section)
-        text_width = bbox[2] - bbox[0]
-        draw.text((x_offset + (cell_width - text_width) // 2, y_pos), section_text, fill="#64748b", font=font_section)
-        
-        # QR Code
-        qr_data = f"SCODE:{student.get('student_code', '')}|PWD:{student.get('student_password', '')}"
-        qr_img = generate_qr_image(qr_data, size=300)
-        qr_x = x_offset + (cell_width - 300) // 2
-        qr_y = y_pos + 100
-        img.paste(qr_img, (qr_x, qr_y))
-    
-    # Convert to bytes
-    buf = BytesIO()
-    img.save(buf, format='PNG')
-    buf.seek(0)
-    return buf.getvalue()
-
-
-def process_qr_scan(db, scanned_raw: str, recorded_by_user_id: str):
-    """
-    Process QR scan data and record attendance.
-    Returns dict with success status and message.
-    """
-    import re
-    print("=" * 60)
-    print("🔹 QR Received 🔹")
-    print(f"[DEBUG] process_qr_scan called")
-    print(f"[DEBUG] scanned_raw: {scanned_raw}")
-    print(f"[DEBUG] recorded_by_user_id: {recorded_by_user_id}")
-    
-    pattern = r"SCODE:(.*?)\|PWD:(.*)"
-    match = re.search(pattern, scanned_raw)
-    
-    if not match:
-        print("[DEBUG] ❌ QR pattern not matched")
-        return {"success": False, "message": "❌ كود QR غير صالح"}
-    
-    parsed_code = match.group(1).strip()
-    parsed_pwd = match.group(2).strip()
-    print(f"[DEBUG] parsed_code: {parsed_code}")
-    print(f"[DEBUG] parsed_pwd: {parsed_pwd}")
-    
-    # Lookup student
-    students = db.get_students()
-    if students.empty:
-        print("[DEBUG] ❌ No students data")
-        return {"success": False, "message": "❌ لا توجد بيانات طالبات"}
-    
-    print(f"[DEBUG] Total students: {len(students)}")
-    
-    # Handle NaN in student_code and student_password
-    codes_clean = students["student_code"].fillna("").astype(str).str.strip()
-    pwds_clean = students["student_password"].fillna("").astype(str).str.strip()
-    
-    student_match = students[
-        (codes_clean == parsed_code) &
-        (pwds_clean == parsed_pwd)
-    ]
-    
-    print("🔹 Student Found 🔹")
-    print(f"[DEBUG] Student match found: {not student_match.empty}")
-    
-    if student_match.empty:
-        print("[DEBUG] ❌ Student not found with code and password")
-        return {"success": False, "message": "❌ كود غير صالح أو كلمة مرور خاطئة"}
-    
-    student = student_match.iloc[0].to_dict()
-    student_id = student.get("student_id", "")
-    student_name = student.get("full_name", "")
-    section_id = student.get("section_id", "")
-    student_status = str(student.get("status", "active")).strip().lower()
-    
-    print(f"[DEBUG] student_id: {student_id}")
-    print(f"[DEBUG] student_name: {student_name}")
-    print(f"[DEBUG] section_id: {section_id}")
-    print(f"[DEBUG] student_status: {student_status}")
-    
-    if student_status != "active":
-        print(f"[DEBUG] ❌ Student not active: {student_status}")
-        return {"success": False, "message": f"⛔ الطالبة {student_name} غير نشطة", "student": student}
-    
-    # Get stage_id from section
-    stage_id = ""
-    sections = db.get_sections()
-    if not sections.empty and section_id:
-        sec_match = sections[sections["section_id"] == section_id]
-        if not sec_match.empty:
-            stage_id = sec_match.iloc[0].get("stage_id", "")
-    
-    print(f"[DEBUG] stage_id: {stage_id}")
-    
-    # Check for duplicate attendance today
-    today = get_cairo_now().strftime("%Y-%m-%d")
-    existing = db.get_attendance_by_date_user(today, student_id)
-    if not existing.empty:
-        qr_attendance = existing[existing["attendance_method"] == "QR_SCAN"]
-        if not qr_attendance.empty:
-            print("[DEBUG] ⚠️ Already recorded today")
-            return {"success": False, "message": "⚠️ تم تسجيل الحضور مسبقاً اليوم", "student": student}
-    
-    print("🔹 Password Matched 🔹")
-    print("🔹 Attendance Writing 🔹")
-    
-    # Record attendance
-    print(f"[DEBUG] Calling record_qr_attendance(student_id={student_id}, student_name={student_name}, section_id={section_id}, stage_id={stage_id}, recorded_by={recorded_by_user_id})")
-    record_result = db.record_qr_attendance(student_id, student_name, section_id, stage_id, recorded_by_user_id)
-    success = record_result.get("success", False)
-    msg = record_result.get("message", "")
-    print(f"[DEBUG] record_qr_attendance result: success={success}, msg={msg}")
-    
-    if success:
-        print("🔹 Attendance Saved 🔹")
-    
-    if success:
-        # Get section name for message
-        section_name = ""
-        if not sections.empty and section_id:
-            sec_match = sections[sections["section_id"] == section_id]
-            if not sec_match.empty:
-                section_name = sec_match.iloc[0].get("section_name", "")
-        
-        # Get stage name
-        stage_name = ""
-        stages = db.get_stages()
-        if not stages.empty and stage_id:
-            stg_match = stages[stages["stage_id"] == stage_id]
-            if not stg_match.empty:
-                stage_name = stg_match.iloc[0].get("stage_name", "")
-        
-        # Add audit log
-        db.add_log(recorded_by_user_id, "تسجيل حضور QR", 
-                   f"الطالبة: {student_name} | الفصل: {section_name}")
-        
-        print(f"[DEBUG] ✅ Attendance recorded successfully for {student_name}")
-        print("=" * 60)
-        
-        return {
-            "success": True, 
-            "message": f"✅ تم تسجيل حضور {student_name} | الفصل: {section_name}",
-            "student": student,
-            "student_name": student_name,
-            "section_name": section_name,
-            "stage_name": stage_name,
-            "time": get_cairo_now().strftime("%Y-%m-%d %I:%M:%S %p")
-        }
-    else:
-        print(f"[DEBUG] ❌ Failed to record attendance: {msg}")
-        print("=" * 60)
-        return {"success": False, "message": f"❌ فشل في تسجيل الحضور: {msg}", "student": student}
 
 
 # =============================================================================
@@ -10241,6 +9935,7 @@ CARD_ELEMENT_TYPES = {
     "name": {"label": "الاسم"},
     "stage": {"label": "المرحلة"},
     "section": {"label": "الفصل"},
+    "qr": {"label": "QR Code"},
     "photo": {"label": "الصورة الشخصية (اختياري)"},
 }
 
@@ -10271,7 +9966,12 @@ def shape_arabic_text(text):
 
 @lru_cache(maxsize=128)
 def _load_font_cached(path, size):
-    return ImageFont.truetype(path, size)
+    # التحميل عبر BytesIO لتجاوز مشكلة PIL مع المسارات غير اللاتينية على Windows
+    try:
+        with open(path, "rb") as f:
+            return ImageFont.truetype(BytesIO(f.read()), size)
+    except Exception:
+        return ImageFont.truetype(path, size)
 
 
 def get_card_font(size, bold=False):
@@ -10361,10 +10061,32 @@ def save_card_template_image(uploaded_file):
     return fname, img.size[0], img.size[1]
 
 
+def _member_qr_image(member):
+    """
+    إرجاع صورة QR العضو المعروفة في النظام (نفس بيانات QR القديمة) لاستخدامها داخل البطاقة.
+    لا يتم إنشاء نظام QR جديد — تُعاد استخدام نفس صيغة البيانات الحالية:
+    الطالبات: SCODE:<student_code>|PWD:<student_password> — باقي الأعضاء: UID:<user_id>.
+    """
+    try:
+        code = str((member or {}).get("student_code", "") or "").strip()
+        pwd = str((member or {}).get("student_password", "") or "").strip()
+        if code and code.lower() != "nan":
+            qr_data = f"SCODE:{code}|PWD:{pwd}"
+        else:
+            uid = str((member or {}).get("user_id", "") or (member or {}).get("student_id", "")
+                      or (member or {}).get("member_id", "") or "").strip()
+            if not uid or uid.lower() == "nan":
+                return None
+            qr_data = f"UID:{uid}"
+        return generate_qr_image(qr_data, size=300)
+    except Exception:
+        return None
+
+
 def build_member_card_data(member, sections_df=None, stages_df=None):
     """
     بناء بيانات البطاقة من بيانات العضو الأصلية في قاعدة البيانات.
-    لا يتم إدخال أي بيانات يدوياً — الاسم/المرحلة/الفصل تُقرأ من مصادرها الحالية.
+    لا يتم إدخال أي بيانات يدوياً — الاسم/المرحلة/الفصل/QR تُقرأ من مصادرها الحالية.
     """
     sec_id = str(member.get("section_id", "") or "").strip()
     section_name = ""
@@ -10380,6 +10102,7 @@ def build_member_card_data(member, sections_df=None, stages_df=None):
         "name": str(member.get("full_name", "") or "").strip() or "—",
         "stage": stage_name or "—",
         "section": section_name or "—",
+        "qr": _member_qr_image(member),
     }
 
 
@@ -10429,6 +10152,21 @@ def render_member_card(template_row, data):
                     px = int(x + (w - ph.width) / 2)
                     py = int(y + (h - ph.height) / 2)
                     img.paste(ph, (px, py))
+                    draw = ImageDraw.Draw(img)
+                except Exception:
+                    pass
+            continue
+
+        # عنصر QR Code — يستخدم صورة QR العضو الموجودة أصلاً في النظام (لا يُنشأ QR جديد)
+        if key == "qr":
+            qr_img = data.get("qr") if isinstance(data, dict) else None
+            if qr_img is not None:
+                try:
+                    side = max(2, int(min(w, h)))
+                    qi = qr_img.convert("RGB").resize((side, side), Image.LANCZOS)
+                    px = int(x + (w - side) / 2)
+                    py = int(y + (h - side) / 2)
+                    img.paste(qi, (px, py))
                     draw = ImageDraw.Draw(img)
                 except Exception:
                     pass
@@ -10750,15 +10488,17 @@ def show_card_templates_page(db):
                 except Exception as e:
                     st.error(f"❌ فشل حفظ المكان: {e}")
 
-    # خصائص العنصر المحدد
+    # خصائص العنصر المحدد (عناصر الصور QR/الصورة لا تحتاج إعدادات خط)
     if selected_el in elements:
         spec = elements[selected_el]
         with st.expander(f"⚙️ خصائص العنصر: {CARD_ELEMENT_TYPES[selected_el]['label']}", expanded=True):
+            if selected_el in ("qr", "photo"):
+                st.caption("🖼️ عنصر صورة — حدد مكانه وحجمه بالماوس فوق التصميم. لا يحتاج إعدادات خط.")
             with st.form(f"el_settings_form_{tpl_id}_{selected_el}"):
                 s1, s2 = st.columns(2)
                 with s1:
-                    fs = st.number_input("حجم الخط", min_value=8, max_value=400, value=int(spec.get("font_size", 36)))
-                    fc = st.color_picker("لون النص", value=str(spec.get("font_color", "#111111")))
+                    fs = st.number_input("حجم الخط", min_value=8, max_value=400, value=int(spec.get("font_size", 36)), disabled=selected_el in ("qr", "photo"))
+                    fc = st.color_picker("لون النص", value=str(spec.get("font_color", "#111111")), disabled=selected_el in ("qr", "photo"))
                 with s2:
                     align_opts = ["center", "right", "left"]
                     al = st.radio(
@@ -10767,9 +10507,10 @@ def show_card_templates_page(db):
                         index=align_opts.index(str(spec.get("align", "center"))) if str(spec.get("align", "center")) in align_opts else 0,
                         format_func=lambda x: {"center": "وسط", "right": "يمين", "left": "يسار"}[x],
                         horizontal=True,
+                        disabled=selected_el in ("qr", "photo"),
                     )
-                    bd = st.checkbox("خط عريض (Bold)", value=bool(spec.get("bold", False)))
-                if st.form_submit_button("💾 حفظ الخصائص", use_container_width=True):
+                    bd = st.checkbox("خط عريض (Bold)", value=bool(spec.get("bold", False)), disabled=selected_el in ("qr", "photo"))
+                if st.form_submit_button("💾 حفظ الخصائص", use_container_width=True, disabled=selected_el in ("qr", "photo")):
                     elements[selected_el].update({
                         "font_size": int(fs), "font_color": fc, "align": al, "bold": bool(bd),
                     })
