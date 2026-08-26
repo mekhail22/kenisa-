@@ -10244,7 +10244,6 @@ def _template_image_data_url(template_row):
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-@st.cache_data(show_spinner=False)
 def _load_card_designer_assets():
     """قراءة أجزاء مكوّن المصمم من ملف card_designer.html الموجود بجانب هذا الملف."""
     import re
@@ -10315,9 +10314,14 @@ def _resolve_selected_card_template(card_tpls):
 
 def _handle_designer_result(result, tpl_id, elements):
     """معالجة نتيجة مكوّن المصمم: حفظ المكان أو تحديد العنصر."""
-    action = result.get("action", "")
-    key = result.get("key", "")
-    if action == "update" and key:
+    if not isinstance(result, dict):
+        return False, None
+    action = str(result.get("action", "") or "").strip()
+    key = str(result.get("key", "") or "").strip()
+    if not key or key not in CARD_ELEMENT_TYPES:
+        return False, None
+
+    if action == "update":
         rect = result.get("rect", {}) or {}
         try:
             rect_norm = {
@@ -10327,7 +10331,7 @@ def _handle_designer_result(result, tpl_id, elements):
                 "h": round(max(0.005, min(1.0, float(rect.get("h", 0)))), 4),
             }
         except (TypeError, ValueError):
-            return False
+            return False, None
         existing = elements.get(key, {})
         merged = {
             "x": rect_norm["x"], "y": rect_norm["y"],
@@ -10338,10 +10342,16 @@ def _handle_designer_result(result, tpl_id, elements):
             "bold": existing.get("bold", False),
         }
         elements[key] = merged
-        return True
-    if action == "select" and key:
-        st.session_state[f"designer_sel_{tpl_id}"] = key
-    return False
+        sel_key = f"designer_el_{tpl_id}"
+        st.session_state[sel_key] = key
+        return True, key
+
+    if action == "select":
+        sel_key = f"designer_el_{tpl_id}"
+        if st.session_state.get(sel_key) != key:
+            st.session_state[sel_key] = key
+            return False, "select"
+    return False, None
 
 
 def show_card_templates_page(db):
@@ -10470,18 +10480,18 @@ def show_card_templates_page(db):
     status_line = " | ".join([f"{CARD_ELEMENT_TYPES[k]['label']} ✅" for k in placed_keys]) or "لا توجد عناصر محددة بعد"
     st.caption(f"العناصر المحددة: {status_line}")
 
-    el_options = [k for k in CARD_ELEMENT_TYPES.keys()]
-    current_el = st.session_state.get(f"designer_sel_{tpl_id}", "")
-    if current_el not in el_options:
-        current_el = el_options[0]
+    el_options = list(CARD_ELEMENT_TYPES.keys())
+    sel_key = f"designer_el_{tpl_id}"
+    if sel_key not in st.session_state or st.session_state[sel_key] not in el_options:
+        st.session_state[sel_key] = el_options[0]
+
     selected_el = st.selectbox(
         "🧩 اختر العنصر الذي تريد تحديد مكانه",
         el_options,
-        index=el_options.index(current_el),
+        index=el_options.index(st.session_state[sel_key]),
         format_func=lambda k: f"{CARD_ELEMENT_TYPES[k]['label']} {'✅' if k in elements else '—'}",
-        key=f"designer_el_{tpl_id}",
+        key=sel_key,
     )
-    st.session_state[f"designer_sel_{tpl_id}"] = selected_el
 
     result = card_designer_component(tpl_row, elements, selected_el, tpl_id)
     sig_key = f"designer_last_{tpl_id}"
@@ -10489,15 +10499,18 @@ def show_card_templates_page(db):
         sig = json.dumps(result, sort_keys=True, ensure_ascii=False)
         if sig != st.session_state.get(sig_key):
             st.session_state[sig_key] = sig
-            changed = _handle_designer_result(result, tpl_id, elements)
-            if changed:
+            changed, res_key = _handle_designer_result(result, tpl_id, elements)
+            if changed and res_key:
                 try:
                     db.update_card_template(tpl_id, {"elements_json": json.dumps(elements, ensure_ascii=False)})
-                    st.success(f"✅ تم حفظ مكان العنصر: {CARD_ELEMENT_TYPES.get(selected_el, {}).get('label', selected_el)}")
+                    lbl = CARD_ELEMENT_TYPES.get(res_key, {}).get("label", res_key)
+                    st.success(f"✅ تم حفظ مكان العنصر: {lbl}")
                     time.sleep(0.5)
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ فشل حفظ المكان: {e}")
+            elif res_key == "select":
+                st.rerun()
 
     # خصائص العنصر المحدد (عناصر الصور QR/الصورة لا تحتاج إعدادات خط)
     if selected_el in elements:
