@@ -9956,12 +9956,23 @@ _CARD_FONT_CANDIDATES_REGULAR = [
 ]
 
 
+# مُشكِّل عربي مُهيأ: الحروف المنفصلة تُترك بالشكل الأساسي (U+0621..U+064A)
+# لأن ملفات Cairo المرفقة مقتطعة (subsetted) وتفتقد أشكال العرض المنفصلة (U+FE80..U+FEF1)
+# بينما تحتوي على كل الحروف الأساسية وأشكال الوصل — هذا الإعداد يمنع ظهور مربعات التوفو.
+_ARABIC_RESHAPER = arabic_reshaper.ArabicReshaper(
+    configuration={"use_unshaped_instead_of_isolated": True}
+)
+
+
 def shape_arabic_text(text):
     """تشكيل النص العربي وترتيبه للعرض الصحيح داخل صور PIL."""
     try:
-        return _bidi_get_display(arabic_reshaper.reshape(str(text)))
+        return _bidi_get_display(_ARABIC_RESHAPER.reshape(str(text)))
     except Exception:
-        return str(text)
+        try:
+            return _bidi_get_display(arabic_reshaper.reshape(str(text)))
+        except Exception:
+            return str(text)
 
 
 @lru_cache(maxsize=128)
