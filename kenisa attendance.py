@@ -2461,15 +2461,8 @@ def student_logout(db=None):
             pass
     student_keys = [
         "student_logged_in", "current_student", "student_dashboard_page", "sidebar_open",
-    ] + ASSESSMENT_SESSION_KEYS + [
-        "quiz_question_index", "quiz_answers", "quiz_end_time", "quiz_attempt_id",
-        "quiz_last_saved_answers", "quiz_confirm_finish", "quiz_start_time",
-        "exam_question_index", "exam_answers", "exam_last_saved_answers", "exam_end_time",
-        "exam_start_time", "exam_questions", "exam_shuffled_options", "exam_attempt_id",
-        "exam_submitted", "exam_submit_time", "exam_result", "exam_confirm_finish",
-        "exam_last_save_time", "quiz_questions_list", "quiz_questions_quiz_id",
         "assessment_questions_type",
-    ]
+    ] + ASSESSMENT_SESSION_KEYS
     for key in student_keys:
         st.session_state.pop(key, None)
     st.rerun()
@@ -7253,7 +7246,7 @@ def show_user_profile(db, user_id):
                 age = now.year - pd.to_datetime(user["birthdate"]).year
                 st.markdown(f"<h3>{age}</h3>", unsafe_allow_html=True)
                 st.markdown("<p>🎂 العمر</p>", unsafe_allow_html=True)
-            except:
+            except Exception:
                 st.markdown("<h3>—</h3>", unsafe_allow_html=True)
                 st.markdown("<p>🎂 العمر</p>", unsafe_allow_html=True)
         else:
