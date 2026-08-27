@@ -17,15 +17,13 @@ import hmac
 import os
 import io
 import zipfile
-from functools import wraps, lru_cache
-import functools
+from functools import lru_cache
 import threading
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import base64
 from io import BytesIO
-import plotly.graph_objects as go
 import plotly.io as pio
 import re
 import html
@@ -46,7 +44,6 @@ else:
 # الإعدادات العامة والثوابت
 # =============================================================================
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
-QUIZ_JWT_SECRET = "StDemianaChurch2025!QuizSecure#Key"
 CACHE_TTL_SECONDS = 600
 # تحديث مدة الجلسة إلى 24 ساعة
 SESSION_TIMEOUT_HOURS = 24
@@ -214,8 +211,9 @@ def get_credentials():
             st.secrets["gcp_service_account"],
             scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
-    except Exception as e:
-        st.error(f"❌ خطأ في بيانات اعتماد Google: {e}")
+    except Exception:
+        st.error("⚠️ بيانات اعتماد Google غير متوفرة أو غير صحيحة.")
+        st.caption("تأكد من إعداد ملف الأسرار (.streamlit/secrets.toml) وتواصل مع مسؤول النظام عند استمرار المشكلة.")
         st.stop()
 
 
@@ -242,25 +240,6 @@ def get_jwt_secret():
 # get sections from users sheet (column "section_id")
 # =============================================================================
 @st.cache_data(ttl=600)
-def get_sections_from_users():
-    """
-    قراءة قائمة الفصول الفريدة من ورقة Users (عمود section_id).
-    ترجع قائمة مرتبة من الفصول غير الفارغة.
-    """
-    try:
-        if 'db_instance' in st.session_state:
-            db_local = st.session_state.db_instance
-            users = db_local.get_users()
-            if not users.empty and "section_id" in users.columns:
-                sections = users["section_id"].dropna().unique().tolist()
-                sections = [s.strip() for s in sections if s and str(s).strip() and str(s).strip().upper() != "N/A"]
-                sections = sorted(set(sections))
-                return sections
-    except Exception:
-        pass
-    return []
-
-
 # =============================================================================
 # helpers: age and colors
 # =============================================================================
@@ -273,24 +252,6 @@ def get_student_age(birthdate):
         return now.year - bd.year - ((now.month, now.day) < (bd.month, bd.day))
     except Exception:
         return None
-
-
-STAGE_COLORS = {
-    "إعدادي": "#28a745",
-    "ثانوي": "#007bff",
-    "جامعي": "#6f42c1",
-    "KG1": "#fd7e14",
-    "KG2": "#e83e8c",
-    "الصف الأول": "#20c997",
-    "default": "#667eea"
-}
-
-
-def get_stage_color(stage_name):
-    for key, color in STAGE_COLORS.items():
-        if key in str(stage_name):
-            return color
-    return STAGE_COLORS["default"]
 
 
 # =============================================================================
@@ -343,533 +304,601 @@ def resolve_member_stage_name(stage_id, section_id, sections_df=None, stages_df=
 def get_design_css():
     """Return the unified premium design system CSS."""
     bg_data_url = f"data:image/jpeg;base64,{BG_IMAGE_BASE64}"
-    return f"""
-    <style id="premium-design-system">
-        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+    return CSS_TEMPLATE.replace("__BG_URL__", bg_data_url)
 
-        /* ===== RTL Setup ===== */
-        html, body {{
-            direction: rtl !important;
-            text-align: right !important;
-        }}
 
-        /* ===== Design Tokens ===== */
-        :root {{
-            --primary: #2563eb;
-            --primary-dark: #1d4ed8;
-            --primary-light: #dbeafe;
-            --secondary: #7c3aed;
-            --bg: #f8fafc;
-            --card: #ffffff;
-            --text: #0f172a;
-            --text-muted: #64748b;
-            --success: #059669;
-            --success-light: #d1fae5;
-            --warning: #d97706;
-            --warning-light: #fef3c7;
-            --danger: #dc2626;
-            --danger-light: #fee2e2;
-            --border: #e2e8f0;
-            --radius: 16px;
-            --radius-sm: 10px;
-            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
-            --font: 'Cairo', sans-serif;
-        }}
+# Unified premium design system (plain string to avoid f-string brace escaping).
+CSS_TEMPLATE = """<style id="premium-design-system">
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap');
 
-        /* ===== Base ===== */
-        html, body {{
-            font-family: var(--font) !important;
-            color: var(--text) !important;
-            background: var(--bg) !important;
-        }}
-        * {{ box-sizing: border-box !important; }}
-        .stApp {{
-            background: transparent !important;
-        }}
-        [data-testid="stAppViewContainer"] {{
-            background-color: #f8fafc !important;
-            background-image: none !important;
-            min-height: 100vh !important;
-        }}
-        /* Hero Banner with Church Image */
-        .hero-banner {{
-            position: relative !important;
-            width: 100% !important;
-            height: 240px !important;
-            border-radius: 18px !important;
-            overflow: hidden !important;
-            margin-bottom: 2rem !important;
-            background: transparent !important;
-        }}
-        .hero-banner::before {{
-            content: '' !important;
-            position: absolute !important;
-            inset: 0 !important;
-            background-image: url('{bg_data_url}') !important;
-            background-position: center center !important;
-            background-repeat: no-repeat !important;
-            background-size: cover !important;
-            z-index: 0 !important;
-        }}
-        .hero-banner::after {{
-            content: '' !important;
-            position: absolute !important;
-            inset: 0 !important;
-            background: rgba(0, 0, 0, 0.65) !important;
-            z-index: 1 !important;
-        }}
-        .hero-content {{
-            position: relative !important;
-            z-index: 3 !important;
-            padding: 2.5rem 3.5rem !important;
-            height: 100% !important;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: center !important;
-            text-align: right !important;
-            align-items: flex-start !important;
-        }}
-        .hero-title {{
-            font-size: 2.1rem !important;
-            font-weight: 800 !important;
-            color: #ffffff !important;
-            margin: 0 !important;
-            text-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
-            line-height: 1.3 !important;
-            font-family: 'Cairo', sans-serif !important;
-        }}
-        .hero-subtitle {{
-            font-size: 1.05rem !important;
-            font-weight: 500 !important;
-            color: rgba(255, 255, 255, 0.9) !important;
-            margin-top: 0.5rem !important;
-            text-shadow: 0 1px 4px rgba(0,0,0,0.3) !important;
-            font-family: 'Cairo', sans-serif !important;
-        }}
-        .block-container, section.main {{
-            position: relative !important;
-            z-index: 1 !important;
-        }}
-        .content-area {{
-            padding: 1.5rem !important;
-            max-width: 1400px !important;
-            margin: 0 auto !important;
-        }}
+/* ===================== 1. DESIGN TOKENS ===================== */
+:root {
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --primary-active: #1e40af;
+    --primary-soft: #eff6ff;
+    --success: #059669;
+    --success-hover: #047857;
+    --success-soft: #ecfdf5;
+    --warning: #d97706;
+    --warning-hover: #b45309;
+    --warning-soft: #fffbeb;
+    --danger: #dc2626;
+    --danger-hover: #b91c1c;
+    --danger-soft: #fef2f2;
+    --violet: #7c3aed;
 
-        /* ===== Typography ===== */
-        h1, h2, h3, h4, h5, h6 {{
-            font-family: var(--font) !important;
-            color: var(--text) !important;
-            letter-spacing: -0.01em !important;
-        }}
-        .main-header {{
-            font-size: 1.75rem !important;
-            font-weight: 800 !important;
-            color: var(--primary) !important;
-            text-align: right !important;
-            margin-bottom: 1.5rem !important;
-            padding: 1rem 1.5rem !important;
-            background: var(--card) !important;
-            border: 1px solid var(--border) !important;
-            border-radius: var(--radius) !important;
-            box-shadow: var(--shadow-md) !important;
-            border-right: 4px solid var(--primary) !important;
-        }}
+    --bg-page: #f1f5f9;
+    --bg-gradient: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+    --card: #ffffff;
+    --text: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
 
-        /* ===== Cards ===== */
-        .glass-card, .user-card, .student-card, .event-card, .profile-stat-card {{
-            background: var(--card) !important;
-            border-radius: var(--radius) !important;
-            border: 1px solid var(--border) !important;
-            box-shadow: var(--shadow-sm) !important;
-            padding: 1.25rem !important;
-            transition: all 0.2s ease !important;
-        }}
-        .glass-card:hover, .user-card:hover, .student-card:hover, .event-card:hover, .profile-stat-card:hover {{
-            box-shadow: var(--shadow-md) !important;
-            transform: translateY(-2px) !important;
-        }}
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --radius-pill: 999px;
 
-        /* ===== Sidebar (RTL - Right Side) ===== */
-        section[data-testid="stSidebar"] {{
-            background: #ffffff !important;
-            border-left: 1px solid var(--border) !important;
-            border-right: none !important;
-            box-shadow: -2px 0 8px rgba(0,0,0,0.05) !important;
-        }}
-        
-        /* Full screen sidebar overlay for mobile */
-        @media (max-width: 768px) {{
-            section[data-testid="stSidebar"] {{
-                position: fixed !important;
-                top: 0 !important;
-                right: 0 !important;
-                width: 100vw !important;
-                height: 100vh !important;
-                max-width: 100vw !important;
-                max-height: 100vh !important;
-                z-index: 999999 !important;
-                border-radius: 0 !important;
-                overflow-y: auto !important;
-                overflow-x: hidden !important;
-            }}
-            .sidebar-backdrop {{
-                position: fixed !important;
-                top: 0 !important;
-                right: 0 !important;
-                width: 100vw !important;
-                height: 100vh !important;
-                background: rgba(0, 0, 0, 0.7) !important;
-                z-index: 999998 !important;
-            }}
-            .nav-btn-container .stButton > button {{
-                font-size: 1rem !important;
-                padding: 1rem 1.2rem !important;
-                min-height: 56px !important;
-            }}
-        }}
-        .sidebar-brand {{
-            display: flex !important;
-            align-items: center !important;
-            gap: 0.75rem !important;
-            padding: 1rem !important;
-            margin-bottom: 0.5rem !important;
-        }}
-        .brand-logo {{
-            width: 44px !important;
-            height: 44px !important;
-            border-radius: 12px !important;
-            background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            font-size: 1.4rem !important;
-            color: white !important;
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
-        }}
-        .brand-text h3 {{
-            font-size: 0.95rem !important;
-            font-weight: 700 !important;
-            color: var(--text) !important;
-            margin: 0 !important;
-        }}
-        .brand-text small {{
-            font-size: 0.7rem !important;
-            color: var(--text-muted) !important;
-        }}
-        .sidebar-user {{
-            display: flex !important;
-            align-items: center !important;
-            gap: 0.75rem !important;
-            padding: 0.75rem !important;
-            background: #f8fafc !important;
-            border-radius: var(--radius-sm) !important;
-            margin-bottom: 1rem !important;
-            border: 1px solid var(--border) !important;
-        }}
-        .user-avatar-lg {{
-            width: 40px !important;
-            height: 40px !important;
-            border-radius: 50% !important;
-            background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            color: white !important;
-            font-weight: 700 !important;
-            font-size: 0.9rem !important;
-            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2) !important;
-        }}
-        .user-info {{
-            display: flex !important;
-            flex-direction: column !important;
-        }}
-        .user-info strong {{
-            font-size: 0.9rem !important;
-            color: var(--text) !important;
-            font-weight: 700 !important;
-        }}
-        .user-info span {{
-            font-size: 0.75rem !important;
-            color: var(--text-muted) !important;
-        }}
-        .sidebar-footer {{
-            padding: 0.5rem !important;
-            margin-top: 1rem !important;
-            border-top: 1px solid var(--border) !important;
-        }}
+    --shadow-xs: 0 1px 2px rgba(15, 23, 42, .05);
+    --shadow-sm: 0 2px 6px rgba(15, 23, 42, .07);
+    --shadow-md: 0 8px 20px -4px rgba(15, 23, 42, .12);
+    --shadow-lg: 0 18px 40px -12px rgba(15, 23, 42, .18);
+    --ring: 0 0 0 4px rgba(37, 99, 235, .16);
 
-        /* ===== Navigation Buttons ===== */
-        .nav-btn-container .stButton > button {{
-            width: 100% !important;
-            text-align: right !important;
-            justify-content: flex-start !important;
-            padding: 0.85rem 1rem !important;
-            font-size: 0.9rem !important;
-            font-weight: 600 !important;
-            border-radius: var(--radius-sm) !important;
-            background: transparent !important;
-            color: var(--text) !important;
-            border: 1px solid transparent !important;
-            transition: all 0.2s ease !important;
-            font-family: var(--font) !important;
-        }}
-        .nav-btn-container .stButton > button:hover {{
-            background: var(--primary-light) !important;
-            border-color: var(--primary) !important;
-            transform: translateX(-4px) !important;
-        }}
-        .nav-btn-container .stButton > button[kind="primary"] {{
-            background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
-            color: white !important;
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
-            border: none !important;
-        }}
-        .nav-btn-container .stButton > button[kind="primary"]:hover {{
-            background: linear-gradient(135deg, var(--primary-dark), var(--secondary)) !important;
-            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4) !important;
-        }}
+    --font: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+}
 
-        /* ===== Buttons ===== */
-        .stButton > button, .stDownloadButton > button {{
-            border-radius: var(--radius-sm) !important;
-            font-family: var(--font) !important;
-            font-weight: 600 !important;
-            transition: all 0.2s ease !important;
-            border: 1px solid var(--border) !important;
-            box-shadow: var(--shadow-sm) !important;
-        }}
-        .stButton > button:hover, .stDownloadButton > button:hover {{
-            transform: translateY(-1px) !important;
-            box-shadow: var(--shadow-md) !important;
-        }}
-        button[kind="primary"], button[kind="primaryFormSubmit"] {{
-            background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
-            color: white !important;
-            border: none !important;
-            box-shadow: var(--shadow-md) !important;
-        }}
+/* ===================== 2. BASE / LAYOUT ===================== */
+html, body {
+    direction: rtl !important;
+    text-align: right !important;
+    font-family: var(--font) !important;
+    color: var(--text) !important;
+    background: var(--bg-page) !important;
+}
+* { box-sizing: border-box !important; }
+.stApp {
+    background: var(--bg-gradient) !important;
+    overflow-x: hidden !important;
+}
+[data-testid="stAppViewContainer"] { overflow-x: hidden !important; }
+.block-container {
+    max-width: 1280px !important;
+    margin-inline: auto !important;
+}
+h1, h2, h3, h4, h5, h6 { letter-spacing: 0 !important; }
+a { color: var(--primary); }
+p { color: var(--text-secondary); }
 
-        /* ===== Inputs ===== */
-        input, textarea, select, .stSelectbox > div, .stTextInput > div {{
-            border-radius: var(--radius-sm) !important;
-            border: 1px solid var(--border) !important;
-            font-family: var(--font) !important;
-            background: var(--card) !important;
-            color: var(--text) !important;
-            box-shadow: var(--shadow-sm) !important;
-        }}
-        input:focus, textarea:focus, select:focus {{
-            border-color: var(--primary) !important;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
-            outline: none !important;
-        }}
-        [data-testid="stTextInput"] label, [data-testid="stSelectbox"] label {{
-            color: var(--text) !important;
-            font-weight: 600 !important;
-            font-size: 0.85rem !important;
-        }}
+/* ===================== 3. BUTTON SYSTEM ===================== */
+.stButton > button,
+[data-testid^="baseButton"],
+[data-testid="stFormSubmitButton"] > button {
+    font-family: var(--font) !important;
+    font-weight: 700 !important;
+    font-size: 0.93rem !important;
+    min-height: 44px !important;
+    padding: 0.5rem 1.25rem !important;
+    border-radius: var(--radius-sm) !important;
+    transition: all .18s ease !important;
+    border: 1.5px solid transparent !important;
+    text-align: center !important;
+    box-shadow: var(--shadow-xs) !important;
+}
+button[kind="primary"], .stButton > button[data-testid="stBaseButton-primary"] {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%) !important;
+    color: #ffffff !important;
+    border: none !important;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, .28) !important;
+}
+button[kind="primary"]:hover, .stButton > button[data-testid="stBaseButton-primary"]:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 22px rgba(37, 99, 235, .38) !important;
+    filter: brightness(1.06) !important;
+    color: #ffffff !important;
+}
+button[kind="primary"]:active, .stButton > button[data-testid="stBaseButton-primary"]:active {
+    transform: translateY(0) scale(.985);
+    filter: brightness(.95) !important;
+}
+button[kind="primary"]:focus-visible, .stButton > button[data-testid="stBaseButton-primary"]:focus-visible {
+    outline: none !important;
+    box-shadow: var(--ring) !important;
+}
+button[kind="secondary"], .stButton > button[data-testid="stBaseButton-secondary"] {
+    background: var(--card) !important;
+    color: var(--text) !important;
+    border: 1.5px solid var(--border-strong) !important;
+}
+button[kind="secondary"]:hover, .stButton > button[data-testid="stBaseButton-secondary"]:hover {
+    border-color: var(--primary) !important;
+    color: var(--primary) !important;
+    background: var(--primary-soft) !important;
+}
+button[kind="secondary"]:active, .stButton > button[data-testid="stBaseButton-secondary"]:active {
+    transform: scale(.985);
+}
+button[kind="tertiary"], .stButton > button[data-testid="stBaseButton-tertiary"] {
+    background: transparent !important;
+    color: var(--primary) !important;
+    box-shadow: none !important;
+}
+button[kind="tertiary"]:hover {
+    background: var(--primary-soft) !important;
+}
+.stButton > button[disabled], button[kind][disabled] {
+    opacity: .55 !important;
+    cursor: not-allowed !important;
+    filter: grayscale(.35) !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
 
-        /* ===== Metrics ===== */
-        div[data-testid="stMetric"] {{
-            background: var(--card) !important;
-            border-radius: var(--radius) !important;
-            padding: 1.25rem !important;
-            border: 1px solid var(--border) !important;
-            box-shadow: var(--shadow-md) !important;
-            text-align: right !important;
-        }}
-        div[data-testid="stMetric"] label {{
-            color: var(--text-muted) !important;
-            font-weight: 600 !important;
-            font-size: 0.85rem !important;
-            text-align: right !important;
-        }}
-        div[data-testid="stMetricValue"] {{
-            color: var(--primary) !important;
-            font-weight: 800 !important;
-            font-size: 1.75rem !important;
-            text-align: right !important;
-        }}
+/* ===================== 4. FORMS & INPUTS ===================== */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stDateInput"] input {
+    background: var(--card) !important;
+    border: 1.5px solid var(--border-strong) !important;
+    border-radius: var(--radius-sm) !important;
+    min-height: 44px !important;
+    padding: .55rem .9rem !important;
+    color: var(--text) !important;
+    font-family: var(--font) !important;
+    transition: all .15s ease !important;
+    box-shadow: var(--shadow-xs) !important;
+}
+[data-testid="stTextInput"] input:focus,
+[data-testid="stNumberInput"] input:focus,
+[data-testid="stTextArea"] textarea:focus,
+[data-testid="stDateInput"] input:focus {
+    border-color: var(--primary) !important;
+    box-shadow: var(--ring) !important;
+    outline: none !important;
+}
+[data-testid="stTextInput"] label,
+[data-testid="stSelectbox"] label,
+[data-testid="stMultiselect"] label,
+[data-testid="stTextArea"] label,
+[data-testid="stNumberInput"] label,
+[data-testid="stRadio"] label,
+[data-testid="stCheckbox"] label,
+[data-testid="stDateInput"] label,
+[data-testid="stTimeInput"] label {
+    font-weight: 700 !important;
+    color: var(--text-secondary) !important;
+    font-size: .88rem !important;
+    margin-bottom: .25rem !important;
+}
+::placeholder { color: #94a3b8 !important; }
+[data-testid="stSelectbox"] > div > div,
+[data-testid="stMultiselect"] > div > div {
+    background: var(--card) !important;
+    border: 1.5px solid var(--border-strong) !important;
+    border-radius: var(--radius-sm) !important;
+    min-height: 44px !important;
+    box-shadow: var(--shadow-xs) !important;
+    transition: all .15s ease !important;
+}
+[data-testid="stSelectbox"] > div > div:hover,
+[data-testid="stMultiselect"] > div > div:hover { border-color: var(--primary) !important; }
+[data-testid="stMultiSelect"] span[data-bas-web="1"],
+[data-testid="stMultiselect"] span[data-bas-web="1"] {
+    background: var(--primary-soft) !important;
+    color: var(--primary-hover) !important;
+    border-radius: var(--radius-pill) !important;
+    font-weight: 600 !important;
+}
+[data-testid="stCheckbox"], [data-testid="stRadio"] { accent-color: var(--primary); }
+[data-testid="stFileUploaderDropzone"] {
+    border: 2px dashed var(--border-strong) !important;
+    border-radius: var(--radius-md) !important;
+    background: #fbfdff !important;
+    transition: all .15s ease !important;
+}
+[data-testid="stFileUploaderDropzone"]:hover {
+    border-color: var(--primary) !important;
+    background: var(--primary-soft) !important;
+}
+[data-testid="stForm"] {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    padding: 1.35rem 1.35rem 1rem !important;
+    box-shadow: var(--shadow-sm) !important;
+}
 
-        /* ===== Tabs ===== */
-        button[data-testid="stTab"] {{
-            border-radius: var(--radius-sm) !important;
-            font-weight: 600 !important;
-            font-size: 0.9rem !important;
-            padding: 0.6rem 1.2rem !important;
-        }}
-        button[data-testid="stTab"][aria-selected="true"] {{
-            color: var(--primary) !important;
-            border-bottom: 3px solid var(--primary) !important;
-        }}
+/* ===================== 5. TABS ===================== */
+[data-testid="stTabs"] [role="tablist"] {
+    gap: .35rem !important;
+    border-bottom: 2px solid var(--border) !important;
+    padding-bottom: 2px !important;
+}
+[data-testid="stTabs"] [role="tab"] {
+    font-family: var(--font) !important;
+    font-weight: 700 !important;
+    font-size: .95rem !important;
+    color: var(--text-muted) !important;
+    background: transparent !important;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
+    padding: .55rem 1rem !important;
+    transition: all .15s ease !important;
+    border: none !important;
+}
+[data-testid="stTabs"] [role="tab"]:hover {
+    color: var(--primary) !important;
+    background: var(--primary-soft) !important;
+}
+[data-testid="stTabs"] [aria-selected="true"] {
+    color: var(--primary-hover) !important;
+    box-shadow: inset 0 -3px 0 var(--primary) !important;
+    background: var(--primary-soft) !important;
+}
 
-        /* ===== Expanders ===== */
-        .streamlit-expanderHeader {{
-            border-radius: var(--radius-sm) !important;
-            font-weight: 700 !important;
-            color: var(--text) !important;
-            background: var(--card) !important;
-            border: 1px solid var(--border) !important;
-        }}
+/* ===================== 6. CARDS / EXPANDERS / METRICS / TABLES ===================== */
+[data-testid="stExpander"] {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-xs) !important;
+    overflow: hidden !important;
+}
+[data-testid="stExpander"] details { border: none !important; }
+[data-testid="stExpander"] summary {
+    padding: .85rem 1.1rem !important;
+    font-weight: 700 !important;
+    font-size: .95rem !important;
+    color: var(--text) !important;
+    transition: background .15s ease !important;
+}
+[data-testid="stExpander"] summary:hover { background: #f8fafc !important; }
+[data-testid="stMetric"] {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    padding: 1rem 1.15rem !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+[data-testid="stMetricLabel"] p { color: var(--text-muted) !important; font-weight: 600 !important; }
+[data-testid="stMetricValue"] { color: var(--text) !important; font-weight: 800 !important; }
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    overflow: hidden !important;
+    box-shadow: var(--shadow-xs) !important;
+}
+div[data-testid="stTable"] { border-radius: var(--radius-md) !important; }
+.table-scroll-wrap { overflow-x: auto !important; max-width: 100% !important; }
 
-        /* ===== DataFrames ===== */
-        .stDataFrame {{
-            background: var(--card) !important;
-            border-radius: var(--radius) !important;
-            border: 1px solid var(--border) !important;
-            box-shadow: var(--shadow-md) !important;
-            direction: rtl !important;
-        }}
+/* ===================== 7. ALERTS ===================== */
+[data-testid="stAlert"] {
+    border-radius: var(--radius-sm) !important;
+    box-shadow: var(--shadow-xs) !important;
+    font-size: .92rem !important;
+}
 
-        /* ===== Alerts ===== */
-        .stSuccess {{
-            background: var(--success-light) !important;
-            border: 1px solid #a7f3d0 !important;
-            color: #065f46 !important;
-            border-radius: var(--radius-sm) !important;
-        }}
-        .stError {{
-            background: var(--danger-light) !important;
-            border: 1px solid #fecaca !important;
-            color: #991b1b !important;
-            border-radius: var(--radius-sm) !important;
-        }}
-        .stWarning {{
-            background: var(--warning-light) !important;
-            border: 1px solid #fde68a !important;
-            color: #92400e !important;
-            border-radius: var(--radius-sm) !important;
-        }}
-        .stInfo {{
-            background: var(--primary-light) !important;
-            border: 1px solid #bfdbfe !important;
-            color: #1e40af !important;
-            border-radius: var(--radius-sm) !important;
-        }}
+/* ===================== 8. HERO BANNER ===================== */
+.hero-banner {
+    position: relative !important;
+    width: 100% !important;
+    height: 230px !important;
+    border-radius: var(--radius-lg) !important;
+    overflow: hidden !important;
+    margin-bottom: 1.75rem !important;
+    background: linear-gradient(120deg, #1d4ed8 0%, #2563eb 45%, #7c3aed 130%) !important;
+    box-shadow: var(--shadow-lg) !important;
+}
+.hero-banner::before {
+    content: '' !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background-image: url('__BG_URL__') !important;
+    background-position: center 30% !important;
+    background-repeat: no-repeat !important;
+    background-size: cover !important;
+    opacity: .32 !important;
+    z-index: 0 !important;
+}
+.hero-banner::after {
+    content: '' !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: linear-gradient(to left, rgba(10, 20, 45, .72) 0%, rgba(10, 20, 45, .28) 100%) !important;
+    z-index: 1 !important;
+}
 
-        /* ===== Badges ===== */
-        .status-badge, .student-badge, .card-badge {{
-            display: inline-block !important;
-            padding: 0.3rem 0.8rem !important;
-            border-radius: 9999px !important;
-            font-size: 0.75rem !important;
-            font-weight: 600 !important;
-        }}
-        .status-badge.active, .student-badge.active, .card-badge.active {{
-            background: var(--success-light) !important;
-            color: #065f46 !important;
-        }}
-        .status-badge.inactive, .student-badge.inactive, .card-badge.inactive {{
-            background: #f1f5f9 !important;
-            color: #475569 !important;
-        }}
-        .role-badge {{
-            display: inline-block !important;
-            padding: 0.25rem 0.7rem !important;
-            border-radius: 9999px !important;
-            font-size: 0.75rem !important;
-            font-weight: 600 !important;
-        }}
-        .role-badge.admin {{
-            background: #ede9fe !important;
-            color: #5b21b6 !important;
-        }}
-        .role-badge.priest {{
-            background: #fef3c7 !important;
-            color: #92400e !important;
-        }}
-        .role-badge.leader {{
-            background: #dbeafe !important;
-            color: #1e40af !important;
-        }}
-        .role-badge.teacher {{
-            background: #fce7f3 !important;
-            color: #9d174d !important;
-        }}
-        .role-badge.student {{
-            background: var(--success-light) !important;
-            color: #065f46 !important;
-        }}
+.hero-content {
+    position: relative !important;
+    z-index: 3 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: flex-start !important;
+    text-align: right !important;
+    padding: 1.75rem 2.75rem !important;
+}
+.hero-title {
+    font-size: 2rem !important;
+    font-weight: 900 !important;
+    color: #ffffff !important;
+    margin: 0 !important;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, .35) !important;
+    line-height: 1.3 !important;
+}
+.hero-subtitle {
+    font-size: 1.02rem !important;
+    font-weight: 500 !important;
+    color: rgba(255, 255, 255, .88) !important;
+    margin: .4rem 0 0 !important;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, .35) !important;
+}
 
-        /* ===== Avatars ===== */
-        .user-avatar, .student-avatar-large {{
-            width: 56px !important;
-            height: 56px !important;
-            border-radius: 50% !important;
-            background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            color: white !important;
-            font-size: 1.2rem !important;
-            font-weight: 700 !important;
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
-        }}
-        .student-avatar-large {{
-            width: 48px !important;
-            height: 48px !important;
-            font-size: 1rem !important;
-        }}
+/* ===================== 9. APP COMPONENTS ===================== */
+.content-area { animation: fadeSlideIn .35s ease-out both; }
+@keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.card {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-sm) !important;
+    padding: 1.25rem !important;
+}
+.stat-card {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-right: 4px solid var(--accent, #2563eb) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-sm) !important;
+    padding: 1.1rem 1.2rem !important;
+    height: 100%;
+    transition: transform .18s ease, box-shadow .18s ease !important;
+}
+.stat-card:hover { transform: translateY(-3px) !important; box-shadow: var(--shadow-md) !important; }
+.stat-card-label {
+    font-size: .82rem !important;
+    font-weight: 700 !important;
+    color: var(--text-muted) !important;
+    margin-bottom: .35rem !important;
+}
+.stat-card-value {
+    font-size: 1.85rem !important;
+    font-weight: 900 !important;
+    color: var(--accent, #2563eb) !important;
+    line-height: 1.15 !important;
+}
+.stat-card-icon {
+    float: left !important;
+    font-size: 1.5rem !important;
+    opacity: .5 !important;
+    line-height: 1 !important;
+}
+.profile-stat-card {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-xs) !important;
+}
+.profile-header {
+    background: linear-gradient(135deg, #1d4ed8, #7c3aed) !important;
+    border-radius: var(--radius-md) !important;
+    padding: 1.25rem 1.5rem !important;
+    color: #ffffff !important;
+    box-shadow: var(--shadow-md) !important;
+    margin-bottom: 1.25rem !important;
+}
+.profile-header * { color: #ffffff !important; }
 
-        /* ===== Profile Header ===== */
-        .profile-header {{
-            background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
-            border-radius: var(--radius) !important;
-            padding: 2rem !important;
-            color: white !important;
-            box-shadow: var(--shadow-lg) !important;
-            margin-bottom: 1.5rem !important;
-        }}
-        .profile-header h1 {{
-            color: white !important;
-        }}
+.empty-state {
+    text-align: center !important;
+    padding: 2.75rem 1rem !important;
+    background: var(--card) !important;
+    border: 1.5px dashed var(--border-strong) !important;
+    border-radius: var(--radius-md) !important;
+    margin: .5rem 0 !important;
+}
+.empty-state-icon { font-size: 2.6rem !important; margin-bottom: .45rem !important; }
+.empty-state-message {
+    font-size: .95rem !important;
+    font-weight: 600 !important;
+    color: var(--text-muted) !important;
+    margin: 0 !important;
+}
+.app-top-bar {
+    direction: rtl;
+    margin-bottom: .6rem;
+    padding-bottom: .35rem;
+    border-bottom: 1px solid var(--border);
+}
+.app-top-bar [data-testid="stButton"] > button {
+    background: var(--card) !important;
+    color: var(--primary) !important;
+    border: 1.5px solid var(--border-strong) !important;
+    border-radius: 999px !important;
+    min-height: 44px !important;
+    font-weight: 700 !important;
+    font-size: .9rem !important;
+    box-shadow: var(--shadow-xs) !important;
+}
+.app-top-bar [data-testid="stButton"] > button:hover {
+    border-color: var(--primary) !important;
+    background: var(--primary-soft) !important;
+}
+.app-top-title-center {
+    text-align: center;
+    font-size: 1.02rem;
+    font-weight: 800;
+    color: var(--text);
+    margin: .7rem 0 .9rem;
+    line-height: 1.45;
+}
+.notif-chip-new {
+    background: var(--danger) !important;
+    color: #fff !important;
+    font-size: .62rem !important;
+    padding: .08rem .5rem !important;
+    border-radius: 999px !important;
+    margin-right: .45rem !important;
+}
+.login-hero-panel {
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #7c3aed 130%);
+    border-radius: 20px;
+    color: #fff;
+    padding: 2.2rem 2rem;
+    min-height: 320px;
+    display: flex; flex-direction: column; justify-content: center;
+    box-shadow: var(--shadow-lg);
+    text-align: right;
+}
+.login-church-name { font-size: 1.9rem; font-weight: 900; margin: 0 0 .35rem; }
+.login-church-tagline { font-size: .95rem; opacity: .92; margin: 0; }
 
-        /* ===== Hide Streamlit Elements ===== */
-        header[data-testid="stHeader"] {{ display: none !important; }}
-        #MainMenu {{ visibility: hidden; }}
-        footer {{ visibility: hidden; }}
-        [data-testid="InputInstructions"] {{ display: none !important; }}
-        [data-testid="stToolbar"],
-        [data-testid="stDeployButton"],
-        [data-testid="stStatusWidget"],
-        [data-testid="baseButton-header"] {{
-            display: none !important;
-            visibility: hidden !important;
-        }}
+/* ===================== 10. SIDEBAR ===================== */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #ffffff 0%, #f4f7fc 100%) !important;
+    border-left: 1px solid var(--border) !important;
+}
+section[data-testid="stSidebar"] .stButton > button {
+    border-radius: var(--radius-sm) !important;
+    min-height: 42px !important;
+    justify-content: flex-start !important;
+    text-align: right !important;
+    box-shadow: none !important;
+}
+section[data-testid="stSidebar"] hr {
+    margin: .6rem 0 !important;
+    border-color: var(--border) !important;
+}
+[data-testid="stPopoverBody"], [data-testid="stPopover"] > button {
+    border-radius: var(--radius-sm) !important;
+    font-family: var(--font) !important;
+}
+div[role="dialog"] {
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-lg) !important;
+    direction: rtl !important;
+}
 
-        /* ===== Scrollbar ===== */
-        ::-webkit-scrollbar {{ width: 8px !important; height: 8px !important; }}
-        ::-webkit-scrollbar-track {{ background: transparent !important; }}
-        ::-webkit-scrollbar-thumb {{ background: #cbd5e1 !important; border-radius: 4px !important; }}
-        ::-webkit-scrollbar-thumb:hover {{ background: var(--primary) !important; }}
+/* ===================== 11. MISC ===================== */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+header[data-testid="stHeader"] { background: transparent !important; }
+[data-testid="InputInstructions"] { display: none !important; }
+[data-testid="stToolbar"],
+[data-testid="stDeployButton"],
+[data-testid="stStatusWidget"],
+[data-testid="baseButton-header"] {
+    display: none !important;
+    visibility: hidden !important;
+}
+::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
+::-webkit-scrollbar-track { background: transparent !important; }
+::-webkit-scrollbar-thumb { background: var(--border-strong) !important; border-radius: 8px !important; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary) !important; }
+hr { border-color: var(--border) !important; margin: 1.1rem 0 !important; }
 
-        /* ===== Responsive ===== */
-        @media (max-width: 768px) {{
-            .content-area {{ padding: 1rem !important; }}
-            .main-header {{ font-size: 1.5rem !important; padding: 1rem !important; }}
-            input, textarea, select, .stButton > button {{
-                font-size: 16px !important;
-                min-height: 44px !important;
-            }}
-            .nav-btn-container .stButton > button {{
-                font-size: 0.85rem !important;
-                padding: 0.6rem 0.8rem !important;
-            }}
-        }}
+/* Brand strip (login) */
+.login-brand-strip {
+    background: linear-gradient(120deg, #1d4ed8 0%, #2563eb 55%, #7c3aed 135%);
+    border-radius: var(--radius-lg);
+    padding: 1.35rem 1.6rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: var(--shadow-lg);
+    color: #fff;
+}
+.login-brand-strip .brand-emoji {
+    font-size: 2.5rem;
+    line-height: 1;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,.3));
+}
+.login-brand-strip .login-church-name { font-size: 1.45rem; }
+.login-brand-strip .login-church-tagline { font-size: .92rem; }
 
-        /* ===== RTL Specific ===== */
-        .stButton > button {{
-            text-align: right !important;
-        }}
-        [data-testid="stSidebar"] .stButton > button {{
-            text-align: right !important;
-        }}
-    </style>
-    """
+/* Sidebar brand & user card */
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    padding: 1rem .4rem;
+    margin-bottom: .6rem;
+    border-bottom: 2px solid var(--border);
+}
+.sidebar-brand .brand-logo {
+    width: 48px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.7rem;
+    background: linear-gradient(135deg, var(--primary), var(--violet));
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+}
+.sidebar-brand h3 { font-size: 1rem !important; font-weight: 800 !important; margin: 0 !important; color: var(--text); }
+.sidebar-brand small { color: var(--text-muted); font-size: .72rem; }
+.sidebar-user {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: .8rem .9rem;
+    margin-bottom: .8rem;
+    box-shadow: var(--shadow-xs);
+}
+.sidebar-user .user-avatar-lg {
+    width: 44px; height: 44px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, var(--primary), var(--violet));
+    color: #fff !important;
+    font-weight: 800;
+    font-size: 1rem;
+}
+.sidebar-user .user-info { display: flex; flex-direction: column; min-width: 0; }
+.sidebar-user .user-info strong { font-size: .92rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-user .user-info span { font-size: .75rem; color: var(--text-muted); }
+.sidebar-nav { display: flex; flex-direction: column; gap: .35rem; }
+.sidebar-nav [data-testid="stButton"] > button { width: 100%; }
+.sidebar-footer { margin-top: auto; padding-top: .8rem; }
+
+/* ===================== 12. RESPONSIVE ===================== */
+@media (max-width: 1024px) {
+    .hero-banner { height: 205px !important; }
+    .hero-title { font-size: 1.7rem !important; }
+    .hero-content { padding: 1.4rem 2rem !important; }
+}
+@media (max-width: 768px) {
+    .block-container { padding-inline: 1rem !important; }
+    .hero-banner { height: 175px !important; border-radius: var(--radius-md) !important; margin-bottom: 1.1rem !important; }
+    .hero-title { font-size: 1.38rem !important; }
+    .hero-subtitle { font-size: .85rem !important; }
+    .hero-content { padding: 1.1rem 1.4rem !important; }
+    input, textarea, select, .stButton > button { font-size: 16px !important; min-height: 44px !important; }
+    .login-hero-panel { padding: 1.6rem 1.3rem; min-height: 210px; border-radius: var(--radius-md); }
+    .login-church-name { font-size: 1.45rem; }
+}
+@media (max-width: 480px) {
+    .hero-banner { height: 150px !important; }
+    .hero-title { font-size: 1.18rem !important; }
+    .app-top-bar [data-testid="stButton"] > button { min-height: 48px !important; font-size: 1rem !important; }
+    .stat-card-value { font-size: 1.55rem !important; }
+    .stat-card { padding: .9rem 1rem !important; }
+    .block-container { padding-inline: .65rem !important; }
+    .login-brand-strip { padding: 1.05rem 1.1rem; gap: .75rem; border-radius: var(--radius-md); }
+    .login-brand-strip .brand-emoji { font-size: 1.9rem; }
+    .login-brand-strip .login-church-name { font-size: 1.15rem; }
+}
+</style>"""
 
 
 def inject_css():
@@ -878,46 +907,8 @@ def inject_css():
 
 
 def inject_top_bar_css():
-    """Styles for the global top bar (Help + Menu buttons)."""
-    st.markdown("""
-    <style>
-    .app-top-bar {
-        direction: rtl;
-        margin-bottom: 0.5rem;
-        padding-bottom: 0.25rem;
-        border-bottom: 1px solid #e5e7eb;
-    }
-    .app-top-bar [data-testid="stButton"] > button {
-        background-color: #2563eb !important;
-        color: #ffffff !important;
-        border: none !important;
-        border-radius: 12px !important;
-        min-height: 48px !important;
-        font-weight: 700 !important;
-        font-size: 0.95rem !important;
-        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22) !important;
-    }
-    .app-top-bar [data-testid="stButton"] > button:hover {
-        background-color: #1d4ed8 !important;
-        color: #ffffff !important;
-    }
-    .app-top-title-center {
-        text-align: center;
-        font-size: 1.05rem;
-        font-weight: 800;
-        color: #0f172a;
-        margin: 0.65rem 0 0.85rem 0;
-        line-height: 1.45;
-    }
-    @media (max-width: 480px) {
-        .app-top-bar [data-testid="stButton"] > button {
-            min-height: 52px !important;
-            font-size: 1rem !important;
-        }
-        .app-top-title-center { font-size: 0.92rem; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    """Top-bar styling lives in the unified design system (CSS_TEMPLATE)."""
+    pass
 
 
 def render_help_center_button():
@@ -987,26 +978,6 @@ def render_admin_top_bar(show_menu_button=False):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-def inject_user_cards_css():
-    """Design system already applies globally — no-op for backwards compat."""
-    pass
-
-
-def inject_students_cards_css():
-    """Design system already applies globally — no-op for backwards compat."""
-    pass
-
-
-def page_header(title, subtitle=""):
-    """Render a premium page header."""
-    return f"""
-    <div class="profile-header">
-        <h1 style="margin:0; font-size:1.5rem; font-weight:800;">{title}</h1>
-        {f'<p style="margin:0.5rem 0 0; opacity:0.9; font-size:0.9rem;">{subtitle}</p>' if subtitle else ''}
-    </div>
-    """
-
-
 def hero_header(title, subtitle=""):
     """Render the reusable hero section with background image."""
     return f"""
@@ -1020,24 +991,24 @@ def hero_header(title, subtitle=""):
 
 
 def empty_state(message, icon="📭"):
-    """Render an empty state message."""
+    """Render a consistent empty-state card."""
     return f"""
-    <div style="text-align:center; padding:3rem 1rem; color:#6b7280;">
-        <div style="font-size:3rem; margin-bottom:0.5rem;">{icon}</div>
-        <p style="font-size:1rem; font-weight:600; margin:0;">{message}</p>
+    <div class="empty-state">
+        <div class="empty-state-icon">{icon}</div>
+        <p class="empty-state-message">{message}</p>
     </div>
     """
 
 
-def stat_card(label, value, icon="📊"):
-    """Render a stat card."""
+def stat_card(label, value, icon="📊", accent="#2563eb"):
+    """Render a dashboard stat card (design-system component)."""
     return f"""
-    <div class="profile-stat-card" style="text-align:center; padding:1.25rem;">
-        <div style="font-size:1.5rem; font-weight:800; color:#1a56db;">{icon} {value}</div>
-        <div style="font-size:0.8rem; color:#6b7280; font-weight:600; margin-top:0.25rem;">{label}</div>
+    <div class="stat-card" style="--accent:{accent};">
+        <div class="stat-card-icon">{icon}</div>
+        <div class="stat-card-label">{label}</div>
+        <div class="stat-card-value">{value}</div>
     </div>
     """
-
 
 
 def under_development_page(title, subtitle, message, button_label="العودة إلى لوحة التحكم", button_key=None, features=None):
@@ -1166,20 +1137,10 @@ def under_development_page(title, subtitle, message, button_label="العودة 
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button(button_label, use_container_width=True, key=button_key or "under_dev_back"):
-        st.session_state.show_exam_portal = False
+    if st.button(button_label, type="primary", use_container_width=True, key=button_key or "under_dev_back"):
+        st.session_state.menu_choice = "🏠 لوحة التحكم"
+        st.session_state.profile_user_id = None
         st.rerun()
-
-
-
-def info_row(label, value):
-    """Render an info row."""
-    return f"""
-    <div style="display:flex; justify-content:space-between; padding:0.5rem 0; border-bottom:1px solid #f3f4f6;">
-        <span style="color:#6b7280; font-size:0.85rem;">{label}</span>
-        <span style="color:#1f2937; font-weight:600; font-size:0.85rem;">{value}</span>
-    </div>
-    """
 
 
 # =============================================================================
@@ -1200,34 +1161,6 @@ def init_data_cache():
         for k in expired_keys:
             del cache[k]
         st.session_state.cache_stats['last_cleanup'] = now
-
-
-def retry_operation(max_retries=5, base_delay=2):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exception = None
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except gspread.exceptions.APIError as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        delay = base_delay * (2 ** attempt)
-                        st.warning(f"⏳ النظام مشغول، جاري المحاولة تاني... (محاولة {attempt+1})")
-                        time.sleep(delay)
-                    else:
-                        st.error("❌ النظام مشغول حالياً، من فضلك انتظر دقيقة وحمّل الصفحة تاني")
-                        raise last_exception
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        time.sleep(base_delay * (2 ** attempt))
-                    else:
-                        raise last_exception
-            return None
-        return wrapper
-    return decorator
 
 
 # =============================================================================
@@ -1298,50 +1231,20 @@ def _parse_user_agent(ua_string):
     return result
 
 
-def _get_screen_size():
-    """
-    محاولة جلب حجم الشاشة باستخدام JavaScript عبر streamlit_js_eval.
-    إذا فشل، نعيد قيمة افتراضية.
-    """
-    try:
-        # استخدم get_page_location أو get_browser_language كطريقة للحصول على معلومات
-        from streamlit_js_eval import get_page_location
-        # لا نستطيع الحصول على screen size مباشرة، لذا نعيد قيمة افتراضية
-        pass
-    except Exception:
-        pass
-    return ""
-
-
 def get_client_info():
     """
     تجميع معلومات العميل: IP، الموقع، المتصفح، نظام التشغيل، نوع الجهاز.
+    تُقرأ بيانات المتصفح من ترويسات الطلب مباشرة (بدون أي جافاسكربت حاجب).
     """
     info = _get_client_ip_and_location()
-    
-    # محاولة الحصول على User-Agent من streamlit_js_eval
     ua_string = ""
     try:
-        from streamlit_js_eval import get_user_agent
-        ua_result = get_user_agent()
-        if ua_result and isinstance(ua_result, str):
-            ua_string = ua_result
-        elif ua_result and isinstance(ua_result, dict):
-            ua_string = ua_result.get("userAgent", "")
+        ua_string = st.context.headers.get("User-Agent", "") or ""
     except Exception:
         pass
-    
-    # إذا لم نتمكن من الحصول على User-Agent من JS، نستخدم طريقة بديلة
-    if not ua_string:
-        try:
-            # محاولة من request headers (قد لا تكون متاحة في Streamlit)
-            ua_string = st.context.headers.get("User-Agent", "") if hasattr(st, 'context') else ""
-        except Exception:
-            pass
-
     parsed = _parse_user_agent(ua_string)
     info.update(parsed)
-    info["screen_size"] = _get_screen_size()
+    info["screen_size"] = ""
     return info
 
 
@@ -1481,8 +1384,6 @@ class Database:
             "EventAttendance": self.EVENT_ATTENDANCE_COLUMNS,
             "ExamQuestions": ["question_id", "exam_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer", "marks"],
             "ExamResults": ["result_id", "exam_id", "student_id", "student_name", "score", "total_marks", "start_time", "submission_time", "answers", "status"],
-            "Homeworks": ["homework_id", "title", "description", "created_by", "section_id", "subject", "due_date", "total_marks", "is_active", "created_at"],
-            "HomeworkSubmissions": ["submission_id", "homework_id", "student_id", "student_name", "section_id", "image_data", "image_name", "submission_note", "status", "grade", "feedback", "submitted_at", "reviewed_by", "reviewed_at"],
             "Notifications": ["notification_id", "user_id", "title", "message", "notification_type", "is_read", "created_at"],
             "CardTemplates": self.CARD_TEMPLATE_COLUMNS,
             "MemberCards": self.MEMBER_CARD_COLUMNS
@@ -1600,13 +1501,6 @@ class Database:
         self._df_to_sheet("StageSupervisors", df, self.STAGE_SUPERVISOR_COLUMNS)
         return True
 
-    def remove_stage_supervisor(self, stage_id, supervisor_id):
-        df = self.get_stage_supervisors()
-        if df.empty:
-            return
-        df = df[~((df["stage_id"] == stage_id) & (df["supervisor_id"] == supervisor_id))]
-        self._df_to_sheet("StageSupervisors", df, self.STAGE_SUPERVISOR_COLUMNS)
-
     def clear_stage_supervisors(self, stage_id):
         df = self.get_stage_supervisors()
         if df.empty:
@@ -1679,63 +1573,6 @@ class Database:
     # --- SectionTeachers (Many-to-Many) ---
     SECTION_TEACHER_COLUMNS = ["assignment_id", "section_id", "teacher_id", "assigned_date"]
 
-    def get_section_teachers(self):
-        return self._sheet_to_df("SectionTeachers")
-
-    def get_teachers_for_section(self, section_id):
-        df = self.get_section_teachers()
-        if df.empty:
-            return []
-        assignments = df[df["section_id"] == section_id]
-        if assignments.empty:
-            return []
-        return assignments["teacher_id"].tolist()
-
-    def get_teacher_names_for_section(self, section_id, users_df=None):
-        t_ids = self.get_teachers_for_section(section_id)
-        if not t_ids:
-            return []
-        if users_df is None or users_df.empty:
-            return t_ids
-        names = []
-        for tid in t_ids:
-            match = users_df[users_df["user_id"] == tid]
-            if not match.empty:
-                names.append(match.iloc[0].get("full_name", tid))
-            else:
-                names.append(tid)
-        return names
-
-    def add_section_teacher(self, section_id, teacher_id):
-        df = self.get_section_teachers()
-        if df.empty:
-            df = pd.DataFrame(columns=self.SECTION_TEACHER_COLUMNS)
-        duplicate = df[(df["section_id"] == section_id) & (df["teacher_id"] == teacher_id)]
-        if not duplicate.empty:
-            return False
-        new_row = {
-            "assignment_id": str(uuid.uuid4()),
-            "section_id": section_id,
-            "teacher_id": teacher_id,
-            "assigned_date": get_cairo_now().strftime("%Y-%m-%d")
-        }
-        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-        self._df_to_sheet("SectionTeachers", df, self.SECTION_TEACHER_COLUMNS)
-        return True
-
-    def remove_section_teacher(self, section_id, teacher_id):
-        df = self.get_section_teachers()
-        if df.empty:
-            return
-        df = df[~((df["section_id"] == section_id) & (df["teacher_id"] == teacher_id))]
-        self._df_to_sheet("SectionTeachers", df, self.SECTION_TEACHER_COLUMNS)
-
-    def clear_section_teachers(self, section_id):
-        df = self.get_section_teachers()
-        if df.empty:
-            return
-        df = df[df["section_id"] != section_id]
-        self._df_to_sheet("SectionTeachers", df, self.SECTION_TEACHER_COLUMNS)
 
     # --- Sections ---
     SECTION_COLUMNS = ["section_id", "section_name", "stage_id", "teacher_id", "leader_id",
@@ -1780,12 +1617,6 @@ class Database:
         df = df[df.section_id != section_id]
         self._df_to_sheet("Sections", df, self.SECTION_COLUMNS)
 
-    def get_sections_by_stage(self, stage_id):
-        df = self.get_sections()
-        if df.empty:
-            return pd.DataFrame()
-        return df[df.stage_id == stage_id]
-
     def get_sections_by_teacher(self, teacher_id):
         df = self.get_sections()
         if df.empty:
@@ -1803,19 +1634,6 @@ class Database:
         if students.empty:
             return 0
         return len(students[students.section_id == section_id])
-
-    def move_students_to_section(self, student_ids, new_section_id):
-        students = self.get_students()
-        if students.empty:
-            return
-        for sid in student_ids:
-            idx = students[students.student_id == sid].index
-            if len(idx) > 0:
-                students.at[idx[0], "section_id"] = new_section_id
-        if "stage_id" not in students.columns:
-            students["stage_id"] = ""
-        self._df_to_sheet("Students", students, ["student_id", "student_code", "student_password", "full_name", "section_id", "teacher_id",
-                                                 "phone", "parent_phone", "birthdate", "address", "notes", "school", "status", "profile_edit_used", "stage_id"])
 
     # --- Students ---
     def get_students(self):
@@ -2127,12 +1945,6 @@ class Database:
                 qdf[col] = ""
         self._df_to_sheet("QuizQuestions", qdf, self.QUIZ_QUESTION_COLUMNS)
 
-    def delete_quiz(self, quiz_id):
-        self.delete_quiz_keep_results(quiz_id)
-        rdf = self._sheet_to_df("QuizResults")
-        rdf = rdf[rdf.quiz_id != quiz_id]
-        self._df_to_sheet("QuizResults", rdf, self.QUIZ_RESULT_COLUMNS)
-
     def get_quiz_questions(self, quiz_id):
         df = self._sheet_to_df("QuizQuestions")
         if df.empty:
@@ -2204,17 +2016,23 @@ class Database:
             df.at[idx[0], "status"] = "submitted"
             self._df_to_sheet("QuizResults", df, self.QUIZ_RESULT_COLUMNS)
 
-    def delete_quiz_result(self, result_id):
-        df = self._sheet_to_df("QuizResults")
-        df = df[df.result_id != result_id]
-        self._df_to_sheet("QuizResults", df, self.QUIZ_RESULT_COLUMNS)
-
     # =====================================================================
     # Audit Log - سجل التدقيق الجديد
     # =====================================================================
     def get_audit_log(self):
         """جلب جميع سجلات التدقيق من ورقة AuditLog."""
         return self._sheet_to_df("AuditLog")
+
+    def _append_row(self, sheet_name, row_values, columns):
+        """إضافة صف واحد بسرعة بدون إعادة كتابة الورقة بالكامل (أداء أفضل للسجلات المتكررة)."""
+        Database._rate_limit()
+        ws = self._get_or_create_worksheet(sheet_name, columns)
+        try:
+            ws.append_row([self._safe_str(v) for v in row_values], value_input_option="USER_ENTERED")
+            self._invalidate_cache(sheet_name)
+            return True
+        except Exception:
+            return False
 
     def add_audit_log(self, action, details="", user_info=None, client_info=None):
         """
@@ -2265,11 +2083,13 @@ class Database:
             "screen_size": client_info.get("screen_size", "")
         }
         
-        df = self.get_audit_log()
-        if df.empty:
-            df = pd.DataFrame(columns=AUDIT_LOG_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([log_entry])], ignore_index=True)
-        self._df_to_sheet("AuditLog", df, AUDIT_LOG_COLUMNS)
+        row = [log_entry.get(col, "") for col in AUDIT_LOG_COLUMNS]
+        if not self._append_row("AuditLog", row, AUDIT_LOG_COLUMNS):
+            df = self.get_audit_log()
+            if df.empty:
+                df = pd.DataFrame(columns=AUDIT_LOG_COLUMNS)
+            df = pd.concat([df, pd.DataFrame([log_entry])], ignore_index=True)
+            self._df_to_sheet("AuditLog", df, AUDIT_LOG_COLUMNS)
         return log_entry["log_id"]
 
     def delete_audit_log(self, log_id):
@@ -2303,10 +2123,6 @@ class Database:
             pass
         return self.add_audit_log(action, details, user_info=user_info, client_info=client_info)
 
-    def delete_log(self, log_id):
-        """للتوافق مع الكود القديم - يحذف من AuditLog."""
-        self.delete_audit_log(log_id)
-
     # --- Events ---
     EVENT_COLUMNS = ["event_id", "event_name", "event_type", "event_date", "event_time",
                      "location", "max_capacity", "description", "created_by", "status"]
@@ -2319,19 +2135,6 @@ class Database:
         if df.empty:
             df = pd.DataFrame(columns=self.EVENT_COLUMNS)
         df = pd.concat([df, pd.DataFrame([event_data])], ignore_index=True)
-        self._df_to_sheet("Events", df, self.EVENT_COLUMNS)
-
-    def update_event(self, event_id, updates):
-        df = self.get_events()
-        idx = df[df.event_id == event_id].index
-        if len(idx) > 0:
-            for k, v in updates.items():
-                df.at[idx[0], k] = self._safe_str(v)
-            self._df_to_sheet("Events", df, self.EVENT_COLUMNS)
-
-    def delete_event(self, event_id):
-        df = self.get_events()
-        df = df[df.event_id != event_id]
         self._df_to_sheet("Events", df, self.EVENT_COLUMNS)
 
     # --- EventRSVP ---
@@ -2348,11 +2151,6 @@ class Database:
         if df.empty:
             df = pd.DataFrame(columns=self.EVENT_RSVP_COLUMNS)
         df = pd.concat([df, pd.DataFrame([rsvp_data])], ignore_index=True)
-        self._df_to_sheet("EventRSVP", df, self.EVENT_RSVP_COLUMNS)
-
-    def delete_event_rsvp(self, rsvp_id):
-        df = self._sheet_to_df("EventRSVP")
-        df = df[df.rsvp_id != rsvp_id]
         self._df_to_sheet("EventRSVP", df, self.EVENT_RSVP_COLUMNS)
 
     # --- EventAttendance ---
@@ -2394,46 +2192,6 @@ class Database:
                 exams[col] = ""
         return exams[self.EXAM_COLUMNS]
 
-    def add_exam(self, exam_data):
-        mapped = {
-            "quiz_id": exam_data.get("exam_id", str(uuid.uuid4())),
-            "title": exam_data.get("title", ""),
-            "description": exam_data.get("description", ""),
-            "created_by": exam_data.get("created_by", ""),
-            "section_id": exam_data.get("section_id", ""),
-            "num_questions": "",
-            "time_limit_minutes": exam_data.get("duration_minutes", "30"),
-            "total_marks": exam_data.get("total_marks", "20"),
-            "expiry_date": exam_data.get("end_date", ""),
-            "quiz_code": "",
-            "password": "",
-            "is_active": exam_data.get("is_active", "True"),
-            "assessment_type": "exam",
-            "stage_id": exam_data.get("stage_id", ""),
-            "chapter_lesson": exam_data.get("chapter_lesson", ""),
-            "exam_date": exam_data.get("exam_date", ""),
-            "start_date": exam_data.get("start_date", ""),
-            "end_date": exam_data.get("end_date", ""),
-            "duration_minutes": exam_data.get("duration_minutes", ""),
-            "passing_score": exam_data.get("passing_score", ""),
-            "is_published": exam_data.get("is_published", "False"),
-            "created_at": exam_data.get("created_at", get_cairo_now().isoformat()),
-        }
-        self.add_quiz(mapped)
-
-    def update_exam(self, exam_id, updates):
-        mapped = {}
-        rename_map = {
-            "exam_id": "quiz_id",
-            "duration_minutes": "time_limit_minutes",
-        }
-        for k, v in updates.items():
-            mapped[rename_map.get(k, k)] = v
-        mapped["assessment_type"] = "exam"
-        self.update_quiz(exam_id, mapped)
-
-    def delete_exam(self, exam_id):
-        self.delete_quiz(exam_id)
 
     def get_exam_questions(self, exam_id=None):
         if not exam_id:
@@ -2449,23 +2207,6 @@ class Database:
         qdf["exam_id"] = qdf["quiz_id"]
         return qdf[self.EXAM_QUESTION_COLUMNS]
 
-    def add_exam_question(self, q_data):
-        mapped = {
-            "question_id": q_data.get("question_id", str(uuid.uuid4())),
-            "quiz_id": q_data.get("exam_id", ""),
-            "question_text": q_data.get("question_text", ""),
-            "question_type": q_data.get("question_type", ""),
-            "option1": q_data.get("option1", ""),
-            "option2": q_data.get("option2", ""),
-            "option3": q_data.get("option3", ""),
-            "option4": q_data.get("option4", ""),
-            "correct_answer": q_data.get("correct_answer", ""),
-            "marks": q_data.get("marks", "1"),
-        }
-        self.add_question(mapped)
-
-    def delete_exam_question(self, question_id):
-        self.delete_question(question_id)
 
     def get_exam_results(self, exam_id=None):
         results = self.get_quiz_results(exam_id).copy() if exam_id else self.get_quiz_results().copy()
@@ -2482,9 +2223,6 @@ class Database:
 
     def submit_exam_attempt(self, result_id, score, answers_json):
         self.submit_quiz_attempt(result_id, score, answers_json)
-
-    def delete_exam_result(self, result_id):
-        self.delete_quiz_result(result_id)
 
     # --- Exam Engine ---
     def grade_exam_attempt(self, exam_id, answers_dict):
@@ -2516,50 +2254,6 @@ class Database:
         score = correct_count  # Each correct answer gets its marks
         return score, total_marks, correct_count, wrong_count
 
-    def calculate_exam_result(self, result_id):
-        """
-        حساب النتيجة النهائية لامتحان.
-        returns: dict with score, total_marks, percentage, grade
-        """
-        df = self.get_exam_results()
-        idx = df[df.result_id == result_id].index
-        if len(idx) == 0:
-            return None
-        
-        row = df.iloc[idx[0]].to_dict()
-        exam_id = row.get("exam_id", row.get("quiz_id", ""))
-        answers_str = row.get("answers", "{}")
-        
-        try:
-            answers = json.loads(answers_str) if answers_str else {}
-        except Exception:
-            answers = {}
-        
-        score, total_marks, correct, wrong = self.grade_exam_attempt(exam_id, answers)
-        
-        percentage = (score / total_marks * 100) if total_marks > 0 else 0
-        
-        # Grade calculation
-        if percentage >= 90:
-            grade = "ممتاز"
-        elif percentage >= 80:
-            grade = "جيد جداً"
-        elif percentage >= 70:
-            grade = "جيد"
-        elif percentage >= 60:
-            grade = "مقبول"
-        else:
-            grade = "راسب"
-        
-        return {
-            "score": score,
-            "total_marks": total_marks,
-            "correct_count": correct,
-            "wrong_count": wrong,
-            "percentage": round(percentage, 1),
-            "grade": grade
-        }
-
     def shuffle_questions(self, exam_id):
         """
         خلط أسئلة الامتحان عشوائياً.
@@ -2572,172 +2266,9 @@ class Database:
         shuffled = questions.sample(frac=1).reset_index(drop=True)
         return shuffled
 
-    def shuffle_options(self, question_row):
-        """
-        خلط خيارات السؤال مع الحفاظ على الإجابة الصحيحة.
-        question_row: dict representing a question
-        returns: dict with shuffled options and correct answer
-        """
-        import random
-        
-        q_type = question_row.get("question_type", "")
-        correct = str(question_row.get("correct_answer", "")).strip()
-        
-        if q_type == "صح وخطأ":
-            # For true/false, don't shuffle
-            return question_row
-        
-        # Get options
-        options = []
-        for i in range(1, 5):
-            opt = question_row.get(f"option{i}", "")
-            if opt and str(opt).strip():
-                options.append(str(opt).strip())
-        
-        if not options:
-            return question_row
-        
-        # Shuffle options
-        random.shuffle(options)
-        
-        # Create new question row
-        new_row = question_row.copy()
-        for i, opt in enumerate(options, 1):
-            new_row[f"option{i}"] = opt
-        
-        # Update correct answer to match shuffled position
-        if correct in options:
-            new_row["correct_answer"] = correct
-        
-        return new_row
-
-    def get_student_exam_stats(self, student_id):
-        """
-        جلب إحصائيات الطالبة في الامتحانات.
-        returns: dict with stats
-        """
-        results = self.get_exam_results()
-        if results.empty:
-            return {
-                "total_exams": 0,
-                "completed_exams": 0,
-                "average_score": 0,
-                "highest_score": 0,
-                "lowest_score": 0,
-                "pass_rate": 0
-            }
-        
-        student_results = results[results["student_id"] == student_id]
-        if student_results.empty:
-            return {
-                "total_exams": 0,
-                "completed_exams": 0,
-                "average_score": 0,
-                "highest_score": 0,
-                "lowest_score": 0,
-                "pass_rate": 0
-            }
-        
-        submitted = student_results[student_results["status"] == "submitted"]
-        total_exams = len(student_results)
-        completed_exams = len(submitted)
-        
-        if completed_exams == 0:
-            return {
-                "total_exams": total_exams,
-                "completed_exams": 0,
-                "average_score": 0,
-                "highest_score": 0,
-                "lowest_score": 0,
-                "pass_rate": 0
-            }
-        
-        scores = pd.to_numeric(submitted["score"], errors="coerce").fillna(0)
-        total_marks = pd.to_numeric(submitted["total_marks"], errors="coerce").fillna(20)
-        
-        # Calculate pass/fail (assuming passing is 50% or more)
-        passing = scores >= (total_marks * 0.5)
-        pass_rate = (passing.sum() / len(scores) * 100) if len(scores) > 0 else 0
-        
-        return {
-            "total_exams": total_exams,
-            "completed_exams": completed_exams,
-            "average_score": round(scores.mean(), 1),
-            "highest_score": round(scores.max(), 1),
-            "lowest_score": round(scores.min(), 1),
-            "pass_rate": round(pass_rate, 1)
-        }
-
-    def get_chapter_tracking(self, exam_id=None):
-        """
-        تتبع الفصول/المواضيع في الامتحانات.
-        returns: DataFrame with chapter tracking info
-        """
-        questions = self.get_exam_questions()
-        if questions.empty:
-            return pd.DataFrame()
-        
-        if exam_id:
-            questions = questions[questions["exam_id"] == exam_id]
-        
-        # Group by question_type (can be extended to actual chapters)
-        tracking = questions.groupby("question_type").agg({
-            "question_id": "count",
-            "correct_answer": lambda x: (x != "").sum()
-        }).reset_index()
-        
-        tracking.columns = ["chapter_type", "total_questions", "has_answers"]
-        tracking["completion_rate"] = (tracking["has_answers"] / tracking["total_questions"] * 100).round(1)
-        
-        return tracking
-
-    # --- Homeworks ---
-    HOMEWORK_COLUMNS = ["homework_id", "title", "description", "created_by", "section_id", "subject", "due_date", "total_marks", "is_active", "created_at"]
-
-    def get_homeworks(self):
-        return self._sheet_to_df("Homeworks")
-
-    def add_homework(self, homework_data):
-        df = self.get_homeworks()
-        if df.empty:
-            df = pd.DataFrame(columns=self.HOMEWORK_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([homework_data])], ignore_index=True)
-        self._df_to_sheet("Homeworks", df, self.HOMEWORK_COLUMNS)
-
-    def update_homework(self, homework_id, updates):
-        df = self.get_homeworks()
-        idx = df[df.homework_id == homework_id].index
-        if len(idx) > 0:
-            for k, v in updates.items():
-                df.at[idx[0], k] = self._safe_str(v)
-            self._df_to_sheet("Homeworks", df, self.HOMEWORK_COLUMNS)
-
-    # --- Homework Submissions ---
-    HOMEWORK_SUBMISSION_COLUMNS = [
-        "submission_id", "homework_id", "student_id", "student_name", "section_id",
-        "image_data", "image_name", "submission_note", "status",
-        "grade", "feedback", "submitted_at", "reviewed_by", "reviewed_at"
-    ]
-
-    def get_homework_submissions(self):
-        return self._sheet_to_df("HomeworkSubmissions")
-
-    def add_homework_submission(self, submission_data):
-        df = self.get_homework_submissions()
-        if df.empty:
-            df = pd.DataFrame(columns=self.HOMEWORK_SUBMISSION_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([submission_data])], ignore_index=True)
-        self._df_to_sheet("HomeworkSubmissions", df, self.HOMEWORK_SUBMISSION_COLUMNS)
-
-    def update_homework_submission(self, submission_id, updates):
-        df = self.get_homework_submissions()
-        idx = df[df.submission_id == submission_id].index
-        if len(idx) > 0:
-            for k, v in updates.items():
-                df.at[idx[0], k] = self._safe_str(v)
-            self._df_to_sheet("HomeworkSubmissions", df, self.HOMEWORK_SUBMISSION_COLUMNS)
 
     # --- Notifications ---
+
     NOTIFICATION_COLUMNS = ["notification_id", "user_id", "title", "message", "notification_type", "is_read", "created_at"]
 
     def get_notifications(self, user_id=None):
@@ -2747,11 +2278,13 @@ class Database:
         return df[df.user_id == user_id]
 
     def add_notification(self, notification_data):
-        df = self._sheet_to_df("Notifications")
-        if df.empty:
-            df = pd.DataFrame(columns=self.NOTIFICATION_COLUMNS)
-        df = pd.concat([df, pd.DataFrame([notification_data])], ignore_index=True)
-        self._df_to_sheet("Notifications", df, self.NOTIFICATION_COLUMNS)
+        row = [str(notification_data.get(col, "")) for col in self.NOTIFICATION_COLUMNS]
+        if not self._append_row("Notifications", row, self.NOTIFICATION_COLUMNS):
+            df = self._sheet_to_df("Notifications")
+            if df.empty:
+                df = pd.DataFrame(columns=self.NOTIFICATION_COLUMNS)
+            df = pd.concat([df, pd.DataFrame([notification_data])], ignore_index=True)
+            self._df_to_sheet("Notifications", df, self.NOTIFICATION_COLUMNS)
 
     def mark_notification_read(self, notification_id):
         df = self._sheet_to_df("Notifications")
@@ -2759,6 +2292,25 @@ class Database:
         if len(idx) > 0:
             df.at[idx[0], "is_read"] = "True"
             self._df_to_sheet("Notifications", df, self.NOTIFICATION_COLUMNS)
+
+    def mark_all_notifications_read(self, notification_ids):
+        """تعليم دفعة إشعارات كمقروءة بعملية كتابة واحدة."""
+        ids = {str(i) for i in notification_ids}
+        df = self._sheet_to_df("Notifications")
+        if df.empty or "notification_id" not in df.columns:
+            return
+        mask = df["notification_id"].astype(str).isin(ids)
+        df.loc[mask, "is_read"] = "True"
+        if mask.any():
+            self._df_to_sheet("Notifications", df, self.NOTIFICATION_COLUMNS)
+
+    def delete_notification(self, notification_id):
+        """حذف إشعار واحد."""
+        df = self._sheet_to_df("Notifications")
+        if df.empty:
+            return
+        df = df[df.notification_id != notification_id]
+        self._df_to_sheet("Notifications", df, self.NOTIFICATION_COLUMNS)
 
     # =====================================================================
     # Card Templates & Member Cards (نظام بطاقات التعريف)
@@ -2774,15 +2326,6 @@ class Database:
 
     def get_card_templates(self):
         return self._sheet_to_df("CardTemplates")
-
-    def get_card_template(self, template_id):
-        df = self.get_card_templates()
-        if df.empty or "template_id" not in df.columns:
-            return None
-        match = df[df["template_id"].astype(str) == str(template_id)]
-        if match.empty:
-            return None
-        return match.iloc[0].to_dict()
 
     def add_card_template(self, tpl_data):
         df = self.get_card_templates()
@@ -2858,21 +2401,9 @@ def generate_token(user: dict, secret: str) -> str:
         "user_id": user.get("user_id", ""), "role": user.get("role", ""),
         "full_name": user.get("full_name", ""), "section_id": user.get("section_id", ""),
         "status": user.get("status", "active"),
-        "exp": datetime.utcnow() + timedelta(hours=SESSION_TIMEOUT_HOURS)
+        "exp": datetime.now(timezone.utc) + timedelta(hours=SESSION_TIMEOUT_HOURS)
     }
     return jwt.encode(payload, secret, algorithm="HS256")
-
-
-def generate_quiz_token(quiz_id: str, student_id: str) -> str:
-    payload = {"quiz_id": quiz_id, "student_id": student_id, "exp": datetime.utcnow() + timedelta(hours=48)}
-    return jwt.encode(payload, QUIZ_JWT_SECRET, algorithm="HS256")
-
-
-def verify_quiz_token(token: str):
-    try:
-        return jwt.decode(token, QUIZ_JWT_SECRET, algorithms=["HS256"])
-    except Exception:
-        return None
 
 
 def verify_token(token: str, secret: str):
@@ -2889,13 +2420,9 @@ def verify_token(token: str, secret: str):
 def init_session():
     defaults = {
         "authenticated": False, "user": None, "token": None, "last_login_time": None,
-        "student_quiz": None, "student_quiz_started": False, "quiz_phase": "enter_name",
-        "student_name": "", "student_id": "", "quiz_start_time": None, "quiz_end_time": None,
-        "quiz_submit_time": None, "quiz_token": None, "quiz_answers": {}, "quiz_submitted": False,
-        "last_score": 0, "menu_choice": "🏠 لوحة التحكم", "show_sidebar": True,
-        "open_help_dialog": False, "current_attempt_id": None, "last_saved_answers_str": "",
-        "quiz_questions": None, "show_review": False, "data_errors": [], "data_validated": False,
-        "quiz_load_failures": 0,
+        "menu_choice": "🏠 لوحة التحكم", "show_sidebar": True,
+        "open_help_dialog": False,
+        "data_errors": [], "data_validated": False,
         # Student Dashboard (تسجيل دخول الطالبات)
         "student_logged_in": False, "current_student": None,
         "student_dashboard_page": "🏠 الرئيسية",
@@ -3033,17 +2560,6 @@ VALID_STATUSES = ["active", "inactive", "suspended"]
 EVENT_TYPES = ["اجتماع", "خدمة", "رحلة", "احتفال"]
 RSVP_STATUSES = ["سأحضر", "لن أحضر", "ربما"]
 
-def require_role(required_roles):
-    user = st.session_state.get("user")
-    if not user:
-        return False
-    return user.get("role", "") in required_roles
-
-def check_access(required_roles):
-    if not require_role(required_roles):
-        st.error("🚫 لا تملك الصلاحية للوصول إلى هذه الصفحة")
-        st.stop()
-
 def get_user_status(user_row):
     status = user_row.get("status", "active")
     if pd.isna(status) or str(status).strip() == "":
@@ -3098,30 +2614,6 @@ def filter_students_by_role(students, role, section_id, db=None, user_id=None):
         return students
     else:
         return students
-
-
-def filter_attendance_by_role(attendance, role, section_id, db=None, user_id=None):
-    if role == "Teacher" and section_id:
-        return attendance[attendance.section_id == section_id] if not attendance.empty and "section_id" in attendance.columns else pd.DataFrame()
-    elif role == "Service Manager":
-        if db and user_id:
-            section_ids = get_sections_for_supervisor(db, user_id)
-            if section_ids and not attendance.empty and "section_id" in attendance.columns:
-                return attendance[attendance.section_id.isin(section_ids)]
-        return attendance
-    return attendance
-
-
-def clear_quiz_session_keys():
-    quiz_keys = [
-        "student_quiz", "student_quiz_started", "quiz_phase", "student_name",
-        "student_id", "quiz_start_time", "quiz_end_time", "quiz_submit_time",
-        "quiz_token", "quiz_answers", "quiz_submitted", "last_score",
-        "current_attempt_id", "last_saved_answers_str", "quiz_questions", "show_review"
-    ]
-    for key in quiz_keys:
-        if key in st.session_state:
-            del st.session_state[key]
 
 
 # =============================================================================
@@ -3216,15 +2708,23 @@ def show_initialization(db):
 
 def show_login_page(db, jwt_secret):
     render_login_top_bar()
-    # Hero banner for login page
-    st.markdown(hero_header("نظام إدارة الكنيسة", "كنيسة الشهيدة دميانة"), unsafe_allow_html=True)
+    # Brand strip for login page
+    st.markdown("""
+    <div class="login-brand-strip">
+        <div class="brand-emoji">⛪</div>
+        <div>
+            <div class="login-church-name">نظام إدارة الكنيسة</div>
+            <div class="login-church-tagline">كنيسة الشهيدة دميانة — بوابة الخدمة والافتقاد</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     show_initialization(db)
     tab1, tab2 = st.tabs(["🔐 دخول الخدام", "📝 تسجيل دخول الطالبات"])
     with tab1:
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم", placeholder="أدخل اسم المستخدم").strip()
             password = st.text_input("كلمة المرور", type="password", placeholder="أدخل كلمة المرور").strip()
-            if st.form_submit_button("تسجيل الدخول", use_container_width=True):
+            if st.form_submit_button("تسجيل الدخول", type="primary", use_container_width=True):
                 if not username or not password:
                     st.error("يرجى إدخال اسم المستخدم وكلمة المرور")
                 else:
@@ -3254,45 +2754,45 @@ def show_login_page(db, jwt_secret):
                             else:
                                 db.add_log(user.get("user_id", ""), "محاولة دخول فاشلة", "كلمة مرور خاطئة")
                                 st.error("كلمة المرور غير صحيحة")
-        with tab2:
-            st.subheader("تسجيل دخول الطالبات")
-            st.info("أدخلي كود الطالبة وكلمة المرور الخاصة بكِ للدخول إلى حسابك.")
-            with st.form("student_login_form"):
-                code = st.text_input("كود الطالبة", placeholder="مثال: STU000001").strip()
-                passwd = st.text_input("كلمة مرور الطالبة", type="password", placeholder="").strip()
-                if st.form_submit_button("تسجيل الدخول", use_container_width=True):
-                    if not code or not passwd:
-                        st.error("الرجاء إدخال كود الطالبة وكلمة المرور")
-                    else:
-                        with st.spinner("جاري التحقق..."):
-                            # التأكد من وجود عمود profile_edit_used
-                            try:
-                                db.ensure_student_profile_edit_column()
-                            except Exception:
-                                pass
-                            students = db.get_students()
-                            student_match = students[
-                                (students.student_code.astype(str).str.strip() == code) & 
-                                (students.student_password.astype(str).str.strip() == passwd)
-                            ]
-                            if student_match.empty:
-                                st.error("كود الطالبة أو كلمة المرور غير صحيحة")
+    with tab2:
+        st.subheader("تسجيل دخول الطالبات")
+        st.info("أدخلي كود الطالبة وكلمة المرور الخاصة بكِ للدخول إلى حسابك.")
+        with st.form("student_login_form"):
+            code = st.text_input("كود الطالبة", placeholder="مثال: STU000001").strip()
+            passwd = st.text_input("كلمة مرور الطالبة", type="password", placeholder="").strip()
+            if st.form_submit_button("تسجيل الدخول", type="primary", use_container_width=True):
+                if not code or not passwd:
+                    st.error("الرجاء إدخال كود الطالبة وكلمة المرور")
+                else:
+                    with st.spinner("جاري التحقق..."):
+                        # التأكد من وجود عمود profile_edit_used
+                        try:
+                            db.ensure_student_profile_edit_column()
+                        except Exception:
+                            pass
+                        students = db.get_students()
+                        student_match = students[
+                            (students.student_code.astype(str).str.strip() == code) & 
+                            (students.student_password.astype(str).str.strip() == passwd)
+                        ]
+                        if student_match.empty:
+                            st.error("كود الطالبة أو كلمة المرور غير صحيحة")
+                        else:
+                            student = student_match.iloc[0].to_dict()
+                            student_status = str(student.get("status", "active")).strip().lower()
+                            if student_status != "active":
+                                st.error("🚫 هذا الحساب غير نشط. يرجى التواصل مع مسؤول النظام.")
                             else:
-                                student = student_match.iloc[0].to_dict()
-                                student_status = str(student.get("status", "active")).strip().lower()
-                                if student_status != "active":
-                                    st.error("🚫 هذا الحساب غير نشط. يرجى التواصل مع مسؤول النظام.")
-                                else:
-                                    st.session_state.student_logged_in = True
-                                    st.session_state.current_student = student
-                                    st.session_state.student_dashboard_page = "🏠 الرئيسية"
-                                    st.session_state.sidebar_open = False
-                                    st.session_state.selected_quiz_id = None
-                                    st.session_state.quiz_interface_started = False
-                                    db.add_log(student.get("student_id", ""), "تسجيل دخول طالبة", f"تم تسجيل دخول الطالبة: {student.get('full_name', '')}")
-                                    st.success(f"مرحباً {student.get('full_name', '')}! تم تسجيل الدخول بنجاح.")
-                                    time.sleep(1)
-                                    st.rerun()
+                                st.session_state.student_logged_in = True
+                                st.session_state.current_student = student
+                                st.session_state.student_dashboard_page = "🏠 الرئيسية"
+                                st.session_state.sidebar_open = False
+                                st.session_state.selected_quiz_id = None
+                                st.session_state.quiz_interface_started = False
+                                db.add_log(student.get("student_id", ""), "تسجيل دخول طالبة", f"تم تسجيل دخول الطالبة: {student.get('full_name', '')}")
+                                st.success(f"مرحباً {student.get('full_name', '')}! تم تسجيل الدخول بنجاح.")
+                                time.sleep(1)
+                                st.rerun()
         return 0
 
 
@@ -3312,231 +2812,6 @@ def grade_attempt(db, quiz_id, answers_dict):
     num_q = len(questions)
     score = round((correct_count / num_q) * 20, 1) if num_q > 0 else 0
     return score
-
-
-def save_current_answers(db):
-    if not st.session_state.current_attempt_id:
-        return
-    current_answers = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
-    if current_answers != st.session_state.last_saved_answers_str:
-        db.save_answers(st.session_state.current_attempt_id, st.session_state.quiz_answers)
-        st.session_state.last_saved_answers_str = current_answers
-
-
-def show_student_quiz(db):
-    if st.session_state.quiz_phase in ["taking_quiz", "finished"]:
-        if not st.session_state.get("quiz_token"):
-            st.error("انتهت جلسة الاختبار. يرجى إعادة الدخول.")
-            clear_quiz_session_keys()
-            st.stop()
-        token_data = verify_quiz_token(st.session_state.quiz_token)
-        if token_data is None:
-            st.error("انتهت صلاحية جلسة الاختبار. يرجى إعادة الدخول.")
-            clear_quiz_session_keys()
-            st.stop()
-
-    quiz = st.session_state.student_quiz
-    if st.session_state.quiz_phase == "enter_name":
-        st.title(f"📝 {quiz.get('title', '')}")
-        st.markdown(f"**عدد الأسئلة:** {quiz.get('num_questions', '')} | **الدرجة الكلية:** 20 | **الوقت:** {quiz.get('time_limit_minutes', '')} دقيقة")
-        st.markdown("---")
-        students_df = db.get_students()
-        active_students = students_df[students_df["status"] == "active"] if not students_df.empty else pd.DataFrame()
-        if active_students.empty:
-            st.warning("لا توجد طالبات مسجلات حالياً. يرجى التواصل مع المسؤول.")
-            st.stop()
-        active_students = active_students.sort_values("full_name", key=lambda col: col.str.strip().str.lower())
-        options_dict = dict(zip(active_students["student_id"], active_students["full_name"]))
-        selected_id = st.selectbox(
-            "اختر اسمك من القائمة", options=list(options_dict.keys()),
-            format_func=lambda x: options_dict[x], index=None, placeholder="اختر اسمك..."
-        )
-        if selected_id is not None:
-            student_row = active_students[active_students.student_id == selected_id].iloc[0]
-            sec_id = student_row.get("section_id", "")
-            sections_df = db.get_sections()
-            section_name = ""
-            if not sections_df.empty and sec_id:
-                sec_match = sections_df[sections_df.section_id == sec_id]
-                if not sec_match.empty:
-                    section_name = sec_match.iloc[0].get("section_name", "")
-            if not section_name:
-                section_name = "لم يتم تعيين فصل"
-            st.info(f"أنتِ في فصل: **{section_name}**")
-        st.markdown("---")
-        st.info("إذا لم تجد اسمك في القائمة، يرجى التواصل مع مشرف الخدمة لإضافتك.")
-        if selected_id is not None:
-            existing = db.get_quiz_results(quiz.get("quiz_id"))
-            if not existing.empty:
-                student_attempts = existing[existing["student_id"] == selected_id]
-                if not student_attempts.empty:
-                    attempt = student_attempts.iloc[0]
-                    if attempt.get("status") == "started":
-                        answers_str = attempt.get("answers", "{}")
-                        try:
-                            saved_answers = json.loads(answers_str) if answers_str else {}
-                        except Exception:
-                            saved_answers = {}
-                        score = grade_attempt(db, quiz["quiz_id"], saved_answers)
-                        db.submit_quiz_attempt(attempt["result_id"], score, json.dumps(saved_answers, ensure_ascii=False))
-                        st.warning("تم تسليم محاولتك السابقة تلقائياً بناءً على ما قمت بحفظه.")
-                        st.session_state.last_score = score
-                        st.session_state.quiz_submit_time = get_cairo_now()
-                        st.session_state.quiz_phase = "finished"
-                        st.session_state.quiz_submitted = True
-                        st.session_state.quiz_token = generate_quiz_token(quiz["quiz_id"], selected_id)
-                        st.rerun()
-                    else:
-                        st.error("لقد قمت بتسليم هذا الاختبار بالفعل. لا يمكنك الدخول مرة أخرى.")
-                        st.stop()
-        if st.button("بدء الاختبار", use_container_width=True, disabled=(selected_id is None), key="start_quiz_btn"):
-            selected_student = active_students[active_students["student_id"] == selected_id].iloc[0].to_dict()
-            st.session_state.student_name = selected_student["full_name"]
-            st.session_state.student_id = selected_id
-            st.session_state.quiz_start_time = get_cairo_now()
-            time_limit_seconds = int(quiz.get('time_limit_minutes', 15)) * 60
-            st.session_state.quiz_end_time = st.session_state.quiz_start_time + timedelta(seconds=time_limit_seconds)
-            attempt_id = db.start_quiz_attempt(quiz["quiz_id"], selected_id, st.session_state.student_name)
-            st.session_state.current_attempt_id = attempt_id
-            st.session_state.quiz_answers = {}
-            st.session_state.last_saved_answers_str = ""
-            st.session_state.quiz_questions = None
-            st.session_state.show_review = False
-            st.session_state.quiz_load_failures = 0
-            st.session_state.quiz_token = generate_quiz_token(quiz["quiz_id"], selected_id)
-            st.session_state.quiz_phase = "taking_quiz"
-            st.rerun()
-        return
-
-    elif st.session_state.quiz_phase == "taking_quiz":
-        now = get_cairo_now()
-        if now > st.session_state.quiz_end_time:
-            st.warning("انتهى الوقت المخصص للامتحان. جاري تسليم إجاباتك تلقائياً...")
-            score = grade_attempt(db, quiz["quiz_id"], st.session_state.quiz_answers)
-            answers_json = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
-            db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
-            st.session_state.quiz_submitted = True
-            st.session_state.last_score = score
-            st.session_state.quiz_submit_time = now
-            st.session_state.quiz_phase = "finished"
-            st.rerun()
-
-        if not st.session_state.get("quiz_questions"):
-            try:
-                questions_df = db.get_quiz_questions(quiz["quiz_id"])
-                if questions_df.empty:
-                    st.warning("لا توجد أسئلة في هذا الاختبار بعد.")
-                    return
-                st.session_state.quiz_questions = questions_df.to_dict('records')
-            except Exception:
-                st.error("تعذر تحميل الأسئلة.")
-                return
-        else:
-            questions_df = pd.DataFrame(st.session_state.quiz_questions)
-
-        end_time_iso = st.session_state.quiz_end_time.isoformat()
-        countdown_html = f"""
-        <!DOCTYPE html>
-        <html><head><meta charset="utf-8"><style>
-        body {{ font-family: 'Cairo', sans-serif; margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100%; background: transparent; }}
-        #timer {{ font-size: 1.8rem; font-weight: bold; padding: 1rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; box-shadow: 0 4px 12px rgba(102,126,234,0.4); text-align: center; }}
-        </style></head><body>
-        <div id="timer">⏳ الوقت المتبقي: <span id="time"></span></div>
-        <script>
-        var endTime = new Date("{end_time_iso}").getTime();
-        function update() {{ var now = new Date().getTime(); var dist = endTime - now;
-            if (dist <= 0) {{ document.getElementById('time').innerHTML = "00:00"; parent.postMessage({{type: "QUIZ_TIME_UP"}}, "*"); clearInterval(intervalId); return; }}
-            var mins = Math.floor((dist % (1000*60*60)) / (1000*60)); var secs = Math.floor((dist % (1000*60)) / 1000);
-            document.getElementById('time').innerHTML = (mins<10?'0'+mins:mins) + ":" + (secs<10?'0'+secs:secs); }}
-        update(); var intervalId = setInterval(update, 1000);
-        </script></body></html>
-        """
-        st.components.v1.html(countdown_html, height=80, scrolling=False)
-        st.title(f"📝 {quiz.get('title', '')}")
-        st.markdown(f"الطالبة: **{st.session_state.student_name}** | الدرجة الكلية: 20")
-        st.markdown("---")
-        for idx, row in questions_df.iterrows():
-            q = row.to_dict()
-            q_id = q.get("question_id", "")
-            st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
-            q_type = q.get("question_type", "")
-            prev_answer = st.session_state.quiz_answers.get(q_id, "")
-            if q_type in ["اختيار من متعدد", "صح وخطأ"]:
-                options = [q.get("option1", ""), q.get("option2", ""), q.get("option3", ""), q.get("option4", "")] if q_type == "اختيار من متعدد" else ["صح", "خطأ"]
-                options = [opt for opt in options if opt and str(opt).strip()]
-                if options:
-                    current_index = options.index(prev_answer) if prev_answer in options else None
-                    ans = st.radio("اختر الإجابة", options, key=f"q_{q_id}", index=current_index)
-                    new_answer = ans if ans else ""
-            else:
-                new_answer = st.text_input("الإجابة", key=f"q_{q_id}", value=prev_answer)
-            if new_answer != prev_answer:
-                st.session_state.quiz_answers[q_id] = new_answer
-                save_current_answers(db)
-            st.markdown("---")
-        if st.button("تسليم الاختبار", use_container_width=True, key="submit_quiz_btn"):
-            score = grade_attempt(db, quiz["quiz_id"], st.session_state.quiz_answers)
-            answers_json = json.dumps(st.session_state.quiz_answers, ensure_ascii=False)
-            db.submit_quiz_attempt(st.session_state.current_attempt_id, score, answers_json)
-            st.session_state.quiz_submitted = True
-            st.session_state.last_score = score
-            st.session_state.quiz_submit_time = get_cairo_now()
-            st.session_state.quiz_phase = "finished"
-            st.rerun()
-        return
-
-    elif st.session_state.quiz_phase == "finished":
-        if not st.session_state.get("show_review", False):
-            st.success("تم تسليم الاختبار بنجاح!")
-            score = st.session_state.last_score
-            score_display = int(score) if score.is_integer() else score
-            st.info(f"نتيجتك: {score_display}/20")
-            st.markdown("---")
-            st.markdown("#### ⏱️ معلومات الوقت")
-            col_t1, col_t2 = st.columns(2)
-            with col_t1:
-                st.markdown("**بداية الامتحان:**")
-                st.markdown(format_cairo_time(st.session_state.quiz_start_time))
-            with col_t2:
-                st.markdown("**نهاية الامتحان (التسليم):**")
-                st.markdown(format_cairo_time(st.session_state.quiz_submit_time))
-            col_btn, _ = st.columns([2, 3])
-            if col_btn.button("عرض الإجابات والأخطاء", use_container_width=True, key="show_review_btn"):
-                st.session_state.show_review = True
-                st.rerun()
-            if st.button("إنهاء والعودة إلى الرئيسية", use_container_width=True, key="finish_no_review_btn"):
-                clear_quiz_session_keys()
-                st.rerun()
-        else:
-            st.markdown("## مراجعة الإجابات")
-            if not st.session_state.get("quiz_questions"):
-                questions_df = db.get_quiz_questions(quiz["quiz_id"])
-                if questions_df.empty:
-                    st.warning("لا يمكن تحميل الأسئلة للمراجعة.")
-                else:
-                    st.session_state.quiz_questions = questions_df.to_dict('records')
-            if st.session_state.get("quiz_questions"):
-                questions_df = pd.DataFrame(st.session_state.quiz_questions)
-                student_answers = st.session_state.quiz_answers
-                for idx, row in questions_df.iterrows():
-                    q = row.to_dict()
-                    qid = q.get("question_id", "")
-                    correct = str(q.get("correct_answer", "")).strip().lower()
-                    student_ans = str(student_answers.get(qid, "")).strip().lower()
-                    is_correct = (correct == student_ans)
-                    st.markdown(f"**سؤال {idx+1}:** {q.get('question_text', '')}")
-                    col1, col2 = st.columns(2)
-                    col1.markdown(f"📝 إجابتك: {student_ans if student_ans else 'لم تجب'}")
-                    col2.markdown(f"✅ الإجابة الصحيحة: {correct}")
-                    if is_correct:
-                        st.success("✔️ صحيح")
-                    else:
-                        st.error("❌ خطأ")
-                    st.markdown("---")
-                if st.button("إنهاء المراجعة والعودة إلى الرئيسية", use_container_width=True, key="finish_review_btn"):
-                    clear_quiz_session_keys()
-                    st.rerun()
-        return
 
 
 def show_student_assessment_interface(db):
@@ -3747,16 +3022,6 @@ def show_unified_assessment_taking_interface(db):
             if st.button("❌ تراجع", use_container_width=True, key="assess_no"):
                 st.session_state.assessment_confirm_finish = False
                 st.rerun()
-
-
-def show_student_exam_interface_for_student(db):
-    """Legacy wrapper — redirects to unified assessment interface."""
-    show_unified_assessment_taking_interface(db)
-
-
-def show_student_quiz_interface(db):
-    """Legacy wrapper — redirects to unified assessment interface."""
-    show_unified_assessment_taking_interface(db)
 
 
 # =============================================================================
@@ -4858,11 +4123,6 @@ def show_student_assessments_page(db, student):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-def show_student_competitions_tab(db, student):
-    """Legacy alias — redirects to unified assessments page."""
-    show_student_assessments_page(db, student)
-
-
 def _render_assessment_start_confirmation(db, student, confirmation):
     a_type = confirmation.get("type", "quiz")
     a_id = confirmation.get("id", "")
@@ -5171,36 +4431,16 @@ def show_dashboard(db):
     present_today = len(attendance[(attendance.date == today_str) & (attendance.status == "حاضر")]) if not attendance.empty and "status" in attendance.columns else 0
     absent_today = len(attendance[(attendance.date == today_str) & (attendance.status == "غائب")]) if not attendance.empty and "status" in attendance.columns else 0
     need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty and "regularity_status" in followup.columns else 0
-    # Statistics cards with improved styling
+    # Statistics cards
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.markdown(f"""
-        <div style="background: white; padding: 1.5rem; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: right;">
-            <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem;">عدد الطالبات</div>
-            <div style="font-size: 2rem; font-weight: 800; color: #2563eb;">{total_students}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(stat_card("عدد الطالبات", total_students, "👧", "#2563eb"), unsafe_allow_html=True)
     with col2:
-        st.markdown(f"""
-        <div style="background: white; padding: 1.5rem; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: right;">
-            <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem;">الحضور اليوم</div>
-            <div style="font-size: 2rem; font-weight: 800; color: #059669;">{present_today}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(stat_card("الحضور اليوم", present_today, "✅", "#059669"), unsafe_allow_html=True)
     with col3:
-        st.markdown(f"""
-        <div style="background: white; padding: 1.5rem; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: right;">
-            <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem;">الغياب اليوم</div>
-            <div style="font-size: 2rem; font-weight: 800; color: #dc2626;">{absent_today}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(stat_card("الغياب اليوم", absent_today, "🚫", "#dc2626"), unsafe_allow_html=True)
     with col4:
-        st.markdown(f"""
-        <div style="background: white; padding: 1.5rem; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: right;">
-            <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem;">منقطعات</div>
-            <div style="font-size: 2rem; font-weight: 800; color: #d97706;">{need_follow}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(stat_card("منقطعات تحتاج افتقادًا", need_follow, "💬", "#d97706"), unsafe_allow_html=True)
     st.markdown("#### 📈 الحضور الأسبوعي")
     if not attendance.empty and "date" in attendance.columns and "status" in attendance.columns:
         last_week = get_cairo_now().replace(tzinfo=None) - timedelta(days=7)
@@ -5257,7 +4497,6 @@ def show_dashboard(db):
 # Members Cards Page (Unified)
 # =============================================================================
 def show_members_cards_page(db):
-    inject_user_cards_css()
     st.markdown(hero_header("إدارة الأعضاء", "👥 إدارة جميع الأعضاء والطالبات"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
@@ -5896,25 +5135,14 @@ def show_members_cards_page(db):
 # User Management (Deprecated)
 # =============================================================================
 # DEPRECATED - replaced by show_members_cards_page
-def show_user_management(db):
-    st.warning("⚠️ هذه الصفحة تم استبدالها بصفحة إدارة الأعضاء الموحدة")
-    st.info("يرجى استخدام صفحة 👥 إدارة الأعضاء من القائمة الجانبية")
-
-
 # =============================================================================
 # Students Management (Cards) (Deprecated)
 # =============================================================================
 # DEPRECATED - replaced by show_members_cards_page
-def show_students_cards_page(db):
-    st.warning("⚠️ هذه الصفحة تم استبدالها بصفحة إدارة الأعضاء الموحدة")
-    st.info("يرجى استخدام صفحة 👥 إدارة الأعضاء من القائمة الجانبية")
-
-
 # =============================================================================
 # Stages Management Page (Standalone)
 # =============================================================================
 def show_stages_page(db):
-    inject_user_cards_css()
     st.markdown(hero_header("إدارة المراحل الدراسية", "🏫 إدارة مراحل الدراسة والملاحظات"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
@@ -6013,23 +5241,29 @@ def show_stages_page(db):
                 st.success("تم التحديث")
                 time.sleep(1)
                 st.rerun()
-            if col2.button("حذف المرحلة"):
-                sections_in_stage = sections[sections["stage_id"] == stage_sel] if not sections.empty and "stage_id" in sections.columns else pd.DataFrame()
-                if not sections_in_stage.empty:
-                    st.error("❌ لا يمكن حذف المرحلة لأنها تحتوي على فصول. قم بحذف الفصول أولاً.")
-                else:
-                    db.delete_stage(stage_sel)
-                    db.clear_stage_supervisors(stage_sel)
-                    st.success("تم حذف المرحلة")
-                    time.sleep(1)
-                    st.rerun()
+            if col2.button("🗑️ حذف المرحلة", key=f"del_stage_{stage_sel}"):
+                st.session_state[f"confirm_del_stage_{stage_sel}"] = True
+            if st.session_state.get(f"confirm_del_stage_{stage_sel}"):
+                st.warning("⚠️ هل أنت متأكد من حذف هذه المرحلة؟ لا يمكن التراجع عن هذه العملية.")
+                c_yes, c_no = st.columns(2)
+                if c_yes.button("نعم، حذف نهائي", type="primary", key=f"yes_del_stage_{stage_sel}"):
+                    sections_in_stage = sections[sections["stage_id"] == stage_sel] if not sections.empty and "stage_id" in sections.columns else pd.DataFrame()
+                    if not sections_in_stage.empty:
+                        st.error("❌ لا يمكن حذف المرحلة لأنها تحتوي على فصول. قم بحذف الفصول أولاً.")
+                    else:
+                        db.delete_stage(stage_sel)
+                        db.clear_stage_supervisors(stage_sel)
+                        st.success("تم حذف المرحلة")
+                        time.sleep(1)
+                        st.rerun()
+                if c_no.button("تراجع", key=f"no_del_stage_{stage_sel}"):
+                    st.session_state.pop(f"confirm_del_stage_{stage_sel}", None)
 
 
 # =============================================================================
 # Sections Management Page (Standalone)
 # =============================================================================
 def show_sections_page(db):
-    inject_user_cards_css()
     st.markdown(hero_header("إدارة الفصول", "📚 إدارة بيانات الفصول الدراسية"), unsafe_allow_html=True)
     user = st.session_state.user
     role = user.get("role", "")
@@ -6160,15 +5394,22 @@ def show_sections_page(db):
                             st.success("✅ تم التحديث")
                             time.sleep(1)
                             st.rerun()
-                        if c2.button("حذف الفصل", key=f"delete_sec_{sec_id}"):
-                            section_students = students[students["section_id"] == sec_id] if not students.empty and "section_id" in students.columns else pd.DataFrame()
-                            if not section_students.empty:
-                                st.error("❌ لا يمكن حذف الفصل لأنه يحتوي على طالبات. قم بنقل الطالبات أولاً.")
-                            else:
-                                db.delete_section(sec_id)
-                                st.success("✅ تم الحذف")
-                                time.sleep(1)
-                                st.rerun()
+                        if c2.button("🗑️ حذف الفصل", key=f"delete_sec_{sec_id}"):
+                            st.session_state[f"confirm_del_sec_{sec_id}"] = True
+                        if st.session_state.get(f"confirm_del_sec_{sec_id}"):
+                            st.warning("⚠️ هل أنت متأكد من حذف هذا الفصل؟ لا يمكن التراجع.")
+                            d_yes, d_no = st.columns(2)
+                            if d_yes.button("نعم، حذف نهائي", type="primary", key=f"yes_del_sec_{sec_id}"):
+                                section_students = students[students["section_id"] == sec_id] if not students.empty and "section_id" in students.columns else pd.DataFrame()
+                                if not section_students.empty:
+                                    st.error("❌ لا يمكن حذف الفصل لأنه يحتوي على طالبات. قم بنقل الطالبات أولاً.")
+                                else:
+                                    db.delete_section(sec_id)
+                                    st.success("✅ تم الحذف")
+                                    time.sleep(1)
+                                    st.rerun()
+                            if d_no.button("تراجع", key=f"no_del_sec_{sec_id}"):
+                                st.session_state.pop(f"confirm_del_sec_{sec_id}", None)
                     else:
                         st.info("👁️ يمكنك فقط مشاهدة بيانات الفصل - لا يمكنك تعديلها أو حذفها")
     else:
@@ -6874,213 +6115,6 @@ def show_unified_assessments_admin(db):
 # =============================================================================
 # Quizzes
 # =============================================================================
-def show_quizzes(db, embedded=False):
-    if not embedded:
-        st.markdown(hero_header("المسابقات والاختبارات", "📝 إنشاء وإدارة الاختبارات والمسابقات"), unsafe_allow_html=True)
-    user = st.session_state.user
-    role = user.get("role", "")
-    user_id = user.get("user_id", "")
-    section_id = user.get("section_id", "")
-    quizzes = db.get_quizzes()
-    if role in ["System Admin", "Service Manager"]:
-        st.subheader("➕ إنشاء اختبار جديد")
-        with st.form("quiz_form"):
-            title = st.text_input("عنوان الاختبار*")
-            num_questions = st.selectbox("عدد الأسئلة", [10, 20, 30], index=1)
-            time_limit = st.number_input("الوقت (بالدقائق)", 1, 180, 15)
-            expiry = st.date_input("تاريخ الانتهاء", get_cairo_now().date() + timedelta(days=7))
-            if st.form_submit_button("إنشاء"):
-                if not title:
-                    st.error("يرجى إدخال عنوان الاختبار")
-                else:
-                    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-                    pwd = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-                    quiz_id = str(uuid.uuid4())
-                    db.add_quiz({
-                        "quiz_id": quiz_id, "title": title, "description": "",
-                        "created_by": user.get("user_id", ""), "section_id": "",
-                        "num_questions": num_questions, "time_limit_minutes": time_limit,
-                        "total_marks": 20, "expiry_date": expiry.strftime("%Y-%m-%d"),
-                        "quiz_code": code, "password": pwd, "is_active": "True"
-                    })
-                    st.success(f"✅ تم إنشاء الاختبار! الكود: {code}")
-                    time.sleep(2)
-                    st.rerun()
-        st.markdown("---")
-        st.subheader("📝 إدارة الأسئلة")
-        if not quizzes.empty and "is_active" in quizzes.columns:
-            active_quizzes = quizzes[quizzes.is_active == "True"]
-            if not active_quizzes.empty:
-                quiz_choice = st.selectbox("اختر اختباراً لإدارة أسئلته", active_quizzes["quiz_id"],
-                                           format_func=lambda x: active_quizzes[active_quizzes.quiz_id == x]["title"].values[0])
-                if quiz_choice:
-                    questions = db.get_quiz_questions(quiz_choice)
-                    st.markdown(f"**عدد الأسئلة:** {len(questions)}")
-                    if not questions.empty:
-                        display_cols = [c for c in ["question_text", "question_type", "correct_answer"] if c in questions.columns]
-                        st.dataframe(questions[display_cols], use_container_width=True)
-                    with st.form("add_question_form"):
-                        qtext = st.text_area("نص السؤال*")
-                        qtype = st.selectbox("نوع السؤال", ["اختيار من متعدد", "صح وخطأ", "أكمل", "إجابة قصيرة"])
-                        opts = {}
-                        if qtype == "اختيار من متعدد":
-                            cols = st.columns(4)
-                            opts["option1"] = cols[0].text_input("الخيار 1")
-                            opts["option2"] = cols[1].text_input("الخيار 2")
-                            opts["option3"] = cols[2].text_input("الخيار 3")
-                            opts["option4"] = cols[3].text_input("الخيار 4")
-                        elif qtype == "صح وخطأ":
-                            opts["option1"] = "صح"
-                            opts["option2"] = "خطأ"
-                        else:
-                            opts["option1"] = opts["option2"] = opts["option3"] = opts["option4"] = ""
-                        correct = st.text_input("الإجابة الصحيحة*")
-                        if st.form_submit_button("إضافة سؤال"):
-                            if not qtext or not correct:
-                                st.error("نص السؤال والإجابة الصحيحة مطلوبان")
-                            else:
-                                db.add_question({
-                                    "question_id": str(uuid.uuid4()), "quiz_id": quiz_choice,
-                                    "question_text": qtext, "question_type": qtype,
-                                    "option1": opts.get("option1", ""), "option2": opts.get("option2", ""),
-                                    "option3": opts.get("option3", ""), "option4": opts.get("option4", ""),
-                                    "correct_answer": correct
-                                })
-                                st.success("✅ تمت إضافة السؤال")
-                                time.sleep(1)
-                                st.rerun()
-                    if not questions.empty:
-                        del_q = st.selectbox("اختر سؤالاً لحذفه", questions["question_id"])
-                        if st.button("حذف السؤال"):
-                            db.delete_question(del_q)
-                            st.success("تم الحذف")
-                            time.sleep(1)
-                            st.rerun()
-        st.markdown("---")
-        st.subheader("📋 إدارة الاختبارات")
-        if quizzes.empty:
-            st.info("لا توجد اختبارات بعد.")
-        else:
-            for _, q in quizzes.iterrows():
-                qid = q.get("quiz_id", "")
-                title = q.get("title", "")
-                active = q.get("is_active", "True") == "True"
-                code = q.get("quiz_code", "")
-                expiry = q.get("expiry_date", "")
-                created_by = q.get("created_by", "")
-                col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
-                col1.markdown(f"**{title}**")
-                col2.markdown(f"الكود: {code}")
-                col3.markdown("حالة: " + ("🟢 نشط" if active else "🔴 مغلق"))
-                col4.markdown(f"ينتهي: {expiry}")
-                
-                # Check if teacher can modify this quiz
-                can_manage_quiz = True
-                if role == "Teacher" and created_by != user_id:
-                    can_manage_quiz = False
-                
-                col_actions = st.columns(4)
-                if can_manage_quiz:
-                    if active:
-                        if col_actions[0].button("إغلاق", key=f"deact_{qid}"):
-                            db.update_quiz(qid, {"is_active": "False"})
-                            st.success(f"تم إغلاق الاختبار: {title}")
-                            time.sleep(1)
-                            st.rerun()
-                    else:
-                        if col_actions[0].button("تفعيل", key=f"act_{qid}"):
-                            db.update_quiz(qid, {"is_active": "True"})
-                            st.success(f"تم تفعيل الاختبار: {title}")
-                            time.sleep(1)
-                            st.rerun()
-                if role == "System Admin" and can_manage_quiz:
-                    if col_actions[1].button("حذف (النتائج تبقى)", key=f"del_keep_{qid}"):
-                        db.delete_quiz_keep_results(qid)
-                        st.success(f"تم حذف الاختبار '{title}' مع الاحتفاظ بالنتائج.")
-                        time.sleep(1)
-                        st.rerun()
-                
-                if role == "Teacher" and not can_manage_quiz:
-                    st.warning("⛔ لا يمكنك التعديل على مسابقة أنشأها شخص آخر.")
-                
-                st.markdown("---")
-    st.markdown("### 📊 نتائج الاختبارات")
-    results = db.get_quiz_results()
-    students = db.get_students()
-    sections_all = db.get_sections()
-    if not results.empty:
-        if "status" in results.columns:
-            results = results[results["status"] == "submitted"]
-        if role == "Teacher" and section_id and not students.empty and "student_id" in results.columns and "section_id" in students.columns:
-            section_student_ids = students[students.section_id == section_id]["student_id"].tolist()
-            results = results[results.student_id.isin(section_student_ids)]
-        elif role == "Service Manager" and not students.empty and "student_id" in results.columns and "section_id" in students.columns:
-            section_ids = get_sections_for_supervisor(db, user_id)
-            if section_ids:
-                section_student_ids = students[students.section_id.isin(section_ids)]["student_id"].tolist()
-                results = results[results.student_id.isin(section_student_ids)]
-        if not students.empty:
-            if "student_id" in results.columns:
-                results = results.merge(students[["student_id", "full_name", "section_id"]], on="student_id", how="left")
-                results.rename(columns={"full_name": "اسم الطالبة"}, inplace=True)
-        if not sections_all.empty:
-            if "section_id" in results.columns:
-                results = results.merge(sections_all[["section_id", "section_name"]], on="section_id", how="left")
-                results.rename(columns={"section_name": "الفصل"}, inplace=True)
-        else:
-            results["الفصل"] = ""
-        if not quizzes.empty:
-            if "quiz_id" in results.columns:
-                results = results.merge(quizzes[["quiz_id", "title"]], on="quiz_id", how="left")
-                results.rename(columns={"title": "المسابقة"}, inplace=True)
-        if "score" in results.columns:
-            results["score"] = pd.to_numeric(results["score"], errors="coerce").fillna(0)
-        if "quiz_id" in results.columns:
-            quiz_ids = results["quiz_id"].unique().tolist()
-            if quiz_ids and not quizzes.empty:
-                quiz_titles = quizzes[quizzes["quiz_id"].isin(quiz_ids)][["quiz_id", "title"]].drop_duplicates()
-                quiz_options = ["الكل"] + quiz_titles["quiz_id"].tolist()
-                selected_quiz_filter = st.selectbox("اختر الاختبار لعرض نتائجه فقط", quiz_options,
-                                                    format_func=lambda x: "الكل" if x == "الكل" else quiz_titles[quiz_titles.quiz_id == x]["title"].values[0])
-                if selected_quiz_filter != "الكل":
-                    results = results[results.quiz_id == selected_quiz_filter]
-        if results.empty:
-            st.info("لا توجد نتائج مطابقة للاختبار المحدد.")
-        else:
-            base_cols = ["اسم الطالبة", "الفصل", "المسابقة", "score", "total_marks"]
-            if "submission_time" in results.columns:
-                base_cols.append("submission_time")
-            if st.session_state.user.get("role") == "System Admin":
-                time_cols = []
-                if "start_time" in results.columns:
-                    try:
-                        results["بداية الاختبار"] = pd.to_datetime(results["start_time"]).apply(
-                            lambda x: format_cairo_time(x.replace(tzinfo=CAIRO_TZ)) if pd.notna(x) else ""
-                        )
-                        time_cols.append("بداية الاختبار")
-                    except Exception:
-                        pass
-                if "submission_time" in results.columns:
-                    try:
-                        results["تسليم الاختبار"] = pd.to_datetime(results["submission_time"]).apply(
-                            lambda x: format_cairo_time(x.replace(tzinfo=CAIRO_TZ)) if pd.notna(x) else ""
-                        )
-                        time_cols.append("تسليم الاختبار")
-                    except Exception:
-                        pass
-                display_cols = base_cols + time_cols
-            else:
-                display_cols = base_cols
-            display_cols = list(dict.fromkeys(display_cols))
-            available = [c for c in display_cols if c in results.columns]
-            st.dataframe(results[available], use_container_width=True)
-            if st.button("🏆 ترتيب الطالبات حسب المجموع") and "اسم الطالبة" in results.columns and "score" in results.columns:
-                top = results.groupby("اسم الطالبة")["score"].sum().reset_index().sort_values("score", ascending=False)
-                st.dataframe(top, use_container_width=True)
-    else:
-        st.info("لا توجد نتائج بعد.")
-
-
 # =============================================================================
 # PHASE 2 — EXAMS PORTAL (Future Feature — NOT yet active)
 # =============================================================================
@@ -7090,440 +6124,6 @@ def show_quizzes(db, embedded=False):
 # grading, certificates, anti-cheating, analytics) are NOT yet implemented.
 # See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
-def show_exams_management(db, embedded=False):
-    if not embedded:
-        st.markdown(hero_header("إدارة الامتحانات", "📝 إنشاء وإدارة الامتحانات وأسئلتها"), unsafe_allow_html=True)
-    user = st.session_state.user
-    role = user.get("role", "")
-    user_id = user.get("user_id", "")
-    section_id = user.get("section_id", "")
-
-    if role not in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
-        st.error("🚫 غير مصرح")
-        return
-
-    if role not in ["System Admin", "Service Manager"]:
-        st.error("ليس لديك صلاحية لإدارة الامتحانات.")
-        return
-
-    exams = db.get_exams()
-    sections = db.get_sections()
-
-    # ============ إنشاء امتحان جديد ============
-    if role in ["System Admin", "Service Manager"]:
-        st.subheader("➕ إنشاء امتحان جديد")
-        stages = db.get_stages()
-        with st.form("add_exam_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                title = st.text_input("عنوان الامتحان*")
-                chapter_lesson = st.text_input("الأصحاح أو الدرس")
-                description = st.text_area("الوصف")
-            with col2:
-                start_date = st.date_input("تاريخ البداية", get_cairo_now().date())
-                end_date = st.date_input("تاريخ النهاية", get_cairo_now().date() + timedelta(days=7))
-                duration = st.number_input("المدة (بالدقائق)", min_value=5, max_value=240, value=45)
-            stage_options = stages["stage_id"].tolist() if not stages.empty else []
-            selected_stage = st.selectbox(
-                "المرحلة المستهدفة*", stage_options,
-                format_func=lambda x: "—" if not stages.empty and x not in stages["stage_id"].values else (
-                    stages[stages.stage_id == x]["stage_name"].values[0] if not stages.empty else x
-                )
-            ) if stage_options else ""
-            # الفصول داخل المرحلة المختارة
-            stage_sections = sections[sections["stage_id"] == selected_stage] if not sections.empty and selected_stage else pd.DataFrame()
-            sec_options = stage_sections["section_id"].tolist() if not stage_sections.empty else []
-            all_sections_option = "ALL_SECTIONS"
-            section_choices = [all_sections_option] + sec_options
-            selected_section = st.selectbox(
-                "الفصل (اختياري - اختر كل الفصول للمرحلة بأكملها)",
-                section_choices,
-                format_func=lambda x: "كل فصول المرحلة" if x == all_sections_option else (
-                    sections[sections.section_id == x]["section_name"].values[0] if not sections.empty and x in sections["section_id"].values else x
-                )
-            ) if section_choices else all_sections_option
-            if selected_section == all_sections_option:
-                selected_section = ""
-            total_marks = st.number_input("الدرجة الكلية", min_value=1, max_value=500, value=100)
-            passing_score = st.number_input("درجة النجاح", min_value=1, max_value=500, value=50)
-            submitted = st.form_submit_button("إنشاء الامتحان", use_container_width=True)
-            if submitted:
-                if not title:
-                    st.error("عنوان الامتحان مطلوب")
-                elif not selected_stage:
-                    st.error("المرحلة المستهدفة مطلوبة")
-                else:
-                    exam_id = str(uuid.uuid4())
-                    db.add_exam({
-                        "exam_id": exam_id,
-                        "title": title.strip(),
-                        "description": description.strip(),
-                        "created_by": user_id,
-                        "stage_id": selected_stage,
-                        "section_id": selected_section,
-                        "chapter_lesson": chapter_lesson.strip(),
-                        "exam_date": start_date.strftime("%Y-%m-%d"),
-                        "start_date": start_date.strftime("%Y-%m-%d"),
-                        "end_date": end_date.strftime("%Y-%m-%d"),
-                        "duration_minutes": str(duration),
-                        "total_marks": str(total_marks),
-                        "passing_score": str(passing_score),
-                        "is_active": "True",
-                        "is_published": "False",
-                        "created_at": get_cairo_now().isoformat()
-                    })
-                    db.add_log(user_id, "إنشاء امتحان", f"تم إنشاء امتحان: {title}")
-                    st.success(f"✅ تم إنشاء الامتحان: {title}")
-                    time.sleep(1)
-                    st.rerun()
-
-        st.markdown("---")
-
-    # ============ إدارة أسئلة الامتحانات ============
-    st.subheader("📝 إدارة أسئلة الامتحانات")
-    if exams.empty:
-        st.info("لا توجد امتحانات مسجلة. قم بإنشاء امتحان أولاً.")
-    else:
-        exam_choice = st.selectbox(
-            "اختر الامتحان لإدارة أسئلته", exams["exam_id"],
-            format_func=lambda x: exams[exams.exam_id == x]["title"].values[0],
-            key="exam_q_choice"
-        )
-        if exam_choice:
-            exam_row = exams[exams.exam_id == exam_choice].iloc[0].to_dict()
-            questions = db.get_exam_questions(exam_choice)
-            st.markdown(f"**عدد الأسئلة:** {len(questions)}")
-
-            if not questions.empty:
-                display_cols = [c for c in ["question_text", "question_type", "correct_answer", "marks"] if c in questions.columns]
-                st.dataframe(questions[display_cols].rename(columns={
-                    "question_text": "نص السؤال", "question_type": "النوع",
-                    "correct_answer": "الإجابة الصحيحة", "marks": "الدرجة"
-                }), use_container_width=True)
-
-            # إضافة سؤال
-            with st.expander("➕ إضافة سؤال جديد"):
-                with st.form("add_exam_question_form"):
-                    qtext = st.text_area("نص السؤال*")
-                    qtype = st.selectbox("نوع السؤال", ["اختيار من متعدد", "صح وخطأ", "أكمل", "إجابة قصيرة"])
-                    opts = {}
-                    if qtype == "اختيار من متعدد":
-                        cols = st.columns(4)
-                        opts["option1"] = cols[0].text_input("الخيار 1")
-                        opts["option2"] = cols[1].text_input("الخيار 2")
-                        opts["option3"] = cols[2].text_input("الخيار 3")
-                        opts["option4"] = cols[3].text_input("الخيار 4")
-                    elif qtype == "صح وخطأ":
-                        opts["option1"] = "صح"
-                        opts["option2"] = "خطأ"
-                    else:
-                        opts["option1"] = opts["option2"] = opts["option3"] = opts["option4"] = ""
-                    correct = st.text_input("الإجابة الصحيحة*")
-                    marks = st.number_input("درجة السؤال", min_value=1, max_value=100, value=5)
-                    if st.form_submit_button("إضافة السؤال"):
-                        if not qtext or not correct:
-                            st.error("نص السؤال والإجابة الصحيحة مطلوبان")
-                        else:
-                            db.add_exam_question({
-                                "question_id": str(uuid.uuid4()),
-                                "exam_id": exam_choice,
-                                "question_text": qtext,
-                                "question_type": qtype,
-                                "option1": opts.get("option1", ""),
-                                "option2": opts.get("option2", ""),
-                                "option3": opts.get("option3", ""),
-                                "option4": opts.get("option4", ""),
-                                "correct_answer": correct,
-                                "marks": str(marks)
-                            })
-                            db.add_log(user_id, "إضافة سؤال امتحان", f"تمت إضافة سؤال لامتحان: {exam_row.get('title', '')}")
-                            st.success("✅ تمت إضافة السؤال")
-                            time.sleep(1)
-                            st.rerun()
-
-            # حذف سؤال
-            if not questions.empty:
-                with st.expander("🗑️ حذف سؤال"):
-                    del_q = st.selectbox(
-                        "اختر سؤالاً لحذفه", questions["question_id"],
-                        format_func=lambda x: str(questions[questions.question_id == x]["question_text"].values[0])[:60] + "..."
-                        if not questions[questions.question_id == x].empty else x
-                    )
-                    if st.button("حذف السؤال", key="del_exam_q_btn"):
-                        db.delete_exam_question(del_q)
-                        db.add_log(user_id, "حذف سؤال امتحان", f"تم حذف سؤال من امتحان: {exam_row.get('title', '')}")
-                        st.success("✅ تم حذف السؤال")
-                        time.sleep(1)
-                        st.rerun()
-
-        st.markdown("---")
-
-    # ============ إدارة الامتحانات ============
-    st.subheader("📋 إدارة الامتحانات")
-
-    # فلاتر
-    col_f1, col_f2, col_f3 = st.columns(3)
-    with col_f1:
-        search_term = st.text_input("🔍 بحث", placeholder="ابحث باسم الامتحان...")
-    with col_f2:
-        status_filter = st.selectbox("الحالة", ["الكل", "نشط", "غير نشط"])
-    with col_f3:
-        pub_filter = st.selectbox("النشر", ["الكل", "منشور", "غير منشور"])
-
-    filtered_exams = exams.copy() if not exams.empty else pd.DataFrame()
-    if search_term and not filtered_exams.empty:
-        mask = pd.Series(False, index=filtered_exams.index)
-        for col in ["title", "subject"]:
-            if col in filtered_exams.columns:
-                mask |= filtered_exams[col].astype(str).str.contains(search_term, na=False, case=False)
-        filtered_exams = filtered_exams[mask]
-    if status_filter != "الكل" and not filtered_exams.empty and "is_active" in filtered_exams.columns:
-        status_val = "True" if status_filter == "نشط" else "False"
-        filtered_exams = filtered_exams[filtered_exams["is_active"].astype(str) == status_val]
-    if pub_filter != "الكل" and not filtered_exams.empty and "is_published" in filtered_exams.columns:
-        pub_val = "True" if pub_filter == "منشور" else "False"
-        filtered_exams = filtered_exams[filtered_exams["is_published"].astype(str) == pub_val]
-
-    if filtered_exams.empty:
-        st.info("لا توجد امتحانات مطابقة للتصفية.")
-    else:
-        for _, ex in filtered_exams.iterrows():
-            ex_id = ex.get("exam_id", "")
-            ex_title = ex.get("title", "")
-            ex_chapter = ex.get("chapter_lesson", "")
-            ex_date = ex.get("exam_date", "")
-            ex_duration = ex.get("duration_minutes", "")
-            ex_marks = ex.get("total_marks", "")
-            ex_active = str(ex.get("is_active", "True")).strip() == "True"
-            ex_published = str(ex.get("is_published", "False")).strip() == "True"
-            ex_created_by = ex.get("created_by", "")
-            ex_section = ex.get("section_id", "")
-
-            section_name = ""
-            if not sections.empty and ex_section:
-                sec_match = sections[sections["section_id"] == ex_section]
-                if not sec_match.empty:
-                    section_name = sec_match.iloc[0].get("section_name", "")
-
-            # معلومات الامتحان
-            col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
-            col1.markdown(f"**📝 {ex_title}**")
-            col2.markdown(f"📖 {ex_chapter}" if ex_chapter else "📖 —")
-            col3.markdown(f"📅 {ex_date}")
-            col4.markdown(f"⏱️ {ex_duration} دقيقة")
-
-            # شارات الحالة
-            status_cols = st.columns(2)
-            status_cols[0].markdown(
-                "🟢 **نشط**" if ex_active else "🔴 **موقوف**"
-            )
-            status_cols[1].markdown(
-                "📢 **منشور**" if ex_published else "📭 **غير منشور**"
-            )
-            if section_name:
-                st.markdown(f"🏫 **الفصل:** {section_name}")
-            st.markdown(f"🎯 **الدرجة الكلية:** {ex_marks}")
-
-            # أزرار الإجراءات
-            can_manage = True
-            if role == "Teacher" and ex_created_by != user_id:
-                can_manage = False
-
-            if can_manage and role in ["System Admin", "Service Manager"]:
-                st.markdown("##### الإجراءات")
-                act_cols = st.columns(7)
-
-                # تفعيل / إيقاف
-                if ex_active:
-                    if act_cols[0].button("⏸️ إيقاف", key=f"stop_exam_{ex_id}"):
-                        db.update_exam(ex_id, {"is_active": "False"})
-                        db.add_log(user_id, "إيقاف امتحان", f"تم إيقاف الامتحان: {ex_title}")
-                        st.success(f"✅ تم إيقاف الامتحان: {ex_title}")
-                        time.sleep(1)
-                        st.rerun()
-                else:
-                    if act_cols[0].button("▶️ تفعيل", key=f"act_exam_{ex_id}"):
-                        db.update_exam(ex_id, {"is_active": "True"})
-                        db.add_log(user_id, "تفعيل امتحان", f"تم تفعيل الامتحان: {ex_title}")
-                        st.success(f"✅ تم تفعيل الامتحان: {ex_title}")
-                        time.sleep(1)
-                        st.rerun()
-
-                # نشر / إلغاء نشر
-                if ex_published:
-                    if act_cols[1].button("📭 إلغاء النشر", key=f"unpub_exam_{ex_id}"):
-                        db.update_exam(ex_id, {"is_published": "False"})
-                        db.add_log(user_id, "إلغاء نشر امتحان", f"تم إلغاء نشر الامتحان: {ex_title}")
-                        st.success(f"✅ تم إلغاء نشر الامتحان: {ex_title}")
-                        time.sleep(1)
-                        st.rerun()
-                else:
-                    if act_cols[2].button("📢 نشر", key=f"pub_exam_{ex_id}"):
-                        db.update_exam(ex_id, {"is_published": "True"})
-                        db.add_log(user_id, "نشر امتحان", f"تم نشر الامتحان: {ex_title}")
-                        st.success(f"✅ تم نشر الامتحان: {ex_title}")
-                        time.sleep(1)
-                        st.rerun()
-
-                # معاينة
-                if act_cols[3].button("👁️ معاينة", key=f"preview_exam_{ex_id}"):
-                    st.session_state.selected_exam_preview = ex_id
-
-                # تعديل
-                if act_cols[4].button("✏️ تعديل", key=f"edit_exam_{ex_id}"):
-                    st.session_state[f"edit_exam_{ex_id}"] = not st.session_state.get(f"edit_exam_{ex_id}", False)
-
-                # حذف
-                if act_cols[5].button("🗑️ حذف", key=f"del_exam_{ex_id}"):
-                    st.session_state[f"confirm_del_exam_{ex_id}"] = True
-
-                # حذف نهائي
-                if act_cols[6].button("🗑️ تأكيد الحذف", key=f"confirm_del_exam_btn_{ex_id}",
-                                      disabled=not st.session_state.get(f"confirm_del_exam_{ex_id}", False)):
-                    db.delete_exam(ex_id)
-                    db.add_log(user_id, "حذف امتحان", f"تم حذف الامتحان: {ex_title}")
-                    st.success(f"✅ تم حذف الامتحان: {ex_title}")
-                    st.session_state.pop(f"confirm_del_exam_{ex_id}", None)
-                    time.sleep(1)
-                    st.rerun()
-
-                # ===== معاينة الامتحان =====
-                if st.session_state.get("selected_exam_preview") == ex_id:
-                    with st.expander(f"👁️ معاينة: {ex_title}", expanded=True):
-                        st.markdown(f"**الوصف:** {ex.get('description', '') or '—'}")
-                        st.markdown(f"**تاريخ الامتحان:** {ex_date}")
-                        st.markdown(f"**المدة:** {ex_duration} دقيقة")
-                        st.markdown(f"**الدرجة الكلية:** {ex_marks}")
-                        st.markdown(f"**الحالة:** {'نشط' if ex_active else 'موقوف'} | **النشر:** {'منشور' if ex_published else 'غير منشور'}")
-                        st.markdown("---")
-                        preview_qs = db.get_exam_questions(ex_id)
-                        if preview_qs.empty:
-                            st.info("لا توجد أسئلة في هذا الامتحان بعد.")
-                        else:
-                            st.markdown(f"#### الأسئلة ({len(preview_qs)})")
-                            for q_idx, (_, q_row) in enumerate(preview_qs.iterrows()):
-                                q = q_row.to_dict()
-                                st.markdown(f"**سؤال {q_idx+1}:** {q.get('question_text', '')}")
-                                st.markdown(f"📝 النوع: {q.get('question_type', '')} | 🎯 الدرجة: {q.get('marks', '')}")
-                                col_p1, col_p2 = st.columns(2)
-                                col_p1.markdown(f"**الإجابة الصحيحة:** {q.get('correct_answer', '')}")
-                                st.markdown("---")
-                        if st.button("إغلاق المعاينة", key=f"close_preview_{ex_id}"):
-                            st.session_state.pop("selected_exam_preview", None)
-                            st.rerun()
-
-                # ===== تعديل الامتحان =====
-                if st.session_state.get(f"edit_exam_{ex_id}", False):
-                    with st.expander(f"✏️ تعديل: {ex_title}", expanded=True):
-                        with st.form(f"edit_exam_form_{ex_id}"):
-                            edit_title = st.text_input("عنوان الامتحان", value=ex_title)
-                            edit_chapter = st.text_input("الأصحاح أو الدرس", value=ex_chapter)
-                            edit_desc = st.text_area("الوصف", value=ex.get("description", ""))
-                            edit_date = st.date_input(
-                                "تاريخ الامتحان",
-                                value=pd.to_datetime(ex_date).date() if ex_date else get_cairo_now().date()
-                            )
-                            edit_duration = st.number_input("المدة (بالدقائق)", min_value=5, max_value=240, value=int(ex_duration or 45))
-                            edit_marks = st.number_input("الدرجة الكلية", min_value=1, max_value=500, value=int(ex_marks or 100))
-                            edit_section = st.selectbox(
-                                "الفصل", sec_options,
-                                index=sec_options.index(ex_section) if ex_section in sec_options else 0,
-                                format_func=lambda x: "—" if not sections.empty and x not in sections["section_id"].values else (
-                                    sections[sections.section_id == x]["section_name"].values[0] if not sections.empty else x
-                                )
-                            ) if sec_options else ""
-                            if st.form_submit_button("💾 حفظ التعديلات"):
-                                db.update_exam(ex_id, {
-                                    "title": edit_title.strip(),
-                                    "chapter_lesson": edit_chapter.strip(),
-                                    "description": edit_desc.strip(),
-                                    "exam_date": edit_date.strftime("%Y-%m-%d"),
-                                    "duration_minutes": str(edit_duration),
-                                    "total_marks": str(edit_marks),
-                                    "section_id": edit_section
-                                })
-                                db.add_log(user_id, "تعديل امتحان", f"تم تعديل الامتحان: {edit_title}")
-                                st.success("✅ تم حفظ التعديلات")
-                                st.session_state.pop(f"edit_exam_{ex_id}", None)
-                                time.sleep(1)
-                                st.rerun()
-            else:
-                st.warning("⛔ لا يمكنك التعديل على امتحان أنشأه شخص آخر.")
-
-            st.markdown("---")
-
-    # ============ نتائج الامتحانات ============
-    st.markdown("### 📊 نتائج الامتحانات")
-    results = db.get_exam_results()
-    students = db.get_students()
-
-    if results.empty:
-        st.info("لا توجد نتائج امتحانات بعد.")
-    else:
-        if "status" in results.columns:
-            results = results[results["status"] == "submitted"]
-
-        # تصفية حسب الدور
-        if role == "Teacher" and section_id and not students.empty and "student_id" in results.columns:
-            section_student_ids = students[students.section_id == section_id]["student_id"].tolist()
-            results = results[results.student_id.isin(section_student_ids)]
-        elif role == "Service Manager" and not students.empty and "student_id" in results.columns:
-            section_ids = get_sections_for_supervisor(db, user_id)
-            if section_ids:
-                section_student_ids = students[students.section_id.isin(section_ids)]["student_id"].tolist()
-                results = results[results.student_id.isin(section_student_ids)]
-
-        # دمج بيانات الطالبات
-        if not students.empty and "student_id" in results.columns and "full_name" in students.columns:
-            results = results.merge(students[["student_id", "full_name", "section_id"]], on="student_id", how="left")
-            results.rename(columns={"full_name": "اسم الطالبة"}, inplace=True)
-
-        # دمج أسماء الامتحانات
-        if not exams.empty and "exam_id" in results.columns:
-            results = results.merge(exams[["exam_id", "title"]], on="exam_id", how="left")
-            results.rename(columns={"title": "الامتحان"}, inplace=True)
-
-        # دمج أسماء الفصول
-        if not sections.empty and "section_id" in results.columns:
-            results = results.merge(sections[["section_id", "section_name"]], on="section_id", how="left")
-            results.rename(columns={"section_name": "الفصل"}, inplace=True)
-            # Convert section_id to section_name for display
-            if "section_id" in results.columns and "الفصل" in results.columns:
-                results["section_id_display"] = results["الفصل"].fillna(results["section_id"])
-                results.drop(columns=["section_id"], inplace=True)
-                results.rename(columns={"section_id_display": "section_id"}, inplace=True)
-
-        if results.empty:
-            st.info("لا توجد نتائج مطابقة.")
-        else:
-            display_cols = []
-            if "اسم الطالبة" in results.columns:
-                display_cols.append("اسم الطالبة")
-            if "الامتحان" in results.columns:
-                display_cols.append("الامتحان")
-            if "الفصل" in results.columns:
-                display_cols.append("الفصل")
-            if "score" in results.columns:
-                display_cols.append("score")
-            if "total_marks" in results.columns:
-                display_cols.append("total_marks")
-            if "submission_time" in results.columns:
-                display_cols.append("submission_time")
-
-            display_df = results[display_cols].copy()
-            display_df = display_df.rename(columns={
-                "score": "الدرجة",
-                "total_marks": "الدرجة الكلية",
-                "submission_time": "وقت التسليم"
-            })
-
-            st.dataframe(display_df, use_container_width=True)
-
-            if st.button("🏆 ترتيب الطالبات حسب المجموع") and "اسم الطالبة" in results.columns and "score" in results.columns:
-                top = results.groupby("اسم الطالبة")["score"].sum().reset_index().sort_values("score", ascending=False)
-                st.dataframe(top.rename(columns={"score": "المجموع"}), use_container_width=True)
-
-
 # =============================================================================
 # Reports - Advanced Reports & Statistics Page
 # =============================================================================
@@ -8389,8 +6989,6 @@ def generate_qr_image(data: str, size: int = 250) -> Image.Image:
     return img
 
 
-
-
 # =============================================================================
 # PHASE 2 — QR CODE ATTENDANCE SYSTEM (Future Feature — NOT yet active)
 # =============================================================================
@@ -8417,86 +7015,6 @@ def show_qr_scanner_page(db):
 # =============================================================================
 # User Card Helpers
 # ==============================================================================
-
-def render_user_card(user, sections_df=None, stages_df=None, is_selected=False, db=None):
-    user_id = user.get("user_id", "")
-    full_name = user.get("full_name", "غير معروف")
-    role = user.get("role", "")
-    section_id = user.get("section_id", "")
-    phone = user.get("phone", "")
-    email = user.get("email", "")
-    status = get_user_status(user)
-    initials = get_initials(full_name)
-    role_css = get_role_css_class(role)
-    status_css = get_status_css_class(status)
-    section_name = ""
-    if sections_df is not None and not sections_df.empty and section_id:
-        sec = sections_df[sections_df.section_id == section_id]
-        if not sec.empty:
-            section_name = sec.iloc[0].get("section_name", "")
-    # المرحلة الموحدة: تُقرأ من العضو نفسه أولاً ثم من الفصل (نفس مصدر البيانات في كل النظام)
-    stage_name = resolve_member_stage_name(user.get("stage_id", ""), section_id, sections_df, stages_df)
-    role_label = {"System Admin": "مدير النظام", "Father Account": "أب كاهن", "Service Manager": "أمين الخدمة", "Teacher": "مدرسة", "Student": "طالبة"}.get(role, role)
-    status_label = {"active": "نشط", "inactive": "غير نشط", "suspended": "موقوف", "archived": "مؤرشف"}.get(status, "نشط")
-    border = "2px solid #667eea" if is_selected else "1px solid rgba(0,0,0,0.05)"
-    reg_date = user.get("registration_date", "")
-    if reg_date:
-        try:
-            reg_date = pd.to_datetime(reg_date).strftime("%Y-%m-%d")
-        except:
-            reg_date = ""
-    last_login = user.get("last_login", "")
-    if last_login:
-        try:
-            last_login = pd.to_datetime(last_login).strftime("%Y-%m-%d %I:%M %p")
-        except:
-            last_login = ""
-    return f"""
-    <div class="user-card" style="border: {border};" data-user-id="{user_id}">
-        <div class="card-badge {status_css}">{status_label}</div>
-        <div style="display:flex; align-items:center; gap:1rem; margin-top:1.5rem;">
-            <div class="user-avatar">{initials}</div>
-            <div style="flex:1;">
-                <div style="font-weight:700; font-size:1.1rem;">{full_name}</div>
-                <span class="role-badge {role_css}">{role_label}</span>
-                <div style="font-size:0.8rem; color:#6c757d; margin-top:0.3rem;">📞 {phone if phone else '—'}</div>
-            </div>
-        </div>
-        <div style="margin-top:1rem; padding:0.8rem; background:rgba(102,126,234,0.05); border-radius:10px;">
-            {('<div style="font-size:0.85rem; margin-bottom:0.3rem;">📚 <strong>المرحلة:</strong> ' + stage_name + '</div>') if stage_name else ''}
-            {('<div style="font-size:0.85rem; margin-bottom:0.3rem;">🏫 <strong>الفصل:</strong> ' + section_name + '</div>') if section_name else ''}
-            <div style="font-size:0.8rem; color:#6c757d;">📅 التسجيل: {reg_date if reg_date else 'غير متاح'}</div>
-            <div style="font-size:0.8rem; color:#6c757d;">⏰ آخر دخول: {last_login if last_login else 'غير متاح'}</div>
-        </div>
-        <div style="display:flex; gap:0.5rem; margin-top:0.8rem; flex-wrap:wrap; align-items:center;">
-            <span style="font-size:0.75rem; background:#f8f9fa; padding:0.2rem 0.6rem; border-radius:8px;">🆔 {user_id[:12]}...</span>
-            {('<span style="font-size:0.75rem; background:#f8f9fa; padding:0.2rem 0.6rem; border-radius:8px;">📧 ' + email[:25] + '</span>') if email else ''}
-        </div>
-    </div>
-    """
-
-def filter_users_df(df, search_term="", role_filter="الكل", status_filter="الكل", section_filter="الكل"):
-    filtered = df.copy()
-    if search_term:
-        search_mask = pd.Series(False, index=filtered.index)
-        for col in ["full_name", "username", "phone", "email"]:
-            if col in filtered.columns:
-                search_mask |= filtered[col].astype(str).str.contains(search_term, na=False, case=False)
-        filtered = filtered[search_mask]
-    if role_filter != "الكل" and "role" in filtered.columns:
-        filtered = filtered[filtered["role"] == role_filter]
-    if status_filter != "الكل":
-        if "status" in filtered.columns:
-            st_map = {"نشط": "active", "غير نشط": "inactive", "موقوف": "suspended", "مؤرشف": "archived"}
-            eng_status = st_map.get(status_filter, status_filter)
-            filtered = filtered[filtered["status"] == eng_status]
-        else:
-            eng_status = "active" if status_filter == "نشط" else "inactive"
-            filtered = filtered[filtered.get("status", "active") == eng_status]
-    if section_filter != "الكل" and "section_id" in filtered.columns:
-        filtered = filtered[filtered["section_id"] == section_filter]
-    return filtered
-
 
 # =============================================================================
 # Student Profile Page
@@ -8925,700 +7443,21 @@ def change_password(db):
 # This module is RESERVED for Phase 2 implementation.
 # See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
-def show_student_exam_portal(db):
-    """Legacy redirect — exam portal merged into unified student assessments page."""
-    st.info("تم دمج بوابة الامتحانات مع صفحة المسابقات والاختبارات الموحدة.")
-    if st.session_state.get("student_logged_in"):
-        st.session_state.student_dashboard_page = STUDENT_ASSESSMENTS_PAGE
-        st.rerun()
-
-
-def show_exam_interface(db):
-    """Legacy redirect — use unified assessment taking interface."""
-    show_unified_assessment_taking_interface(db)
-
-
 # =============================================================================
 # PHASE 2 — EXAMS PORTAL (Future Feature — NOT yet active)
 # =============================================================================
 # This module is RESERVED for Phase 2 implementation.
 # See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
-def _submit_exam(db, exam_id, student_id, student_name, answers, attempt_id=None, start_time=None, end_time=None):
-    """
-    تسليم الامتحان: تصحيح، حساب الدرجة، نسبة النجاح، الصحيح والخطأ، الوقت، ترتيب الفصل، وحفظ النتيجة.
-    returns: dict contains score, total_marks, correct_count, wrong_count, percentage,
-             pass_rate, grade, time_taken, class_rank, total_class, saved
-    """
-    # ===== تصحيح الامتحان =====
-    score, total_marks, correct_count, wrong_count = db.grade_exam_attempt(exam_id, answers)
-
-    # ===== حساب الدرجة والنسبة المئوية =====
-    percentage = (score / total_marks * 100) if total_marks > 0 else 0
-
-    # ===== نسبة النجاح (النجاح = 50% فأكثر) =====
-    passed = percentage >= 50
-    pass_rate = 100 if passed else 0
-
-    # ===== التقدير =====
-    if percentage >= 90:
-        grade = "ممتاز"
-    elif percentage >= 80:
-        grade = "جيد جداً"
-    elif percentage >= 70:
-        grade = "جيد"
-    elif percentage >= 60:
-        grade = "مقبول"
-    else:
-        grade = "راسب"
-
-    # ===== حساب الوقت المستغرق =====
-    time_taken = ""
-    if start_time and end_time:
-        try:
-            delta = end_time - start_time
-            total_sec = int(delta.total_seconds())
-            if total_sec < 0:
-                total_sec = 0
-            mins, secs = divmod(total_sec, 60)
-            hours, mins = divmod(mins, 60)
-            if hours > 0:
-                time_taken = f"{hours} ساعة و {mins} دقيقة و {secs} ثانية"
-            elif mins > 0:
-                time_taken = f"{mins} دقيقة و {secs} ثانية"
-            else:
-                time_taken = f"{secs} ثانية"
-        except Exception:
-            time_taken = ""
-
-    # ===== حفظ النتيجة =====
-    saved = False
-    if attempt_id:
-        answers_json = json.dumps(answers, ensure_ascii=False)
-        db.submit_exam_attempt(attempt_id, score, answers_json)
-        saved = True
-
-    # ===== ترتيب الفصل =====
-    class_rank = None
-    total_class = None
-    try:
-        results_df = db.get_exam_results(exam_id)
-        students_df = db.get_students()
-        if not results_df.empty and "student_id" in results_df.columns and not students_df.empty:
-            submitted = results_df[results_df["status"] == "submitted"]
-            if not submitted.empty:
-                submitted = submitted.copy()
-                submitted["score"] = pd.to_numeric(submitted["score"], errors="coerce").fillna(0)
-                # تحديد فصل الطالبة
-                student_section = ""
-                match = students_df[students_df["student_id"] == student_id]
-                if not match.empty:
-                    student_section = match.iloc[0].get("section_id", "")
-                # قائمة طالبات نفس الفصل
-                if student_section:
-                    section_students = students_df[students_df["section_id"] == student_section]["student_id"].tolist()
-                    class_results = submitted[submitted["student_id"].isin(section_students)].copy()
-                else:
-                    class_results = submitted.copy()
-                # تضمين نتيجة الطالبة الحالية إذا لم تكن موجودة
-                if class_results.empty or student_id not in class_results["student_id"].tolist():
-                    class_results = pd.concat([
-                        class_results,
-                        pd.DataFrame([{"student_id": student_id, "score": score}])
-                    ], ignore_index=True)
-                class_results = class_results.sort_values("score", ascending=False).reset_index(drop=True)
-                total_class = len(class_results)
-                ranks = {sid: i + 1 for i, sid in enumerate(class_results["student_id"])}
-                class_rank = ranks.get(student_id, total_class)
-    except Exception:
-        class_rank = None
-        total_class = None
-
-    return {
-        "score": score,
-        "total_marks": total_marks,
-        "correct_count": correct_count,
-        "wrong_count": wrong_count,
-        "percentage": round(percentage, 1),
-        "pass_rate": pass_rate,
-        "grade": grade,
-        "passed": passed,
-        "time_taken": time_taken,
-        "class_rank": class_rank,
-        "total_class": total_class,
-        "saved": saved,
-    }
-
-
-def show_exam_results(db, result):
-    """
-    عرض نتائج الامتحان بعد التسليم:
-    - الدرجة والنسبة المئوية
-    - الصحيح والخطأ
-    - نسبة النجاح
-    - الوقت المستغرق
-    - ترتيب الفصل
-    """
-    score = result.get("score", 0)
-    total_marks = result.get("total_marks", 0)
-    correct = result.get("correct_count", 0)
-    wrong = result.get("wrong_count", 0)
-    percentage = result.get("percentage", 0)
-    grade = result.get("grade", "")
-    passed = result.get("passed", False)
-    pass_rate = result.get("pass_rate", 0)
-    time_taken = result.get("time_taken", "")
-    class_rank = result.get("class_rank", None)
-    total_class = result.get("total_class", None)
-
-    st.markdown(hero_header("نتيجة الامتحان", "📊 نتيجة الامتحان بعد التصحيح"), unsafe_allow_html=True)
-    st.success("✅ تم تسليم الامتحان بنجاح!")
-
-    # ===== الدرجة والنسبة =====
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("📝 الدرجة", f"{score} / {total_marks}")
-    col2.metric("📊 النسبة المئوية", f"{percentage}%")
-    col3.metric("✅ صحيحة", correct)
-    col4.metric("❌ خاطئة", wrong)
-
-    # ===== نسبة النجاح والتقدير والوقت =====
-    col5, col6, col7 = st.columns(3)
-    col5.metric("🎯 التقدير", grade)
-    col6.metric("📈 نسبة النجاح", f"{pass_rate}%")
-    col7.metric("⏱️ الوقت المستغرق", time_taken or "—")
-
-    # ===== ترتيب الفصل =====
-    if class_rank is not None and total_class is not None:
-        st.info(f"🏆 ترتيبك في الفصل: **{class_rank}** من **{total_class}** طالبة")
-    else:
-        st.info("🏆 ترتيب الفصل غير متاح حالياً.")
-
-    # ===== حالة النجاح =====
-    if passed:
-        st.success("🎉 مبروك! لقد نجحت في الامتحان.")
-    else:
-        st.error("❌ لم تنجحي في هذا الامتحان. حاولي مرة أخرى في المرة القادمة.")
-
-
 # =============================================================================
 # PHASE 2 — EXAMS PORTAL (Future Feature — NOT yet active)
 # =============================================================================
 # This module is RESERVED for Phase 2 implementation.
 # See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE B: EXAMS PORTAL"
 # =============================================================================
-def show_exam_dashboard(db):
-    """
-    لوحة تحكم شاملة للامتحانات:
-    - إجمالي الامتحانات
-    - عدد الطالبات
-    - متوسط الدرجات
-    - نسبة النجاح
-    - Histogram
-    - Pie Chart
-    - Bar Chart
-    - جدول النتائج
-    """
-    st.markdown(hero_header("لوحة تحكم الامتحانات", "📊 إحصائيات ورسوم بيانية شاملة"), unsafe_allow_html=True)
-
-    # ===== جلب البيانات =====
-    exams_df = db.get_exams()
-    results_df = db.get_exam_results()
-    students_df = db.get_students()
-
-    # ===== الفلاتر =====
-    st.markdown("### 🔍 الفلاتر")
-    col_f1, col_f2 = st.columns(2)
-
-    with col_f1:
-        exam_options = ["الكل"]
-        if not exams_df.empty and "exam_id" in exams_df.columns:
-            exam_options += exams_df["exam_id"].tolist()
-        selected_exam = st.selectbox(
-            "الامتحان", exam_options,
-            format_func=lambda x: "الكل" if x == "الكل" else (
-                exams_df[exams_df.exam_id == x]["title"].values[0]
-                if not exams_df.empty and x in exams_df["exam_id"].values
-                else str(x)
-            ),
-            key="exam_dashboard_exam_filter"
-        )
-
-    with col_f2:
-        section_options = ["الكل"]
-        if not students_df.empty and "section_id" in students_df.columns:
-            section_options += sorted([s for s in students_df["section_id"].dropna().unique().tolist() if str(s).strip()])
-        selected_section = st.selectbox(
-            "الفصل", section_options,
-            format_func=lambda x: "الكل" if x == "الكل" else str(x),
-            key="exam_dashboard_section_filter"
-        )
-
-    # ===== تصفية البيانات =====
-    # تصفية الامتحانات
-    filtered_exams = exams_df.copy() if not exams_df.empty else pd.DataFrame()
-    if selected_exam != "الكل" and not filtered_exams.empty and "exam_id" in filtered_exams.columns:
-        filtered_exams = filtered_exams[filtered_exams["exam_id"] == selected_exam]
-
-    # تصفية الطالبات
-    filtered_students = students_df.copy() if not students_df.empty else pd.DataFrame()
-    if selected_section != "الكل" and not filtered_students.empty and "section_id" in filtered_students.columns:
-        filtered_students = filtered_students[filtered_students["section_id"] == selected_section]
-
-    # تصفية النتائج
-    filtered_results = results_df.copy() if not results_df.empty else pd.DataFrame()
-    if selected_exam != "الكل" and not filtered_results.empty and "exam_id" in filtered_results.columns:
-        filtered_results = filtered_results[filtered_results["exam_id"] == selected_exam]
-    if selected_section != "الكل" and not filtered_results.empty and "student_id" in filtered_results.columns:
-        section_student_ids = filtered_students["student_id"].tolist() if not filtered_students.empty and "student_id" in filtered_students.columns else []
-        if section_student_ids:
-            filtered_results = filtered_results[filtered_results["student_id"].isin(section_student_ids)]
-
-    # النتائج المسلّمة فقط
-    if not filtered_results.empty and "status" in filtered_results.columns:
-        submitted = filtered_results[filtered_results["status"].astype(str).str.strip().str.lower() == "submitted"].copy()
-    else:
-        submitted = pd.DataFrame()
-
-    # حساب النسب المئوية
-    if not submitted.empty:
-        if "score" in submitted.columns:
-            submitted["score"] = pd.to_numeric(submitted["score"], errors="coerce").fillna(0)
-        if "total_marks" in submitted.columns:
-            submitted["total_marks"] = pd.to_numeric(submitted["total_marks"], errors="coerce").fillna(0)
-        if "score" in submitted.columns and "total_marks" in submitted.columns:
-            submitted["percentage"] = submitted.apply(
-                lambda r: (r["score"] / r["total_marks"] * 100) if r["total_marks"] > 0 else 0,
-                axis=1
-            )
-        elif "score" in submitted.columns:
-            submitted["percentage"] = submitted["score"]
-
-    # ===== الإحصائيات العامة =====
-    total_exams = len(filtered_exams) if not filtered_exams.empty else 0
-    total_students = filtered_students["student_id"].nunique() if not filtered_students.empty and "student_id" in filtered_students.columns else 0
-    avg_score = submitted["percentage"].mean() if not submitted.empty and "percentage" in submitted.columns else 0
-    pass_count = len(submitted[submitted["percentage"] >= 50]) if not submitted.empty and "percentage" in submitted.columns else 0
-    pass_rate = (pass_count / len(submitted) * 100) if len(submitted) > 0 else 0
-
-    st.markdown("### 📊 الإحصائيات العامة")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("📝 إجمالي الامتحانات", total_exams)
-    col2.metric("👩‍🎓 عدد الطالبات", total_students)
-    col3.metric("📈 متوسط الدرجات", f"{avg_score:.1f}%")
-    col4.metric("🎯 نسبة النجاح", f"{pass_rate:.1f}%")
-
-    st.markdown("---")
-
-    # ===== الرسوم البيانية =====
-    if submitted.empty:
-        st.info("لا توجد نتائج امتحانات مسلّمة للعرض.")
-    else:
-        # 1) Histogram - توزيع الدرجات
-        st.markdown("### 📊 توزيع الدرجات (Histogram)")
-        fig_hist = px.histogram(
-            submitted, x="percentage", nbins=20,
-            title="توزيع نسب الطالبات في الامتحانات",
-            color_discrete_sequence=["#2563eb"],
-            labels={"percentage": "النسبة المئوية", "count": "عدد الطالبات"}
-        )
-        fig_hist.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis_title="النسبة المئوية", yaxis_title="عدد الطالبات",
-            font=dict(family="Cairo")
-        )
-        st.plotly_chart(fig_hist, use_container_width=True)
-
-        # 2) Pie Chart - نسبة النجاح والرسوب
-        st.markdown("### 🥧 نسبة النجاح والرسوب (Pie Chart)")
-        pie_counts = pd.DataFrame({
-            "الحالة": ["ناجحة", "راسبة"],
-            "العدد": [pass_count, max(len(submitted) - pass_count, 0)]
-        })
-        pie_counts = pie_counts[pie_counts["العدد"] > 0]
-        if not pie_counts.empty:
-            fig_pie = px.pie(
-                pie_counts, names="الحالة", values="العدد",
-                title="نسبة النجاح والرسوب",
-                color_discrete_map={"ناجحة": "#28a745", "راسبة": "#dc3545"},
-                hole=0.3
-            )
-            fig_pie.update_layout(font=dict(family="Cairo"))
-            st.plotly_chart(fig_pie, use_container_width=True)
-
-        # 3) Bar Chart - متوسط الدرجات لكل امتحان
-        if not exams_df.empty and "exam_id" in exams_df.columns and "exam_id" in submitted.columns:
-            st.markdown("### 📊 متوسط الدرجات لكل امتحان (Bar Chart)")
-            exam_avg = submitted.groupby("exam_id")["percentage"].mean().reset_index()
-            exam_avg = exam_avg.merge(exams_df[["exam_id", "title"]], on="exam_id", how="left")
-            exam_avg["title"] = exam_avg["title"].fillna("بدون عنوان")
-            exam_avg = exam_avg.sort_values("percentage", ascending=False)
-
-            fig_bar = px.bar(
-                exam_avg, x="title", y="percentage",
-                title="متوسط الدرجات لكل امتحان",
-                color="percentage",
-                color_continuous_scale="Blues",
-                text_auto=".1f",
-                labels={"title": "الامتحان", "percentage": "متوسط النسبة المئوية (%)"}
-            )
-            fig_bar.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="الامتحان", yaxis_title="متوسط النسبة المئوية (%)",
-                font=dict(family="Cairo")
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-        st.markdown("---")
-
-        # ===== جدول النتائج =====
-        st.markdown("### 📋 جدول النتائج")
-        display = submitted.copy()
-
-        # دمج أسماء الامتحانات
-        if not exams_df.empty and "exam_id" in exams_df.columns and "exam_id" in display.columns:
-            display = display.merge(exams_df[["exam_id", "title"]], on="exam_id", how="left")
-            display.rename(columns={"title": "الامتحان"}, inplace=True)
-
-        # دمج أسماء الطالبات والفصول
-        if not students_df.empty and "student_id" in students_df.columns and "student_id" in display.columns:
-            display = display.merge(
-                students_df[["student_id", "full_name", "section_id"]],
-                on="student_id", how="left"
-            )
-            display["full_name"] = display["full_name"].fillna(display.get("student_name", ""))
-            display.rename(columns={"full_name": "اسم الطالبة", "section_id": "الفصل"}, inplace=True)
- 
-        # تحديد الأعمدة المعروضة
-        display_cols = []
-        if "اسم الطالبة" in display.columns:
-            display_cols.append("اسم الطالبة")
-        if "الامتحان" in display.columns:
-            display_cols.append("الامتحان")
-        if "الفصل" in display.columns:
-            display_cols.append("الفصل")
-        if "score" in display.columns:
-            display_cols.append("score")
-        if "total_marks" in display.columns:
-            display_cols.append("total_marks")
-        if "percentage" in display.columns:
-            display_cols.append("percentage")
-        if "status" in display.columns:
-            display_cols.append("status")
-        if "submission_time" in display.columns:
-            display_cols.append("submission_time")
-
-        if display_cols:
-            sort_col = "percentage" if "percentage" in display_cols else display_cols[0]
-            sorted_display = display[display_cols].sort_values(sort_col, ascending=False)
-            st.dataframe(
-                sorted_display,
-                use_container_width=True,
-                column_config={
-                    "اسم الطالبة": "اسم الطالبة",
-                    "الامتحان": "الامتحان",
-                    "الفصل": "الفصل",
-                    "score": "الدرجة",
-                    "total_marks": "الدرجة الكلية",
-                    "percentage": "النسبة المئوية",
-                    "status": "الحالة",
-                    "submission_time": "وقت التسليم"
-                }
-            )
-        else:
-            st.dataframe(display, use_container_width=True)
-
-        # ===== ملخص إضافي =====
-        with st.expander("📈 إحصائيات تفصيلية"):
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("🎯 أعلى درجة", f"{submitted['percentage'].max():.1f}%" if not submitted.empty and "percentage" in submitted.columns else "—")
-            c2.metric("📉 أدنى درجة", f"{submitted['percentage'].min():.1f}%" if not submitted.empty and "percentage" in submitted.columns else "—")
-            c3.metric("✅ عدد الناجحات", pass_count)
-            c4.metric("❌ عدد الراسبات", max(len(submitted) - pass_count, 0))
-
-
 # =============================================================================
 # مراجعة الواجبات
 # =============================================================================
-def show_homework_review(db):
-    """
-    مراجعة واجبات الطالبات:
-    - رفع صور الواجب (تسليم الواجب بالصور)
-    - مراجعة وتقييم التسليمات
-    - قبول أو رفض
-    - إضافة ملاحظات
-    - منح درجات
-    - إرسال إشعار للطالبة بنتيجة المراجعة
-    """
-    st.markdown(hero_header("مراجعة الواجبات", "📸 عرض ومراجعة واجبات الطالبات وتقييمها"), unsafe_allow_html=True)
-
-    user = st.session_state.get("user", {})
-    role = user.get("role", "")
-
-    homeworks = db.get_homeworks()
-    if homeworks.empty:
-        st.info("لا توجد واجبات مسجلة بعد.")
-        return
-
-    # المعلم يرى واجبات فصله فقط
-    if role not in ["System Admin", "Father Account", "Service Manager"]:
-        teacher_section = user.get("section_id", "")
-        if teacher_section and "section_id" in homeworks.columns:
-            homeworks = homeworks[homeworks["section_id"] == teacher_section]
-        if homeworks.empty:
-            st.info("لا توجد واجبات لفصلك.")
-            return
-
-    submissions = db.get_homework_submissions()
-    students = db.get_students()
-
-    # اختيار الواجب
-    hw_options = {
-        str(row["homework_id"]): f"{row.get('title', '')} | {row.get('subject', '')} | {row.get('section_id', '')}"
-        for _, row in homeworks.iterrows()
-    }
-    selected_id = st.selectbox("📌 اختر الواجب للمراجعة", list(hw_options.keys()), format_func=lambda x: hw_options.get(x, x))
-    if not selected_id:
-        return
-
-    homework = homeworks[homeworks["homework_id"] == selected_id].iloc[0].to_dict()
-    total_marks = homework.get("total_marks", 0)
-    try:
-        total_marks = float(total_marks or 0)
-    except (TypeError, ValueError):
-        total_marks = 0.0
-
-    # تفاصيل الواجب
-    st.markdown("### 📋 تفاصيل الواجب")
-    d1, d2, d3, d4 = st.columns(4)
-    d1.metric("العنوان", homework.get("title", "-"))
-    d2.metric("المادة", homework.get("subject", "-"))
-    d3.metric("الفصل", homework.get("section_id", "-"))
-    d4.metric("الدرجة الكلية", f"{total_marks:g}")
-    if homework.get("description"):
-        st.caption(f"📝 {homework['description']}")
-
-    st.markdown("---")
-
-    # ===== رفع صور واجب لطالبة =====
-    with st.expander("📤 رفع صور واجب طالبة", expanded=False):
-        st.caption("أضف تسليم واجب لإحدى الطالبات (مع رفع صور) ليتم مراجعته وتقييمه.")
-        if students.empty:
-            st.info("لا توجد طالبات مسجلات.")
-        else:
-            sec_id = homework.get("section_id", "")
-            class_students = students
-            if sec_id and "section_id" in students.columns:
-                class_students = students[students["section_id"] == sec_id]
-            if class_students.empty:
-                st.info("لا توجد طالبات في هذا الفصل.")
-            else:
-                student_options = {
-                    str(row["student_id"]): f"{row.get('full_name', '')} ({row.get('section_id', '')})"
-                    for _, row in class_students.iterrows()
-                }
-                add_c1, add_c2 = st.columns(2)
-                with add_c1:
-                    sel_student = st.selectbox(
-                        "👩‍🎓 الطالبة", list(student_options.keys()),
-                        format_func=lambda x: student_options.get(x, x),
-                        key=f"add_stu_{selected_id}"
-                    )
-                with add_c2:
-                    add_note = st.text_area("📝 ملاحظة الطالبة", height=90, key=f"add_note_{selected_id}")
-                uploaded = st.file_uploader(
-                    "📸 رفع صور الواجب (jpg, jpeg, png, webp, gif)",
-                    type=["jpg", "jpeg", "png", "webp", "gif"],
-                    accept_multiple_files=True,
-                    key=f"up_{selected_id}"
-                )
-                if st.button("💾 تسجيل التسليم", key=f"save_{selected_id}"):
-                    try:
-                        stu_row = class_students[class_students["student_id"] == sel_student].iloc[0]
-                        images_base64, image_names = [], []
-                        if uploaded:
-                            for uf in uploaded:
-                                b64 = base64.b64encode(uf.getvalue()).decode("utf-8")
-                                if len(b64) > 45000:
-                                    st.warning(f"⚠️ الصورة {uf.name} كبيرة جداً (الحد الأقصى 45 ألف حرف) ولن تُحفظ.")
-                                    continue
-                                images_base64.append(b64)
-                                image_names.append(uf.name)
-                        sub_data = {
-                            "submission_id": str(uuid.uuid4()),
-                            "homework_id": selected_id,
-                            "student_id": str(stu_row.get("student_id", "")),
-                            "student_name": str(stu_row.get("full_name", "")),
-                            "section_id": str(stu_row.get("section_id", "")),
-                            "image_data": json.dumps(images_base64) if images_base64 else "",
-                            "image_name": json.dumps(image_names) if image_names else "",
-                            "submission_note": add_note or "",
-                            "status": "pending",
-                            "grade": "",
-                            "feedback": "",
-                            "submitted_at": get_cairo_now().isoformat(),
-                            "reviewed_by": "",
-                            "reviewed_at": ""
-                        }
-                        db.add_homework_submission(sub_data)
-                        st.success("✅ تم حفظ تسليم الواجب بنجاح.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ فشل حفظ التسليم: {e}")
-
-    st.markdown("---")
-
-    # ===== مراجعة التسليمات =====
-    hw_subs = pd.DataFrame()
-    if not submissions.empty and "homework_id" in submissions.columns:
-        hw_subs = submissions[submissions["homework_id"] == selected_id]
-    if hw_subs.empty:
-        st.markdown(empty_state("لا توجد تسليمات لهذا الواجب بعد.", "📭"), unsafe_allow_html=True)
-        return
-
-    st.markdown(f"### 📝 التسليمات ({len(hw_subs)})")
-    status_map = {"pending": "⏳ بانتظار المراجعة", "accepted": "✅ مقبول", "rejected": "❌ مرفوض"}
-
-    for _, sub_row in hw_subs.iterrows():
-        sub = sub_row.to_dict()
-        sub_id = str(sub.get("submission_id", ""))
-        cur_status = sub.get("status", "pending")
-
-        # وقت التسليم
-        sub_time_display = "غير متاح"
-        try:
-            sub_dt = pd.to_datetime(sub.get("submitted_at", ""))
-            if pd.isna(sub_dt):
-                sub_time_display = "غير متاح"
-            else:
-                if sub_dt.tzinfo is None:
-                    sub_dt = sub_dt.replace(tzinfo=CAIRO_TZ)
-                sub_time_display = format_cairo_time(sub_dt)
-        except Exception:
-            sub_time_display = "غير متاح"
-
-        with st.expander(
-            f"👩‍🎓 {sub.get('student_name', '')} — {status_map.get(cur_status, cur_status)} — 🕒 {sub_time_display}",
-            expanded=False
-        ):
-            info_cols = st.columns(4)
-            info_cols[0].markdown(f"**الفصل:** {sub.get('section_id', '-')}")
-            cur_grade = sub.get("grade", "")
-            info_cols[1].markdown(f"**الدرجة الحالية:** {cur_grade if cur_grade not in ('', None) else '—'} من {total_marks:g}")
-            info_cols[2].markdown(f"**الحالة:** {status_map.get(cur_status, cur_status)}")
-            info_cols[3].markdown(f"**وقت التسليم:** {sub_time_display}")
-
-            if sub.get("submission_note"):
-                st.markdown(f"**📝 ملاحظة الطالبة:** {sub['submission_note']}")
-
-            # عرض الصور
-            img_json = sub.get("image_data", "")
-            if img_json:
-                try:
-                    imgs = json.loads(img_json)
-                    names = json.loads(sub.get("image_name", "[]") or "[]")
-                    if not isinstance(imgs, list):
-                        imgs = [imgs]
-                    if not isinstance(names, list):
-                        names = [names]
-                    st.markdown("**📸 صور الواجب:**")
-                    img_cols = st.columns(min(len(imgs), 3) if imgs else 1)
-                    for idx_i, b64 in enumerate(imgs):
-                        try:
-                            img_bytes = base64.b64decode(b64)
-                            caption = f"صورة {idx_i + 1}"
-                            if idx_i < len(names) and names[idx_i]:
-                                caption = names[idx_i]
-                            with img_cols[idx_i % len(img_cols)]:
-                                st.image(img_bytes, caption=caption, use_container_width=True)
-                        except Exception:
-                            st.warning(f"تعذر عرض الصورة رقم {idx_i + 1}.")
-                except Exception:
-                    st.error("تعذر قراءة بيانات الصور.")
-
-            # نموذج المراجعة
-            st.markdown("#### 🧑‍🏫 المراجعة")
-            grade_init = 0.0
-            try:
-                grade_init = float(sub.get("grade", 0) or 0)
-            except (TypeError, ValueError):
-                grade_init = 0.0
-            decision_init = 0
-            if cur_status == "rejected":
-                decision_init = 1
-
-            with st.form(key=f"review_{sub_id}"):
-                r1, r2 = st.columns(2)
-                with r1:
-                    new_grade = st.number_input(
-                        "🎯 الدرجة",
-                        min_value=0.0,
-                        max_value=total_marks if total_marks > 0 else 100.0,
-                        value=grade_init,
-                        step=0.5,
-                        key=f"g_{sub_id}"
-                    )
-                with r2:
-                    decision = st.radio(
-                        "القرار",
-                        ["accepted", "rejected"],
-                        format_func=lambda x: "✅ قبول" if x == "accepted" else "❌ رفض",
-                        key=f"d_{sub_id}",
-                        index=decision_init
-                    )
-                new_feedback = st.text_area("📌 ملاحظات المراجعة", value=sub.get("feedback", ""), key=f"f_{sub_id}")
-                save_btn = st.form_submit_button("💾 حفظ المراجعة وإرسال الإشعار")
-
-            if save_btn:
-                try:
-                    updates = {
-                        "status": decision,
-                        "grade": str(new_grade),
-                        "feedback": new_feedback,
-                        "reviewed_by": user.get("full_name", user.get("username", "")),
-                        "reviewed_at": get_cairo_now().isoformat()
-                    }
-                    db.update_homework_submission(sub_id, updates)
-
-                    # إشعار للطالبة
-                    if decision == "accepted":
-                        n_title = "✅ تم قبول واجبك"
-                        n_msg = f"تم قبول واجب: {homework.get('title', '')}"
-                        if total_marks > 0:
-                            n_msg += f" | الدرجة: {new_grade:g} من {total_marks:g}"
-                    else:
-                        n_title = "❌ تم رفض واجبك"
-                        n_msg = f"تم رفض واجب: {homework.get('title', '')}"
-                    if new_feedback:
-                        n_msg += f" | ملاحظات: {new_feedback}"
-                    db.add_notification({
-                        "notification_id": str(uuid.uuid4()),
-                        "user_id": str(sub.get("student_id", "")),
-                        "title": n_title,
-                        "message": n_msg,
-                        "notification_type": "homework_review",
-                        "is_read": "False",
-                        "created_at": get_cairo_now().isoformat()
-                    })
-                    st.success(f"✅ تم حفظ المراجعة وإرسال إشعار للطالبة {sub.get('student_name', '')}.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ فشل حفظ المراجعة: {e}")
-
-    # ===== ملخص المراجعة =====
-    st.markdown("---")
-    st.markdown("### 📊 ملخص المراجعة")
-    acc = hw_subs[hw_subs["status"] == "accepted"]
-    rej = hw_subs[hw_subs["status"] == "rejected"]
-    pend = hw_subs[hw_subs["status"] == "pending"]
-    grade_series = pd.to_numeric(hw_subs.get("grade", pd.Series(dtype=float)), errors="coerce").dropna()
-    avg_grade = grade_series.mean() if not grade_series.empty else 0.0
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("✅ مقبول", len(acc))
-    m2.metric("❌ مرفوض", len(rej))
-    m3.metric("⏳ بانتظار المراجعة", len(pend))
-    m4.metric("📈 متوسط الدرجات", f"{avg_grade:.1f}" if not grade_series.empty else "—")
-
-
 # =============================================================================
 # Notifications Panel - لوحة الإشعارات
 # =============================================================================
@@ -9739,11 +7578,10 @@ def show_notifications_panel(db):
         else:
             # ===== زر قراءة الكل =====
             if unread_count > 0:
-                if st.button("✅ تحديد الكل كمقروء", use_container_width=True, key="mark_all_read_btn"):
-                    for _, notif in filtered.iterrows():
-                        nid = notif.get("notification_id", "")
-                        if nid and str(notif.get("is_read", "False")).strip().lower() != "true":
-                            db.mark_notification_read(nid)
+                if st.button("✅ تحديد الكل كمقروء", type="secondary", use_container_width=True, key="mark_all_read_btn"):
+                    unread_ids = [n for _, n in filtered.iterrows()
+                                  if n.get("notification_id") and str(n.get("is_read", "False")).strip().lower() != "true"]
+                    db.mark_all_notifications_read([u.get("notification_id") for u in unread_ids])
                     st.success("✅ تم تحديد جميع الإشعارات كمقروءة")
                     time.sleep(1)
                     st.rerun()
@@ -9811,16 +7649,10 @@ def show_notifications_panel(db):
                 # زر حذف الإشعار
                 with act_cols[1]:
                     if st.button("🗑️ حذف", key=f"del_notif_{nid}", use_container_width=True):
-                        try:
-                            all_notifs = db.get_notifications()
-                            if not all_notifs.empty and "notification_id" in all_notifs.columns:
-                                all_notifs = all_notifs[all_notifs["notification_id"] != nid]
-                                db._df_to_sheet("Notifications", all_notifs, db.NOTIFICATION_COLUMNS)
-                                st.success("✅ تم حذف الإشعار")
-                                time.sleep(1)
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ فشل حذف الإشعار: {e}")
+                        db.delete_notification(nid)
+                        st.success("✅ تم حذف الإشعار")
+                        time.sleep(1)
+                        st.rerun()
 
                 st.markdown("---")
 
@@ -10628,18 +8460,25 @@ def main():
         try:
             creds = get_credentials()
             st.session_state.db_instance = Database(creds, get_spreadsheet_id())
-        except Exception as e:
-            st.error(f"❌ خطأ في الاتصال: {e}")
+            try:
+                st.session_state.db_instance.ensure_all_sheets_exist()
+            except Exception:
+                pass  # تُنشأ الأوراق تلقائيًا عند الاستخدام
+        except Exception:
+            st.error("⚠️ تعذر الاتصال بقاعدة البيانات. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.")
+            st.caption("إذا استمرت المشكلة، تواصل مع مسؤول النظام.")
             st.stop()
     db = st.session_state.db_instance
     jwt_secret = get_jwt_secret()
     if st.session_state.get("authenticated"):
-        try:
-            migrated = db.migrate_single_supervisors()
-            if migrated and migrated > 0:
-                st.caption(f"تم نقل {migrated} تعيين من مسؤول المرحلة القديم إلى نظام المشرفين المتعددين.")
-        except Exception:
-            pass
+        if not st.session_state.get("migration_done"):
+            try:
+                migrated = db.migrate_single_supervisors()
+                if migrated and migrated > 0:
+                    st.caption(f"تم نقل {migrated} تعيين من مسؤول المرحلة القديم إلى نظام المشرفين المتعددين.")
+                st.session_state.migration_done = True
+            except Exception:
+                st.session_state.migration_done = True
     st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.session_state.get("student_logged_in", False):
         show_student_dashboard(db)
