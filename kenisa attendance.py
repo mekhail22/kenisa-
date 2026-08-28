@@ -953,11 +953,11 @@ def render_help_center_button():
         st.rerun()
 
 
-_CHURCH_LOGO_PATH = os.path.join(os.path.dirname(__file__), "image 1.jpg")
+_CHURCH_LOGO_PATH = os.path.join(os.path.dirname(__file__), "image1.jpg")
 
 
 def _church_logo_data_url():
-    """Load the church image (image 1.jpg) from the repo and return a data URL for the header."""
+    """Load the church image (image1.jpg) from the repo and return a data URL for the header."""
     try:
         if not os.path.exists(_CHURCH_LOGO_PATH):
             return ""
