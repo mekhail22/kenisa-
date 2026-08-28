@@ -831,38 +831,83 @@ def inject_css():
 
 
 def inject_top_bar_css():
-    """Styles for the global top bar (Help + Menu buttons) — small, right side, blue."""
+    """Styles for the church header bar (brand + compact blue controls)."""
     st.markdown("""
     <style>
-    .app-top-bar {
-        direction: rtl;
-        margin-bottom: 0.5rem;
-        padding-bottom: 0.25rem;
-        border-bottom: 1px solid #e5e7eb;
+    /* ===== Church header container (keyed container) ===== */
+    .st-key-app_header {
+        direction: rtl !important;
+        margin-bottom: 0.6rem !important;
+        padding-bottom: 0.5rem !important;
+        border-bottom: 2px solid #e2e8f0 !important;
     }
-    /* زر مركز المساعدة + زر القائمة: أصغر حجماً وباللون الأزرق */
+    /* Force left-to-right flow inside the header so the brand is on the LEFT
+       and the compact controls sit on the far RIGHT. */
+    .st-key-app_header [data-testid="stHorizontalBlock"] {
+        direction: ltr !important;
+        align-items: center !important;
+    }
+    /* ===== Branding: church image + name ===== */
+    .app-header-brand {
+        display: flex !important;
+        align-items: center !important;
+        gap: 0.7rem !important;
+        padding: 0.2rem 0 !important;
+        min-width: 0 !important;
+    }
+    .app-header-logo {
+        width: 46px !important;
+        height: 46px !important;
+        object-fit: cover !important;
+        border-radius: 50% !important;
+        border: 2px solid #2563eb !important;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
+        flex-shrink: 0 !important;
+        background: #ffffff !important;
+    }
+        .app-header-name {
+        font-size: 1.3rem !important;
+        font-weight: 800 !important;
+        color: #0f172a !important;
+        font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif !important;
+        line-height: 1.35 !important;
+        white-space: nowrap !important;
+        direction: rtl !important;
+        text-align: right !important;
+    }
+        /* ===== Compact blue controls: [☰] [مركز المساعدة] ===== */
     .st-key-app_help_center_btn button,
     .st-key-app_student_menu_btn button,
-    .st-key-app_admin_menu_btn button,
-    .st-key-app_help_center_btn [data-testid="stButton"] button,
-    .st-key-app_student_menu_btn [data-testid="stButton"] button,
-    .st-key-app_admin_menu_btn [data-testid="stButton"] button {
+    .st-key-app_admin_menu_btn button {
         background-color: #2563eb !important;
         color: #ffffff !important;
         border: none !important;
         border-radius: 8px !important;
         min-height: 34px !important;
-        padding: 0.3rem 0.85rem !important;
+        padding: 0.3rem 0.7rem !important;
         font-weight: 700 !important;
         font-size: 0.82rem !important;
         line-height: 1.3 !important;
         box-shadow: 0 2px 6px rgba(37, 99, 235, 0.22) !important;
+        white-space: nowrap !important;
+    }
+    /* Help Center label is Arabic → render RTL regardless of the LTR
+       flex direction we force on the header columns for layout ordering. */
+    .st-key-app_help_center_btn button {
+        direction: rtl !important;
+        text-align: right !important;
     }
     .st-key-app_help_center_btn button:hover,
     .st-key-app_student_menu_btn button:hover,
     .st-key-app_admin_menu_btn button:hover {
         background-color: #1d4ed8 !important;
         color: #ffffff !important;
+    }
+    /* Burger icon: compact square */
+    .st-key-app_student_menu_btn button,
+    .st-key-app_admin_menu_btn button {
+        font-size: 1.05rem !important;
+        padding: 0.25rem 0.55rem !important;
     }
     .app-top-title-center {
         text-align: center;
@@ -872,12 +917,28 @@ def inject_top_bar_css():
         margin: 0.65rem 0 0.85rem 0;
         line-height: 1.45;
     }
-    @media (max-width: 480px) {
+    /* ===== Mobile: no overflow — stack the header, controls stay on one row ===== */
+    @media (max-width: 640px) {
+        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type {
+            flex-direction: column !important;
+            align-items: stretch !important;
+        }
+        .st-key-app_header [data-testid="stColumn"] [data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+        }
+        .app-header-name {
+            font-size: 1.02rem !important;
+            white-space: normal !important;
+        }
+        .app-header-logo {
+            width: 38px !important;
+            height: 38px !important;
+        }
         .st-key-app_help_center_btn button,
         .st-key-app_student_menu_btn button,
         .st-key-app_admin_menu_btn button {
             min-height: 40px !important;
-            font-size: 0.9rem !important;
+            font-size: 0.85rem !important;
         }
         .app-top-title-center { font-size: 0.92rem; }
     }
@@ -886,66 +947,89 @@ def inject_top_bar_css():
 
 
 def render_help_center_button():
-    """Blue Help Center button — call at most once per Streamlit run."""
-    if st.button("❓ مركز المساعدة", key="app_help_center_btn", use_container_width=True):
+    """Blue 'مركز المساعدة' button — call at most once per Streamlit run."""
+    if st.button("مركز المساعدة", key="app_help_center_btn", use_container_width=True):
         st.session_state.open_help_dialog = True
         st.rerun()
 
 
-def render_student_menu_button():
-    """Blue menu button for student portal — call at most once per Streamlit run."""
-    if st.button("القائمة", key="app_student_menu_btn", use_container_width=True):
-        st.session_state.sidebar_open = not st.session_state.get("sidebar_open", False)
+_CHURCH_LOGO_PATH = os.path.join(os.path.dirname(__file__), "image 1.jpg")
+
+
+def _church_logo_data_url():
+    """Load the church image (image 1.jpg) from the repo and return a data URL for the header."""
+    try:
+        if not os.path.exists(_CHURCH_LOGO_PATH):
+            return ""
+        with open(_CHURCH_LOGO_PATH, "rb") as _f:
+            b64 = base64.b64encode(_f.read()).decode("utf-8")
+        return f"data:image/jpeg;base64,{b64}"
+    except Exception:
+        return ""
+
+
+def render_header_burger_button(button_key, open_handler):
+    """Small blue hamburger ☰ button — opens the side menu."""
+    if st.button("☰", key=button_key, use_container_width=True):
+        open_handler()
         st.rerun()
 
 
-def render_student_top_bar(current_page):
-    """Single student top bar: Help + Menu (right side), optional competitions title below."""
+def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", burger_handler=None, extra_title_html=""):
+    """Church header: brand (image + كنيسة الشهيدة دميانة) on the left,
+    and on the far right the compact blue controls [☰] [مركز المساعدة]."""
     inject_top_bar_css()
-    st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
-    is_competitions = current_page == STUDENT_ASSESSMENTS_PAGE
-    _spacer, c_right = st.columns([1, 1])
-    with c_right:
-        ch, cm = st.columns(2)
-        with ch:
-            render_help_center_button()
-        with cm:
-            render_student_menu_button()
-    if is_competitions:
-        st.markdown(
-            '<p class="app-top-title-center">المسابقات والاختبارات 🏆</p>',
-            unsafe_allow_html=True,
-        )
-    st.markdown('</div>', unsafe_allow_html=True)
+    logo_url = _church_logo_data_url()
+    with st.container(key="app_header"):
+        c_brand, c_actions = st.columns([2, 1], gap="medium")
+        with c_brand:
+            st.markdown(
+                f"""<div class="app-header-brand">
+                <img class="app-header-logo" src="{logo_url}" alt="كنيسة الشهيدة دميانة" />
+                <span class="app-header-name">كنيسة الشهيدة دميانة</span>
+            </div>""",
+                unsafe_allow_html=True,
+            )
+        with c_actions:
+            if show_burger and burger_handler is not None:
+                c_burger, c_help = st.columns(2, gap="small")
+                with c_burger:
+                    render_header_burger_button(burger_key, burger_handler)
+                with c_help:
+                    render_help_center_button()
+            else:
+                render_help_center_button()
+    if extra_title_html:
+        st.markdown(extra_title_html, unsafe_allow_html=True)
+
+
+def render_student_top_bar(current_page):
+    """Student header: brand (left) + [☰] [مركز المساعدة] (far right)."""
+    extra = ""
+    if current_page == STUDENT_ASSESSMENTS_PAGE:
+        extra = '<p class="app-top-title-center">المسابقات والاختبارات 🏆</p>'
+    render_church_header(
+        show_burger=True,
+        burger_key="app_student_menu_btn",
+        burger_handler=lambda: st.session_state.update(
+            {"sidebar_open": not st.session_state.get("sidebar_open", False)}
+        ),
+        extra_title_html=extra,
+    )
 
 
 def render_login_top_bar():
-    """Help Center on login page (right side)."""
-    inject_top_bar_css()
-    st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
-    _c1, _c2, c3 = st.columns([1, 1, 1])
-    with c3:
-        render_help_center_button()
-    st.markdown('</div>', unsafe_allow_html=True)
+    """Login header: brand (left) + مركز المساعدة (right) — no burger before login."""
+    render_church_header(show_burger=False)
 
 
 def render_admin_top_bar(show_menu_button=False):
-    """Help Center (+ optional menu) for admin/staff pages — right side, small & blue."""
-    inject_top_bar_css()
-    st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
-    _spacer, c_right = st.columns([1, 1])
-    with c_right:
-        if show_menu_button:
-            ch, cm = st.columns(2)
-            with ch:
-                render_help_center_button()
-            with cm:
-                if st.button("القائمة", key="app_admin_menu_btn", use_container_width=True):
-                    st.session_state.show_sidebar = True
-                    st.rerun()
-        else:
-            render_help_center_button()
-    st.markdown('</div>', unsafe_allow_html=True)
+    """Admin header: brand (left) + [☰] [مركز المساعدة] (far right)."""
+    render_church_header(
+        show_burger=show_menu_button,
+        burger_key="app_admin_menu_btn",
+        burger_handler=lambda: st.session_state.update({"show_sidebar": True}),
+    )
 
 
 def inject_user_cards_css():
@@ -4807,36 +4891,41 @@ def show_members_cards_page(db):
                 card_rec = member_cards_map.get(str(mid))
                 if card_rec is not None:
                     st.markdown("<span class='card-badge active'>🪪 البطاقة: جاهزة</span>", unsafe_allow_html=True)
-                    cc1, cc2, cc3 = st.columns(3)
-                    with cc1:
-                        if st.button("👁️ عرض", help="عرض البطاقة", key=f"card_view_{mid}", use_container_width=True):
-                            st.session_state.card_preview_member = str(mid)
-                            st.session_state.pop("card_download_member", None)
-                            st.rerun()
-                    with cc2:
-                        if st.button("🔄 إعادة", help="إعادة إنشاء البطاقة", key=f"card_regen_{mid}", use_container_width=True):
-                            if selected_card_tpl is None:
-                                st.error("⚠️ لا يوجد Template صالح للبطاقات.")
-                            else:
-                                try:
-                                    cdata_r = build_member_card_data(m, sections, stages)
-                                    render_member_card(selected_card_tpl, cdata_r)
-                                    db.issue_member_card(str(mid), member_type, full_name,
-                                                         selected_card_tpl.get("template_id", ""),
-                                                         selected_card_tpl.get("template_name", ""),
-                                                         user.get("user_id", ""))
-                                    st.success("✅ تمت إعادة إنشاء البطاقة")
-                                    time.sleep(1)
-                                    st.rerun()
-                                except ValueError as ve:
-                                    st.error(f"❌ {ve}")
-                                except Exception as e:
-                                    st.error(f"❌ فشل إنشاء البطاقة: {e}")
-                    with cc3:
-                        if st.button("⬇️ تحميل", help="تحميل البطاقة PNG", key=f"card_dl_{mid}", use_container_width=True):
-                            st.session_state.card_download_member = str(mid)
-                            st.session_state.pop("card_preview_member", None)
-                            st.rerun()
+                    # زر رئيسي واحد فقط — الضغط عليه يُظهر إجراءات البطاقة (عرض / إعادة / تحميل)
+                    card_actions_key = f"card_actions_open_{mid}"
+                    if st.button("🪪 إجراءات البطاقة", help="عرض / إعادة / تحميل البطاقة", key=f"card_actions_btn_{mid}", use_container_width=True):
+                        st.session_state[card_actions_key] = not st.session_state.get(card_actions_key, False)
+                    if st.session_state.get(card_actions_key, False):
+                        cc1, cc2, cc3 = st.columns(3)
+                        with cc1:
+                            if st.button("👁️ عرض", help="عرض البطاقة", key=f"card_view_{mid}", use_container_width=True):
+                                st.session_state.card_preview_member = str(mid)
+                                st.session_state.pop("card_download_member", None)
+                                st.rerun()
+                        with cc2:
+                            if st.button("🔄 إعادة", help="إعادة إنشاء البطاقة", key=f"card_regen_{mid}", use_container_width=True):
+                                if selected_card_tpl is None:
+                                    st.error("⚠️ لا يوجد Template صالح للبطاقات.")
+                                else:
+                                    try:
+                                        cdata_r = build_member_card_data(m, sections, stages)
+                                        render_member_card(selected_card_tpl, cdata_r)
+                                        db.issue_member_card(str(mid), member_type, full_name,
+                                                             selected_card_tpl.get("template_id", ""),
+                                                             selected_card_tpl.get("template_name", ""),
+                                                             user.get("user_id", ""))
+                                        st.success("✅ تمت إعادة إنشاء البطاقة")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    except ValueError as ve:
+                                        st.error(f"❌ {ve}")
+                                    except Exception as e:
+                                        st.error(f"❌ فشل إنشاء البطاقة: {e}")
+                        with cc3:
+                            if st.button("⬇️ تحميل", help="تحميل البطاقة PNG", key=f"card_dl_{mid}", use_container_width=True):
+                                st.session_state.card_download_member = str(mid)
+                                st.session_state.pop("card_preview_member", None)
+                                st.rerun()
                 else:
                     st.markdown("<span class='card-badge inactive'>🪪 البطاقة: غير صادرة</span>", unsafe_allow_html=True)
 
