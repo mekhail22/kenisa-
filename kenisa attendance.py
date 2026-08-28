@@ -831,7 +831,7 @@ def inject_css():
 
 
 def inject_top_bar_css():
-    """Styles for the global top bar (Help + Menu buttons)."""
+    """Styles for the global top bar (Help + Menu buttons) — small, right side, blue."""
     st.markdown("""
     <style>
     .app-top-bar {
@@ -840,17 +840,27 @@ def inject_top_bar_css():
         padding-bottom: 0.25rem;
         border-bottom: 1px solid #e5e7eb;
     }
-    .app-top-bar [data-testid="stButton"] > button {
+    /* زر مركز المساعدة + زر القائمة: أصغر حجماً وباللون الأزرق */
+    .st-key-app_help_center_btn button,
+    .st-key-app_student_menu_btn button,
+    .st-key-app_admin_menu_btn button,
+    .st-key-app_help_center_btn [data-testid="stButton"] button,
+    .st-key-app_student_menu_btn [data-testid="stButton"] button,
+    .st-key-app_admin_menu_btn [data-testid="stButton"] button {
         background-color: #2563eb !important;
         color: #ffffff !important;
         border: none !important;
-        border-radius: 12px !important;
-        min-height: 48px !important;
+        border-radius: 8px !important;
+        min-height: 34px !important;
+        padding: 0.3rem 0.85rem !important;
         font-weight: 700 !important;
-        font-size: 0.95rem !important;
-        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22) !important;
+        font-size: 0.82rem !important;
+        line-height: 1.3 !important;
+        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.22) !important;
     }
-    .app-top-bar [data-testid="stButton"] > button:hover {
+    .st-key-app_help_center_btn button:hover,
+    .st-key-app_student_menu_btn button:hover,
+    .st-key-app_admin_menu_btn button:hover {
         background-color: #1d4ed8 !important;
         color: #ffffff !important;
     }
@@ -863,9 +873,11 @@ def inject_top_bar_css():
         line-height: 1.45;
     }
     @media (max-width: 480px) {
-        .app-top-bar [data-testid="stButton"] > button {
-            min-height: 52px !important;
-            font-size: 1rem !important;
+        .st-key-app_help_center_btn button,
+        .st-key-app_student_menu_btn button,
+        .st-key-app_admin_menu_btn button {
+            min-height: 40px !important;
+            font-size: 0.9rem !important;
         }
         .app-top-title-center { font-size: 0.92rem; }
     }
@@ -888,54 +900,50 @@ def render_student_menu_button():
 
 
 def render_student_top_bar(current_page):
-    """Single student top bar: Help (left), Menu (right), optional competitions title below."""
+    """Single student top bar: Help + Menu (right side), optional competitions title below."""
     inject_top_bar_css()
     st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
     is_competitions = current_page == STUDENT_ASSESSMENTS_PAGE
-    if is_competitions:
-        c_left, c_right = st.columns(2)
-        with c_left:
+    _spacer, c_right = st.columns([1, 1])
+    with c_right:
+        ch, cm = st.columns(2)
+        with ch:
             render_help_center_button()
-        with c_right:
+        with cm:
             render_student_menu_button()
+    if is_competitions:
         st.markdown(
             '<p class="app-top-title-center">المسابقات والاختبارات 🏆</p>',
             unsafe_allow_html=True,
         )
-    else:
-        c_left, _c_mid, c_right = st.columns([1, 0.15, 1])
-        with c_left:
-            render_help_center_button()
-        with c_right:
-            render_student_menu_button()
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_login_top_bar():
-    """Help Center on login page."""
+    """Help Center on login page (right side)."""
     inject_top_bar_css()
     st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
-    c1, _c2, _c3 = st.columns([1, 1, 1])
-    with c1:
+    _c1, _c2, c3 = st.columns([1, 1, 1])
+    with c3:
         render_help_center_button()
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_admin_top_bar(show_menu_button=False):
-    """Help Center (+ optional menu) for admin/staff pages."""
+    """Help Center (+ optional menu) for admin/staff pages — right side, small & blue."""
     inject_top_bar_css()
     st.markdown('<div class="app-top-bar">', unsafe_allow_html=True)
-    if show_menu_button:
-        c_left, c_right = st.columns(2)
-        with c_left:
-            render_help_center_button()
-        with c_right:
-            if st.button("القائمة", key="app_admin_menu_btn", use_container_width=True):
-                st.session_state.show_sidebar = True
-                st.rerun()
-    else:
-        c1, _c2, _c3 = st.columns([1, 1, 1])
-        with c1:
+    _spacer, c_right = st.columns([1, 1])
+    with c_right:
+        if show_menu_button:
+            ch, cm = st.columns(2)
+            with ch:
+                render_help_center_button()
+            with cm:
+                if st.button("القائمة", key="app_admin_menu_btn", use_container_width=True):
+                    st.session_state.show_sidebar = True
+                    st.rerun()
+        else:
             render_help_center_button()
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7666,6 +7674,10 @@ def show_notifications_panel(db):
 
 CARD_TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "card_templates")
 
+# صورة تصميم البطاقة الرسمية — ملف ثابت داخل المستودع (template_1.png)
+# مسار نسبي لمجلد المشروع يعمل محلياً وعلى Streamlit Cloud، ولا يعتمد على أي ملف مرفوع/مؤقت.
+CARD_TEMPLATE_REPO_IMAGE = os.path.join(os.path.dirname(__file__), "template_1.png")
+
 # أنواع عناصر البطاقة المدعومة — يمكن إضافة عناصر جديدة هنا مستقبلاً بدون إعادة بناء النظام
 CARD_ELEMENT_TYPES = {
     "name": {"label": "الاسم"},
@@ -7754,7 +7766,12 @@ def _fit_card_font(draw, text, start_size, max_width, bold):
 
 @st.cache_data(show_spinner=False)
 def _load_card_template_image_cached(image_ref, mtime):
-    """تحميل صورة تصميم القالب مع تخزين مؤقت (caching) لتسريع توليد البطاقات."""
+    """تحميل صورة تصميم القالب مع تخزين مؤقت (caching) لتسريع توليد البطاقات.
+    المصدر الأساسي هو ملف المستودع الثابت template_1.png.
+    (الـ fallback القديم للملفات المرفوعة/المؤقتة يُستخدم فقط إذا غاب ملف المستودع — لا يُعتمد عليه.)"""
+    repo_img = _load_repo_card_template_image()
+    if repo_img is not None:
+        return repo_img
     try:
         ref = str(image_ref or "").strip()
         if not ref:
@@ -7772,20 +7789,34 @@ def _load_card_template_image_cached(image_ref, mtime):
         return None
 
 
-def load_card_template_image(template_row):
-    """إرجاع PIL.Image لقالب البطاقة أو None إذا لم توجد الصورة."""
-    image_ref = str((template_row or {}).get("image_ref", "") or "").strip()
-    if not image_ref:
+def _load_repo_card_template_image():
+    """تحميل صورة تصميم القالب من ملف المستودع template_1.png مباشرة
+    (مسار نسبي بجانب هذا الملف — يعمل محلياً وعلى Streamlit Cloud)."""
+    try:
+        if not os.path.exists(CARD_TEMPLATE_REPO_IMAGE):
+            return None
+        return Image.open(CARD_TEMPLATE_REPO_IMAGE).convert("RGB")
+    except Exception:
         return None
+
+
+def load_card_template_image(template_row):
+    """إرجاع PIL.Image لقالب البطاقة أو None إذا لم توجد الصورة.
+    تُحمّل الصورة دائماً من ملف المستودع الثابت template_1.png
+    بغض النظر عن image_ref المخزّن في قاعدة البيانات (لا تعتمد على ملفات مرفوعة/مؤقتة)."""
+    image_ref = str((template_row or {}).get("image_ref", "") or "").strip()
     mtime = 0
     try:
-        fname = os.path.basename(image_ref.replace("file:", "").replace("base64:", ""))
-        p = os.path.join(CARD_TEMPLATES_DIR, fname)
-        if os.path.exists(p):
-            mtime = os.path.getmtime(p)
+        if os.path.exists(CARD_TEMPLATE_REPO_IMAGE):
+            mtime = os.path.getmtime(CARD_TEMPLATE_REPO_IMAGE)
+        else:
+            fname = os.path.basename(image_ref.replace("file:", "").replace("base64:", ""))
+            p = os.path.join(CARD_TEMPLATES_DIR, fname)
+            if os.path.exists(p):
+                mtime = os.path.getmtime(p)
     except Exception:
         pass
-    return _load_card_template_image_cached(image_ref, mtime)
+    return _load_card_template_image_cached(image_ref or "template_1.png", mtime)
 
 
 def save_card_template_image(uploaded_file):
