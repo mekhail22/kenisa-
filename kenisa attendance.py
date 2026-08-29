@@ -406,6 +406,10 @@ def get_design_css():
             position: relative !important;
             z-index: 1 !important;
         }}
+        /* ===== Keep the header pinned to the very top (no empty space above) ===== */
+        section.main .block-container {{
+            padding-top: 0.5rem !important;
+        }}
         .content-area {{
             padding: 1.5rem !important;
             max-width: 1400px !important;
@@ -841,8 +845,8 @@ def inject_top_bar_css():
         padding-bottom: 0.5rem !important;
         border-bottom: 2px solid #e2e8f0 !important;
     }
-    /* Force left-to-right flow inside the header so the brand is on the LEFT
-       and the compact controls sit on the far RIGHT. */
+    /* Force left-to-right flow inside the header so the compact controls
+       sit on the far LEFT and the brand is centered on the right. */
     .st-key-app_header [data-testid="stHorizontalBlock"] {
         direction: ltr !important;
         align-items: center !important;
@@ -851,13 +855,14 @@ def inject_top_bar_css():
     .app-header-brand {
         display: flex !important;
         align-items: center !important;
+        justify-content: center !important;
         gap: 0.7rem !important;
         padding: 0.2rem 0 !important;
         min-width: 0 !important;
     }
     .app-header-logo {
-        width: 46px !important;
-        height: 46px !important;
+        width: 54px !important;
+        height: 54px !important;
         object-fit: cover !important;
         border-radius: 50% !important;
         border: 2px solid #2563eb !important;
@@ -866,7 +871,7 @@ def inject_top_bar_css():
         background: #ffffff !important;
     }
         .app-header-name {
-        font-size: 1.3rem !important;
+        font-size: 1.5rem !important;
         font-weight: 800 !important;
         color: #0f172a !important;
         font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif !important;
@@ -908,6 +913,9 @@ def inject_top_bar_css():
     .st-key-app_admin_menu_btn button {
         font-size: 1.05rem !important;
         padding: 0.25rem 0.55rem !important;
+        min-width: 36px !important;
+        justify-content: center !important;
+        text-align: center !important;
     }
     .app-top-title-center {
         text-align: center;
@@ -927,12 +935,12 @@ def inject_top_bar_css():
             flex-direction: row !important;
         }
         .app-header-name {
-            font-size: 1.02rem !important;
+            font-size: 1.12rem !important;
             white-space: normal !important;
         }
         .app-header-logo {
-            width: 38px !important;
-            height: 38px !important;
+            width: 44px !important;
+            height: 44px !important;
         }
         .st-key-app_help_center_btn button,
         .st-key-app_student_menu_btn button,
@@ -976,20 +984,13 @@ def render_header_burger_button(button_key, open_handler):
 
 
 def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", burger_handler=None, extra_title_html=""):
-    """Church header: brand (image + كنيسة الشهيدة دميانة) on the left,
-    and on the far right the compact blue controls [☰] [مركز المساعدة]."""
+    """Church header: compact blue controls [☰] [مركز المساعدة] on the far left,
+    and the brand (image + كنيسة الشهيدة دميانة) centered on the right."""
     inject_top_bar_css()
     logo_url = _church_logo_data_url()
     with st.container(key="app_header"):
-        c_brand, c_actions = st.columns([2, 1], gap="medium")
-        with c_brand:
-            st.markdown(
-                f"""<div class="app-header-brand">
-                <img class="app-header-logo" src="{logo_url}" alt="كنيسة الشهيدة دميانة" />
-                <span class="app-header-name">كنيسة الشهيدة دميانة</span>
-            </div>""",
-                unsafe_allow_html=True,
-            )
+        # Buttons first = far LEFT (the header flex is forced LTR), brand after = right/centered
+        c_actions, c_brand = st.columns([1, 2], gap="medium")
         with c_actions:
             if show_burger and burger_handler is not None:
                 c_burger, c_help = st.columns(2, gap="small")
@@ -999,12 +1000,20 @@ def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", bur
                     render_help_center_button()
             else:
                 render_help_center_button()
+        with c_brand:
+            st.markdown(
+                f"""<div class="app-header-brand">
+                <img class="app-header-logo" src="{logo_url}" alt="كنيسة الشهيدة دميانة" />
+                <span class="app-header-name">كنيسة الشهيدة دميانة</span>
+            </div>""",
+                unsafe_allow_html=True,
+            )
     if extra_title_html:
         st.markdown(extra_title_html, unsafe_allow_html=True)
 
 
 def render_student_top_bar(current_page):
-    """Student header: brand (left) + [☰] [مركز المساعدة] (far right)."""
+    """Student header: compact blue controls [☰] [مركز المساعدة] on the far left, brand centered."""
     extra = ""
     if current_page == STUDENT_ASSESSMENTS_PAGE:
         extra = '<p class="app-top-title-center">المسابقات والاختبارات 🏆</p>'
@@ -1024,7 +1033,7 @@ def render_login_top_bar():
 
 
 def render_admin_top_bar(show_menu_button=False):
-    """Admin header: brand (left) + [☰] [مركز المساعدة] (far right)."""
+    """Admin header: compact blue controls [☰] [مركز المساعدة] on the far left, brand centered."""
     render_church_header(
         show_burger=show_menu_button,
         burger_key="app_admin_menu_btn",
@@ -4696,21 +4705,7 @@ def show_members_cards_page(db):
     st.markdown(f"<p style='text-align:left; color:#666;'>عدد الأعضاء: {len(filtered)}</p>", unsafe_allow_html=True)
 
     if not filtered.empty:
-        # ☑️ تحديد الكل لإصدار بطاقات جميع الأعضاء الظاهرين (بديل ميزة QR القديمة)
-        _all_mids = [str(m.get("member_id", "")) for _, m in filtered.iterrows()]
-        select_all_cards = st.checkbox(
-            "☑️ تحديد الكل",
-            value=False,
-            key="bulk_select_all",
-            help="تحديد جميع الأعضاء الظاهرين لإصدار بطاقاتهم دفعة واحدة",
-        )
-        _prev_all = st.session_state.get("_bulk_prev_all", False)
-        if select_all_cards != _prev_all:
-            st.session_state["_bulk_prev_all"] = select_all_cards
-            for _amid in _all_mids:
-                st.session_state[f"bulk_sel_{_amid}"] = select_all_cards
-            st.rerun()
-
+        # جميع بطاقات الأعضاء تظهر دائماً بشكل افتراضي — لا توجد مربعات اختيار تتحكم في الظهور
         cols = st.columns(3)
         for idx, (_, m) in enumerate(filtered.iterrows()):
             col = cols[idx % 3]
@@ -4725,9 +4720,6 @@ def show_members_cards_page(db):
                 initials = get_initials(full_name)
                 role_class = get_role_css_class(member_role)
                 status_class = get_status_css_class(status)
-
-                # ☑️ اختيار العضو لإصدار البطاقات بالجملة
-                st.checkbox("☑️ تحديد لإصدار البطاقة", key=f"bulk_sel_{mid}", value=st.session_state.get("bulk_select_all", False))
 
                 section_name = ""
                 if not sections.empty and sec_id:
@@ -4804,12 +4796,6 @@ def show_members_cards_page(db):
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-
-                # 🪪 بطاقة العضو — بديل ميزة تحميل QR القديمة (يستخدم نفس QR النظام داخل البطاقة)
-                if st.button("🪪 بطاقة العضو", help="إنشاء / تحميل بطاقة العضو PNG", key=f"card_open_{mid}", use_container_width=True):
-                    st.session_state.card_download_member = str(mid)
-                    st.session_state.pop("card_preview_member", None)
-                    st.rerun()
 
                 # Action buttons
                 action_cols = st.columns(5)
@@ -4891,43 +4877,37 @@ def show_members_cards_page(db):
                 card_rec = member_cards_map.get(str(mid))
                 if card_rec is not None:
                     st.markdown("<span class='card-badge active'>🪪 البطاقة: جاهزة</span>", unsafe_allow_html=True)
-                    # زر رئيسي واحد فقط — الضغط عليه يُظهر إجراءات البطاقة (عرض / إعادة / تحميل)
-                    card_actions_key = f"card_actions_open_{mid}"
-                    if st.button("🪪 إجراءات البطاقة", help="عرض / إعادة / تحميل البطاقة", key=f"card_actions_btn_{mid}", use_container_width=True):
-                        st.session_state[card_actions_key] = not st.session_state.get(card_actions_key, False)
-                    if st.session_state.get(card_actions_key, False):
-                        cc1, cc2, cc3 = st.columns(3)
-                        with cc1:
-                            if st.button("👁️ عرض", help="عرض البطاقة", key=f"card_view_{mid}", use_container_width=True):
-                                st.session_state.card_preview_member = str(mid)
-                                st.session_state.pop("card_download_member", None)
-                                st.rerun()
-                        with cc2:
-                            if st.button("🔄 إعادة", help="إعادة إنشاء البطاقة", key=f"card_regen_{mid}", use_container_width=True):
-                                if selected_card_tpl is None:
-                                    st.error("⚠️ لا يوجد Template صالح للبطاقات.")
-                                else:
-                                    try:
-                                        cdata_r = build_member_card_data(m, sections, stages)
-                                        render_member_card(selected_card_tpl, cdata_r)
-                                        db.issue_member_card(str(mid), member_type, full_name,
-                                                             selected_card_tpl.get("template_id", ""),
-                                                             selected_card_tpl.get("template_name", ""),
-                                                             user.get("user_id", ""))
-                                        st.success("✅ تمت إعادة إنشاء البطاقة")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    except ValueError as ve:
-                                        st.error(f"❌ {ve}")
-                                    except Exception as e:
-                                        st.error(f"❌ فشل إنشاء البطاقة: {e}")
-                        with cc3:
-                            if st.button("⬇️ تحميل", help="تحميل البطاقة PNG", key=f"card_dl_{mid}", use_container_width=True):
-                                st.session_state.card_download_member = str(mid)
-                                st.session_state.pop("card_preview_member", None)
-                                st.rerun()
                 else:
                     st.markdown("<span class='card-badge inactive'>🪪 البطاقة: غير صادرة</span>", unsafe_allow_html=True)
+
+                # زر واحد فقط — الضغط عليه يوفر جميع إجراءات التصدير (عرض / إعادة / تحميل)
+                with st.popover("🪪 إجراءات تصدير البطاقة", help="عرض / إعادة / تحميل البطاقة", key=f"card_export_pop_{mid}", use_container_width=True):
+                    if st.button("👁️ عرض", help="عرض البطاقة", key=f"card_view_{mid}", use_container_width=True):
+                        st.session_state.card_preview_member = str(mid)
+                        st.session_state.pop("card_download_member", None)
+                        st.rerun()
+                    if st.button("🔄 إعادة", help="إعادة إنشاء البطاقة", key=f"card_regen_{mid}", use_container_width=True):
+                        if selected_card_tpl is None:
+                            st.error("⚠️ لا يوجد Template صالح للبطاقات.")
+                        else:
+                            try:
+                                cdata_r = build_member_card_data(m, sections, stages)
+                                render_member_card(selected_card_tpl, cdata_r)
+                                db.issue_member_card(str(mid), member_type, full_name,
+                                                     selected_card_tpl.get("template_id", ""),
+                                                     selected_card_tpl.get("template_name", ""),
+                                                     user.get("user_id", ""))
+                                st.success("✅ تمت إعادة إنشاء البطاقة")
+                                time.sleep(1)
+                                st.rerun()
+                            except ValueError as ve:
+                                st.error(f"❌ {ve}")
+                            except Exception as e:
+                                st.error(f"❌ فشل إنشاء البطاقة: {e}")
+                    if st.button("⬇️ تحميل", help="تحميل البطاقة PNG", key=f"card_dl_{mid}", use_container_width=True):
+                        st.session_state.card_download_member = str(mid)
+                        st.session_state.pop("card_preview_member", None)
+                        st.rerun()
 
                 # Edit form
                 if st.session_state.get(f"edit_mode_{mid}", False):
@@ -5041,13 +5021,13 @@ def show_members_cards_page(db):
         else:
             st.error("⚠️ لا يوجد Template للبطاقات. الرجاء إنشاء قالب من صفحة '🪪 تجهيز البطاقات' أولاً.")
 
-    # ===== تجهيز البطاقات المحددة بالجملة =====
-    selected_ids = [k[len("bulk_sel_"):] for k, v in st.session_state.items() if k.startswith("bulk_sel_") and v]
-    if selected_ids:
+    # ===== تجهيز البطاقات بالجملة — ظاهر دائماً لجميع الأعضاء الظاهرين (بدون مربعات اختيار) =====
+    bulk_mids = [str(m.get("member_id", "")) for _, m in filtered.iterrows()] if not filtered.empty else []
+    if bulk_mids:
         st.markdown("---")
-        st.subheader(f"🪪 تجهيز البطاقات المحددة ({len(selected_ids)} عضو)")
-        if len(selected_ids) > 150:
-            st.warning(f"⚠️ عدد كبير من الأعضاء ({len(selected_ids)}). قد تستغرق العملية وقتاً أطول.")
+        st.subheader(f"🪪 تجهيز البطاقات المحددة ({len(bulk_mids)} عضو)")
+        if len(bulk_mids) > 150:
+            st.warning(f"⚠️ عدد كبير من الأعضاء ({len(bulk_mids)}). قد تستغرق العملية وقتاً أطول.")
         bcol1, _bcol2 = st.columns(2)
         if bcol1.button("🛠️ تجهيز البطاقات المحددة", use_container_width=True, key="bulk_cards_prepare"):
             if selected_card_tpl is None:
@@ -5056,7 +5036,7 @@ def show_members_cards_page(db):
                 generated = {}
                 errors_bulk = []
                 progress_bar = st.progress(0.0)
-                for i_b, sel_id in enumerate(selected_ids):
+                for i_b, sel_id in enumerate(bulk_mids):
                     mrow_b = members_df[members_df["member_id"].astype(str) == str(sel_id)]
                     if mrow_b.empty:
                         errors_bulk.append(f"العضو {sel_id}: غير موجود")
@@ -5078,7 +5058,7 @@ def show_members_cards_page(db):
                         errors_bulk.append(f"{mb_b.get('full_name', sel_id)}: {ve}")
                     except Exception as e:
                         errors_bulk.append(f"{mb_b.get('full_name', sel_id)}: فشل غير متوقع ({e})")
-                    progress_bar.progress((i_b + 1) / len(selected_ids))
+                    progress_bar.progress((i_b + 1) / len(bulk_mids))
                 progress_bar.empty()
                 st.session_state.bulk_cards = generated
                 st.session_state.bulk_cards_errors = errors_bulk
