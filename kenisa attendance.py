@@ -408,7 +408,7 @@ def get_design_css():
         }}
         /* ===== Keep the header pinned to the very top (no empty space above) ===== */
         section.main .block-container {{
-            padding-top: 0.5rem !important;
+            padding-top: 0 !important;
         }}
         .content-area {{
             padding: 1.5rem !important;
@@ -838,49 +838,55 @@ def inject_top_bar_css():
     """Styles for the church header bar (brand + compact blue controls)."""
     st.markdown("""
     <style>
-    /* ===== Church header container (keyed container) ===== */
+    /* ===== Church header bar (sticky at the very top, never scrolls away) ===== */
     .st-key-app_header {
-        direction: rtl !important;
-        margin-bottom: 0.6rem !important;
-        padding-bottom: 0.5rem !important;
-        border-bottom: 2px solid #e2e8f0 !important;
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 9999 !important;
+        background: #ffffff !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        box-shadow: 0 2px 12px rgba(15, 23, 42, 0.08) !important;
+        margin-bottom: 0.35rem !important;
+        padding: 0.55rem 0.25rem !important;
     }
     /* Force left-to-right flow inside the header so the compact controls
-       sit on the far LEFT and the brand is centered on the right. */
+       sit on the far LEFT and the brand is pushed to the far RIGHT. */
     .st-key-app_header [data-testid="stHorizontalBlock"] {
         direction: ltr !important;
         align-items: center !important;
     }
-    /* ===== Branding: church image + name ===== */
+    /* ===== Branding: church image + name (logo on the far right) ===== */
     .app-header-brand {
         display: flex !important;
+        flex-direction: row-reverse !important;
         align-items: center !important;
-        justify-content: center !important;
+        justify-content: flex-start !important;
         gap: 0.7rem !important;
-        padding: 0.2rem 0 !important;
+        width: 100% !important;
+        padding: 0.1rem 0 !important;
         min-width: 0 !important;
     }
     .app-header-logo {
-        width: 54px !important;
-        height: 54px !important;
+        width: 60px !important;
+        height: 60px !important;
         object-fit: cover !important;
         border-radius: 50% !important;
-        border: 2px solid #2563eb !important;
-        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
+        border: 3px solid #2563eb !important;
+        box-shadow: 0 2px 10px rgba(37, 99, 235, 0.28) !important;
         flex-shrink: 0 !important;
         background: #ffffff !important;
     }
-        .app-header-name {
-        font-size: 1.5rem !important;
+    .app-header-name {
+        font-size: 1.4rem !important;
         font-weight: 800 !important;
         color: #0f172a !important;
         font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif !important;
-        line-height: 1.35 !important;
+        line-height: 1.3 !important;
         white-space: nowrap !important;
         direction: rtl !important;
         text-align: right !important;
     }
-        /* ===== Compact blue controls: [☰] [مركز المساعدة] ===== */
+    /* ===== Compact blue header controls: [☰] [مركز المساعدة] ===== */
     .st-key-app_help_center_btn button,
     .st-key-app_student_menu_btn button,
     .st-key-app_admin_menu_btn button {
@@ -888,19 +894,21 @@ def inject_top_bar_css():
         color: #ffffff !important;
         border: none !important;
         border-radius: 8px !important;
-        min-height: 34px !important;
-        padding: 0.3rem 0.7rem !important;
+        min-height: 40px !important;
+        padding: 0 1rem !important;
         font-weight: 700 !important;
-        font-size: 0.82rem !important;
-        line-height: 1.3 !important;
+        font-size: 0.85rem !important;
+        line-height: 40px !important;
         box-shadow: 0 2px 6px rgba(37, 99, 235, 0.22) !important;
         white-space: nowrap !important;
+        width: auto !important;
+        justify-content: center !important;
+        text-align: center !important;
     }
     /* Help Center label is Arabic → render RTL regardless of the LTR
        flex direction we force on the header columns for layout ordering. */
     .st-key-app_help_center_btn button {
         direction: rtl !important;
-        text-align: right !important;
     }
     .st-key-app_help_center_btn button:hover,
     .st-key-app_student_menu_btn button:hover,
@@ -908,45 +916,62 @@ def inject_top_bar_css():
         background-color: #1d4ed8 !important;
         color: #ffffff !important;
     }
-    /* Burger icon: compact square */
+    /* Burger icon: small compact square */
     .st-key-app_student_menu_btn button,
     .st-key-app_admin_menu_btn button {
-        font-size: 1.05rem !important;
-        padding: 0.25rem 0.55rem !important;
-        min-width: 36px !important;
-        justify-content: center !important;
-        text-align: center !important;
+        width: 40px !important;
+        min-width: 40px !important;
+        padding: 0 !important;
+        font-size: 1.1rem !important;
+        line-height: 40px !important;
     }
     .app-top-title-center {
         text-align: center;
-        font-size: 1.05rem;
+        font-size: 1.02rem;
         font-weight: 800;
         color: #0f172a;
-        margin: 0.65rem 0 0.85rem 0;
+        margin: 0.35rem 0 0.85rem 0;
         line-height: 1.45;
     }
-    /* ===== Mobile: no overflow — stack the header, controls stay on one row ===== */
-    @media (max-width: 640px) {
-        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type {
-            flex-direction: column !important;
-            align-items: stretch !important;
+    /* ===== Mobile: single compact row — controls left, logo right ===== */
+    @media (max-width: 767px) {
+        .st-key-app_header {
+            padding: 0.45rem 0.1rem !important;
         }
-        .st-key-app_header [data-testid="stColumn"] [data-testid="stHorizontalBlock"] {
+        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type {
             flex-direction: row !important;
+            align-items: center !important;
+        }
+        /* Give the left controls column enough width for the two compact buttons */
+        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type > [data-testid="stColumn"]:nth-child(1) {
+            flex: 1 1 48% !important;
+            min-width: 48% !important;
+            max-width: 50% !important;
+        }
+        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type > [data-testid="stColumn"]:nth-child(2) {
+            flex: 1 1 52% !important;
+            min-width: 52% !important;
         }
         .app-header-name {
-            font-size: 1.12rem !important;
-            white-space: normal !important;
+            display: none !important;
         }
         .app-header-logo {
-            width: 44px !important;
-            height: 44px !important;
+            width: 42px !important;
+            height: 42px !important;
+            border-width: 2px !important;
         }
         .st-key-app_help_center_btn button,
         .st-key-app_student_menu_btn button,
         .st-key-app_admin_menu_btn button {
             min-height: 40px !important;
-            font-size: 0.85rem !important;
+            font-size: 0.8rem !important;
+            padding: 0 0.7rem !important;
+        }
+        .st-key-app_student_menu_btn button,
+        .st-key-app_admin_menu_btn button {
+            width: 40px !important;
+            min-width: 40px !important;
+            padding: 0 !important;
         }
         .app-top-title-center { font-size: 0.92rem; }
     }
@@ -956,7 +981,7 @@ def inject_top_bar_css():
 
 def render_help_center_button():
     """Blue 'مركز المساعدة' button — call at most once per Streamlit run."""
-    if st.button("مركز المساعدة", key="app_help_center_btn", use_container_width=True):
+    if st.button("مركز المساعدة", key="app_help_center_btn", use_container_width=False):
         st.session_state.open_help_dialog = True
         st.rerun()
 
@@ -978,7 +1003,7 @@ def _church_logo_data_url():
 
 def render_header_burger_button(button_key, open_handler):
     """Small blue hamburger ☰ button — opens the side menu."""
-    if st.button("☰", key=button_key, use_container_width=True):
+    if st.button("☰", key=button_key, use_container_width=False):
         open_handler()
         st.rerun()
 
@@ -989,8 +1014,8 @@ def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", bur
     inject_top_bar_css()
     logo_url = _church_logo_data_url()
     with st.container(key="app_header"):
-        # Buttons first = far LEFT (the header flex is forced LTR), brand after = right/centered
-        c_actions, c_brand = st.columns([1, 2], gap="medium")
+        # Buttons first = far LEFT (the header flex is forced LTR), brand after = far RIGHT
+        c_actions, c_brand = st.columns([1, 3], gap="small", vertical_alignment="center")
         with c_actions:
             if show_burger and burger_handler is not None:
                 c_burger, c_help = st.columns(2, gap="small")
@@ -4798,15 +4823,10 @@ def show_members_cards_page(db):
                     """, unsafe_allow_html=True)
 
                 # Action buttons
-                action_cols = st.columns(5)
+                action_cols = st.columns(4)
                 with action_cols[0]:
                     if st.button("📋", key=f"view_{mid}"):
                         st.session_state.profile_user_id = mid
-                        st.rerun()
-                with action_cols[4]:
-                    if st.button("🪪", help="عرض / إصدار بطاقة التعريف", key=f"idcard_{mid}", use_container_width=True):
-                        st.session_state.card_preview_member = str(mid)
-                        st.session_state.pop("card_download_member", None)
                         st.rerun()
                 
                 # Check if teacher can edit/delete
@@ -8490,7 +8510,6 @@ def main():
                 st.caption(f"تم نقل {migrated} تعيين من مسؤول المرحلة القديم إلى نظام المشرفين المتعددين.")
         except Exception:
             pass
-    st.markdown('<div class="help-float-container"></div>', unsafe_allow_html=True)
     if st.session_state.get("student_logged_in", False):
         show_student_dashboard(db)
     else:
