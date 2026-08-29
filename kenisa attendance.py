@@ -7856,26 +7856,26 @@ def _fit_card_font(draw, text, start_size, max_width, bold):
 @st.cache_data(show_spinner=False)
 def _load_card_template_image_cached(image_ref, mtime):
     """تحميل صورة تصميم القالب مع تخزين مؤقت (caching) لتسريع توليد البطاقات.
-    المصدر الأساسي هو ملف المستودع الثابت template_1.png.
-    (الـ fallback القديم للملفات المرفوعة/المؤقتة يُستخدم فقط إذا غاب ملف المستودع — لا يُعتمد عليه.)"""
-    repo_img = _load_repo_card_template_image()
-    if repo_img is not None:
-        return repo_img
-    try:
-        ref = str(image_ref or "").strip()
-        if not ref:
-            return None
-        if ref.startswith("base64:"):
+    ترتيب المصادر لضمان بقاء التصميم عند إعادة تشغيل التطبيق:
+    1) الصورة المخزنة داخل ورقة البيانات (base64) — تبقى على السحابة ولا تُفقد.
+    2) مرجع ملف محلي داخل مجلد card_templates (قديم/مؤقت — للتوافق فقط).
+    3) ملف المستودع الثابت template_1.png كبديل آمن أخير."""
+    ref = str(image_ref or "").strip()
+    if ref.startswith("base64:"):
+        try:
             img_bytes = base64.b64decode(ref[len("base64:"):])
             return Image.open(BytesIO(img_bytes)).convert("RGB")
-        # مرجع ملف محلي داخل مجلد card_templates
-        fname = os.path.basename(ref.replace("file:", ""))
-        path = os.path.join(CARD_TEMPLATES_DIR, fname)
-        if not os.path.exists(path):
-            return None
-        return Image.open(path).convert("RGB")
-    except Exception:
-        return None
+        except Exception:
+            pass
+    if ref:
+        try:
+            fname = os.path.basename(ref.replace("file:", ""))
+            path = os.path.join(CARD_TEMPLATES_DIR, fname)
+            if os.path.exists(path):
+                return Image.open(path).convert("RGB")
+        except Exception:
+            pass
+    return _load_repo_card_template_image()
 
 
 def _load_repo_card_template_image():
@@ -7891,26 +7891,27 @@ def _load_repo_card_template_image():
 
 def load_card_template_image(template_row):
     """إرجاع PIL.Image لقالب البطاقة أو None إذا لم توجد الصورة.
-    تُحمّل الصورة دائماً من ملف المستودع الثابت template_1.png
-    بغض النظر عن image_ref المخزّن في قاعدة البيانات (لا تعتمد على ملفات مرفوعة/مؤقتة)."""
+    المصدر الأساسي هو الصورة المخزنة في ورقة البيانات (base64) إن وُجدت،
+    ثم الملفات المحلية القديمة، وأخيراً ملف المستودع الثابت template_1.png."""
     image_ref = str((template_row or {}).get("image_ref", "") or "").strip()
     mtime = 0
     try:
-        if os.path.exists(CARD_TEMPLATE_REPO_IMAGE):
+        fname = os.path.basename(image_ref.replace("base64:", "").replace("file:", ""))
+        p = os.path.join(CARD_TEMPLATES_DIR, fname)
+        if os.path.exists(p):
+            mtime = os.path.getmtime(p)
+        elif os.path.exists(CARD_TEMPLATE_REPO_IMAGE):
             mtime = os.path.getmtime(CARD_TEMPLATE_REPO_IMAGE)
-        else:
-            fname = os.path.basename(image_ref.replace("file:", "").replace("base64:", ""))
-            p = os.path.join(CARD_TEMPLATES_DIR, fname)
-            if os.path.exists(p):
-                mtime = os.path.getmtime(p)
     except Exception:
         pass
     return _load_card_template_image_cached(image_ref or "template_1.png", mtime)
 
 
-def save_card_template_image(uploaded_file):
+def save_card_template_image(uploaded_file, max_dim=1200, max_base64_chars=44000):
     """
-    حفظ صورة تصميم مرفوعة داخل مجلد card_templates بعد تصغيرها.
+    حفظ صورة تصميم القالب بحيث تبقى حتى بعد إعادة تشغيل التطبيق.
+    تُحفظ نسخة داخل ورقة البيانات (image_ref = base64) لضمان بقائها على السحابة،
+    مع نسخة ملف محلية قديمة للتوافق مع المراجع القديمة.
     Returns: (image_ref, width, height) أو يرفع ValueError برسالة عربية.
     """
     try:
@@ -7918,14 +7919,27 @@ def save_card_template_image(uploaded_file):
     except Exception:
         raise ValueError("تعذر قراءة ملف الصورة. تأكد من أنه صورة PNG أو JPG صحيحة.")
     w, h = img.size
-    max_w = 1400
-    if w > max_w:
-        img = img.resize((max_w, max(1, int(h * max_w / w))), Image.LANCZOS)
-    os.makedirs(CARD_TEMPLATES_DIR, exist_ok=True)
-    fname = f"tpl_{uuid.uuid4().hex[:10]}.jpg"
-    path = os.path.join(CARD_TEMPLATES_DIR, fname)
-    img.save(path, format="JPEG", quality=88)
-    return fname, img.size[0], img.size[1]
+    if w > max_dim or h > max_dim:
+        scale = min(max_dim / w, max_dim / h)
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+    best_b64 = None
+    for quality in (85, 75, 60, 45):
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        if len(b64) <= max_base64_chars:
+            best_b64 = b64
+            break
+        best_b64 = b64
+    image_ref = "base64:" + best_b64
+    try:
+        os.makedirs(CARD_TEMPLATES_DIR, exist_ok=True)
+        fname = f"tpl_{uuid.uuid4().hex[:10]}.jpg"
+        path = os.path.join(CARD_TEMPLATES_DIR, fname)
+        img.save(path, format="JPEG", quality=88)
+    except Exception:
+        pass
+    return image_ref, img.size[0], img.size[1]
 
 
 def _member_qr_image(member):
