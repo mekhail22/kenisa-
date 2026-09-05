@@ -835,12 +835,11 @@ def inject_css():
 
 
 def inject_top_bar_css():
-    """Styles for the church header bar — clean white background, blue accent
-    controls on the right, brand (logo + name) on the left, compact height,
-    subtle shadow, sticky at the very top."""
+    """Styles for the minimal header bar — clean white background, blue accent
+    controls on the right, compact height, subtle shadow, sticky at the very top."""
     st.markdown("""
     <style>
-    /* ===== Church header bar (sticky at the very top, never scrolls away) ===== */
+    /* ===== Minimal header bar (sticky at the very top) — controls only, no brand ===== */
     .st-key-app_header {
         position: sticky !important;
         top: 0 !important;
@@ -848,44 +847,19 @@ def inject_top_bar_css():
         background: #ffffff !important;
         border-bottom: 1px solid #e2e8f0 !important;
         box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
-        margin-bottom: 0 !important;
-        padding: 0.5rem 1rem !important;
+        margin: 0 !important;
+        padding: 0.4rem 0.75rem !important;
     }
-    /* Force left-to-right flow inside the header so the compact controls
-       sit on the far LEFT and the brand is pushed to the far RIGHT. */
+    /* Flex layout: push controls to the far RIGHT */
     .st-key-app_header [data-testid="stHorizontalBlock"] {
         direction: ltr !important;
         align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 0.5rem !important;
     }
-    /* ===== Branding: church image + name (logo on the left) ===== */
-    .app-header-brand {
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-        justify-content: flex-start !important;
-        gap: 0.65rem !important;
-        width: 100% !important;
-        min-width: 0 !important;
-    }
-    .app-header-logo {
-        width: 50px !important;
-        height: 50px !important;
-        object-fit: cover !important;
-        border-radius: 50% !important;
-        border: 2px solid #2563eb !important;
-        box-shadow: 0 1px 4px rgba(37, 99, 235, 0.12) !important;
-        flex-shrink: 0 !important;
-        background: #ffffff !important;
-    }
-    .app-header-name {
-        font-size: 1.15rem !important;
-        font-weight: 700 !important;
-        color: #0f172a !important;
-        font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif !important;
-        line-height: 1.3 !important;
-        white-space: nowrap !important;
-        direction: rtl !important;
-        text-align: right !important;
+    /* Remove any extra spacing from the container */
+    .st-key-app_header .stColumn {
+        min-width: auto !important;
     }
     /* ===== Compact blue header controls ===== */
     .st-key-app_help_center_btn button,
@@ -906,9 +880,9 @@ def inject_top_bar_css():
         justify-content: center !important;
         text-align: center !important;
         transition: background-color 0.15s ease !important;
+        margin: 0 !important;
     }
-    /* Help Center label is Arabic → render RTL regardless of the LTR
-       flex direction we force on the header columns for layout ordering. */
+    /* Help Center label is Arabic → render RTL */
     .st-key-app_help_center_btn button {
         direction: rtl !important;
     }
@@ -927,26 +901,10 @@ def inject_top_bar_css():
         font-size: 1rem !important;
         line-height: 38px !important;
     }
-    .app-top-title-center {
-        text-align: center;
-        font-size: 1.02rem;
-        font-weight: 800;
-        color: #0f172a;
-        margin: 0.35rem 0 0.85rem 0;
-        line-height: 1.45;
-    }
-    /* ===== Mobile: single compact row — brand left, controls right ===== */
+    /* ===== Mobile: compact controls on the right ===== */
     @media (max-width: 767px) {
         .st-key-app_header {
-            padding: 0.4rem 0.65rem !important;
-        }
-        .app-header-name {
-            font-size: 0.95rem !important;
-        }
-        .app-header-logo {
-            width: 40px !important;
-            height: 40px !important;
-            border-width: 1.5px !important;
+            padding: 0.35rem 0.5rem !important;
         }
         .st-key-app_help_center_btn button,
         .st-key-app_student_menu_btn button,
@@ -963,7 +921,6 @@ def inject_top_bar_css():
             padding: 0 !important;
             font-size: 0.9rem !important;
         }
-        .app-top-title-center { font-size: 0.92rem; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -976,21 +933,6 @@ def render_help_center_button():
         st.rerun()
 
 
-_CHURCH_LOGO_PATH = os.path.join(os.path.dirname(__file__), "image1.jpg")
-
-
-def _church_logo_data_url():
-    """Load the church image (image1.jpg) from the repo and return a data URL for the header."""
-    try:
-        if not os.path.exists(_CHURCH_LOGO_PATH):
-            return ""
-        with open(_CHURCH_LOGO_PATH, "rb") as _f:
-            b64 = base64.b64encode(_f.read()).decode("utf-8")
-        return f"data:image/jpeg;base64,{b64}"
-    except Exception:
-        return ""
-
-
 def render_header_burger_button(button_key, open_handler):
     """Small blue hamburger ☰ button — opens the side menu."""
     if st.button("☰", key=button_key, use_container_width=False):
@@ -999,36 +941,27 @@ def render_header_burger_button(button_key, open_handler):
 
 
 def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", burger_handler=None, extra_title_html=""):
-    """Church header: brand (logo + name) on the LEFT, controls [☰] [مركز المساعدة]
-    on the RIGHT. Compact, clean, no empty spacer. Blue/white theme."""
+    """Minimal header: controls [مركز المساعدة] [☰] on the RIGHT only.
+    No logo, no church name, no brand. Compact, clean, no empty spacer."""
     inject_top_bar_css()
-    logo_url = _church_logo_data_url()
     with st.container(key="app_header"):
-        # 2-column layout: brand LEFT, controls RIGHT (header flex is forced LTR).
-        c_brand, c_actions = st.columns([3, 2], gap="small", vertical_alignment="center")
-        with c_brand:
-            st.markdown(
-                f"""<div class="app-header-brand">
-                <img class="app-header-logo" src="{logo_url}" alt="كنيسة الشهيدة دميانة" />
-                <span class="app-header-name">كنيسة الشهيدة دميانة</span>
-            </div>""",
-                unsafe_allow_html=True,
-            )
-        with c_actions:
-            if show_burger and burger_handler is not None:
-                c_help, c_burger = st.columns(2, gap="small")
-                with c_help:
-                    render_help_center_button()
-                with c_burger:
-                    render_header_burger_button(burger_key, burger_handler)
-            else:
+        # Single row: controls aligned to the RIGHT
+        if show_burger and burger_handler is not None:
+            _, c_help, c_burger = st.columns([1, 1, 1], gap="small", vertical_alignment="center")
+            with c_help:
+                render_help_center_button()
+            with c_burger:
+                render_header_burger_button(burger_key, burger_handler)
+        else:
+            _, c_help = st.columns([1, 1], gap="small", vertical_alignment="center")
+            with c_help:
                 render_help_center_button()
     if extra_title_html:
         st.markdown(extra_title_html, unsafe_allow_html=True)
 
 
 def render_student_top_bar(current_page):
-    """Student header: brand on the LEFT, controls [☰] [مركز المساعدة] on the RIGHT."""
+    """Student header: controls [مركز المساعدة] [☰] on the RIGHT only. No brand."""
     extra = ""
     if current_page == STUDENT_ASSESSMENTS_PAGE:
         extra = '<p class="app-top-title-center">المسابقات والاختبارات 🏆</p>'
@@ -1043,12 +976,12 @@ def render_student_top_bar(current_page):
 
 
 def render_login_top_bar():
-    """Login header: brand on the LEFT + مركز المساعدة on the RIGHT — no burger before login."""
+    """Login header: مركز المساعدة on the RIGHT only — no brand, no burger."""
     render_church_header(show_burger=False)
 
 
 def render_admin_top_bar(show_menu_button=False):
-    """Admin header: brand on the LEFT, controls [☰] [مركز المساعدة] on the RIGHT."""
+    """Admin header: controls [مركز المساعدة] [☰] on the RIGHT only. No brand."""
     render_church_header(
         show_burger=show_menu_button,
         burger_key="app_admin_menu_btn",
