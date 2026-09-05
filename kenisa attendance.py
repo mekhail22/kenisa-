@@ -835,10 +835,9 @@ def inject_css():
 
 
 def inject_top_bar_css():
-    """Styles for the church header bar — soft cream background, dark-maroon
-    compact controls on the far left, a large clean empty space in the centre,
-    and the brand on the far right, with a thin gold accent line and rounded
-    corners matching the dashboard reference image."""
+    """Styles for the church header bar — clean white background, blue accent
+    controls on the right, brand (logo + name) on the left, compact height,
+    subtle shadow, sticky at the very top."""
     st.markdown("""
     <style>
     /* ===== Church header bar (sticky at the very top, never scrolls away) ===== */
@@ -846,13 +845,11 @@ def inject_top_bar_css():
         position: sticky !important;
         top: 0 !important;
         z-index: 9999 !important;
-        background: #F8F5E6 !important;
-        border-radius: 14px !important;
-        border: 1px solid rgba(139, 115, 87, 0.12) !important;
-        border-bottom: 2px solid #D4AF37 !important;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
-        margin-bottom: 0.25rem !important;
-        padding: 0.65rem 0.5rem !important;
+        background: #ffffff !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+        margin-bottom: 0 !important;
+        padding: 0.5rem 1rem !important;
     }
     /* Force left-to-right flow inside the header so the compact controls
        sit on the far LEFT and the brand is pushed to the far RIGHT. */
@@ -860,54 +857,55 @@ def inject_top_bar_css():
         direction: ltr !important;
         align-items: center !important;
     }
-    /* ===== Branding: church image + name (logo on the far right) ===== */
+    /* ===== Branding: church image + name (logo on the left) ===== */
     .app-header-brand {
         display: flex !important;
-        flex-direction: row-reverse !important;
+        flex-direction: row !important;
         align-items: center !important;
         justify-content: flex-start !important;
-        gap: 0.7rem !important;
+        gap: 0.65rem !important;
         width: 100% !important;
         min-width: 0 !important;
     }
     .app-header-logo {
-        width: 60px !important;
-        height: 60px !important;
+        width: 50px !important;
+        height: 50px !important;
         object-fit: cover !important;
         border-radius: 50% !important;
-        border: 3px solid #550B1F !important;
-        box-shadow: 0 2px 10px rgba(85, 11, 31, 0.15) !important;
+        border: 2px solid #2563eb !important;
+        box-shadow: 0 1px 4px rgba(37, 99, 235, 0.12) !important;
         flex-shrink: 0 !important;
-        background: #F8F5E6 !important;
+        background: #ffffff !important;
     }
     .app-header-name {
-        font-size: 1.4rem !important;
-        font-weight: 800 !important;
-        color: #550B1F !important;
+        font-size: 1.15rem !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
         font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif !important;
         line-height: 1.3 !important;
         white-space: nowrap !important;
         direction: rtl !important;
         text-align: right !important;
     }
-    /* ===== Compact dark-maroon header controls ===== */
+    /* ===== Compact blue header controls ===== */
     .st-key-app_help_center_btn button,
     .st-key-app_student_menu_btn button,
     .st-key-app_admin_menu_btn button {
-        background-color: #550B1F !important;
+        background-color: #2563eb !important;
         color: #ffffff !important;
         border: none !important;
         border-radius: 8px !important;
-        min-height: 40px !important;
+        min-height: 38px !important;
         padding: 0 1rem !important;
-        font-weight: 700 !important;
-        font-size: 0.85rem !important;
-        line-height: 40px !important;
-        box-shadow: 0 2px 6px rgba(85, 11, 31, 0.18) !important;
+        font-weight: 600 !important;
+        font-size: 0.82rem !important;
+        line-height: 38px !important;
+        box-shadow: 0 1px 3px rgba(37, 99, 235, 0.15) !important;
         white-space: nowrap !important;
         width: auto !important;
         justify-content: center !important;
         text-align: center !important;
+        transition: background-color 0.15s ease !important;
     }
     /* Help Center label is Arabic → render RTL regardless of the LTR
        flex direction we force on the header columns for layout ordering. */
@@ -917,72 +915,53 @@ def inject_top_bar_css():
     .st-key-app_help_center_btn button:hover,
     .st-key-app_student_menu_btn button:hover,
     .st-key-app_admin_menu_btn button:hover {
-        background-color: #4a0819 !important;
+        background-color: #1d4ed8 !important;
         color: #ffffff !important;
     }
     /* Burger icon: small compact square */
     .st-key-app_student_menu_btn button,
     .st-key-app_admin_menu_btn button {
-        width: 40px !important;
-        min-width: 40px !important;
+        width: 38px !important;
+        min-width: 38px !important;
         padding: 0 !important;
-        font-size: 1.1rem !important;
-        line-height: 40px !important;
+        font-size: 1rem !important;
+        line-height: 38px !important;
     }
     .app-top-title-center {
         text-align: center;
         font-size: 1.02rem;
         font-weight: 800;
-        color: #550B1F;
+        color: #0f172a;
         margin: 0.35rem 0 0.85rem 0;
         line-height: 1.45;
     }
-    /* ===== Mobile: single compact row — controls left, logo right ===== */
+    /* ===== Mobile: single compact row — brand left, controls right ===== */
     @media (max-width: 767px) {
         .st-key-app_header {
-            padding: 0.45rem 0.1rem !important;
-            border-radius: 12px !important;
-        }
-        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type {
-            flex-direction: row !important;
-            align-items: center !important;
-        }
-        /* 3-column layout on mobile: actions | empty spacer | brand */
-        /* Hide the empty centre spacer so the page fits on small screens */
-        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type > [data-testid="stColumn"]:nth-child(2) {
-            display: none !important;
-        }
-        /* Left actions column — needs enough width for the two compact buttons */
-        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type > [data-testid="stColumn"]:nth-child(1) {
-            flex: 1 1 48% !important;
-            min-width: 48% !important;
-            max-width: 50% !important;
-        }
-        /* Right brand column — takes the remaining width */
-        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type > [data-testid="stColumn"]:nth-child(3) {
-            flex: 1 1 52% !important;
-            min-width: 52% !important;
+            padding: 0.4rem 0.65rem !important;
         }
         .app-header-name {
-            display: none !important;
+            font-size: 0.95rem !important;
         }
         .app-header-logo {
-            width: 42px !important;
-            height: 42px !important;
-            border-width: 2px !important;
+            width: 40px !important;
+            height: 40px !important;
+            border-width: 1.5px !important;
         }
         .st-key-app_help_center_btn button,
         .st-key-app_student_menu_btn button,
         .st-key-app_admin_menu_btn button {
-            min-height: 40px !important;
-            font-size: 0.8rem !important;
-            padding: 0 0.7rem !important;
+            min-height: 34px !important;
+            font-size: 0.75rem !important;
+            padding: 0 0.65rem !important;
+            line-height: 34px !important;
         }
         .st-key-app_student_menu_btn button,
         .st-key-app_admin_menu_btn button {
-            width: 40px !important;
-            min-width: 40px !important;
+            width: 34px !important;
+            min-width: 34px !important;
             padding: 0 !important;
+            font-size: 0.9rem !important;
         }
         .app-top-title-center { font-size: 0.92rem; }
     }
@@ -991,7 +970,7 @@ def inject_top_bar_css():
 
 
 def render_help_center_button():
-    """Dark-maroon 'مركز المساعدة' button — call at most once per Streamlit run."""
+    """Blue 'مركز المساعدة' button — call at most once per Streamlit run."""
     if st.button("مركز المساعدة", key="app_help_center_btn", use_container_width=False):
         st.session_state.open_help_dialog = True
         st.rerun()
@@ -1013,33 +992,20 @@ def _church_logo_data_url():
 
 
 def render_header_burger_button(button_key, open_handler):
-    """Small dark-maroon hamburger ☰ button — opens the side menu."""
+    """Small blue hamburger ☰ button — opens the side menu."""
     if st.button("☰", key=button_key, use_container_width=False):
         open_handler()
         st.rerun()
 
 
 def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", burger_handler=None, extra_title_html=""):
-    """Church header: dark-maroon controls [☰] [مركز المساعدة] on the far left,
-    a large clean empty space in the centre, and the brand (image + كنيسة الشهيدة دميانة) on the far right"""
+    """Church header: brand (logo + name) on the LEFT, controls [☰] [مركز المساعدة]
+    on the RIGHT. Compact, clean, no empty spacer. Blue/white theme."""
     inject_top_bar_css()
     logo_url = _church_logo_data_url()
     with st.container(key="app_header"):
-        # Buttons first = far LEFT (the header flex is forced LTR).
-        # The middle column (c_spacer) is intentionally left EMPTY to create
-        # the large clean empty space that matches the dashboard reference.
-        c_actions, c_spacer, c_brand = st.columns([1, 5, 2.2], gap="small", vertical_alignment="center")
-        with c_actions:
-            if show_burger and burger_handler is not None:
-                c_burger, c_help = st.columns(2, gap="small")
-                with c_burger:
-                    render_header_burger_button(burger_key, burger_handler)
-                with c_help:
-                    render_help_center_button()
-            else:
-                render_help_center_button()
-        # c_spacer is deliberately empty — creates the wide gap between
-        # the left controls and the right brand, matching the reference.
+        # 2-column layout: brand LEFT, controls RIGHT (header flex is forced LTR).
+        c_brand, c_actions = st.columns([3, 2], gap="small", vertical_alignment="center")
         with c_brand:
             st.markdown(
                 f"""<div class="app-header-brand">
@@ -1048,12 +1014,21 @@ def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", bur
             </div>""",
                 unsafe_allow_html=True,
             )
+        with c_actions:
+            if show_burger and burger_handler is not None:
+                c_help, c_burger = st.columns(2, gap="small")
+                with c_help:
+                    render_help_center_button()
+                with c_burger:
+                    render_header_burger_button(burger_key, burger_handler)
+            else:
+                render_help_center_button()
     if extra_title_html:
         st.markdown(extra_title_html, unsafe_allow_html=True)
 
 
 def render_student_top_bar(current_page):
-    """Student header: dark-maroon controls [☰] [مركز المساعدة] on the far left, brand centered."""
+    """Student header: brand on the LEFT, controls [☰] [مركز المساعدة] on the RIGHT."""
     extra = ""
     if current_page == STUDENT_ASSESSMENTS_PAGE:
         extra = '<p class="app-top-title-center">المسابقات والاختبارات 🏆</p>'
@@ -1068,12 +1043,12 @@ def render_student_top_bar(current_page):
 
 
 def render_login_top_bar():
-    """Login header: brand (left) + مركز المساعدة (right) — no burger before login."""
+    """Login header: brand on the LEFT + مركز المساعدة on the RIGHT — no burger before login."""
     render_church_header(show_burger=False)
 
 
 def render_admin_top_bar(show_menu_button=False):
-    """Admin header: dark-maroon controls [☰] [مركز المساعدة] on the far left, brand centered."""
+    """Admin header: brand on the LEFT, controls [☰] [مركز المساعدة] on the RIGHT."""
     render_church_header(
         show_burger=show_menu_button,
         burger_key="app_admin_menu_btn",
