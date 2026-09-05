@@ -835,7 +835,10 @@ def inject_css():
 
 
 def inject_top_bar_css():
-    """Styles for the church header bar (brand + compact blue controls)."""
+    """Styles for the church header bar — soft cream background, dark-maroon
+    compact controls on the far left, a large clean empty space in the centre,
+    and the brand on the far right, with a thin gold accent line and rounded
+    corners matching the dashboard reference image."""
     st.markdown("""
     <style>
     /* ===== Church header bar (sticky at the very top, never scrolls away) ===== */
@@ -843,11 +846,13 @@ def inject_top_bar_css():
         position: sticky !important;
         top: 0 !important;
         z-index: 9999 !important;
-        background: #ffffff !important;
-        border-bottom: 1px solid #e2e8f0 !important;
-        box-shadow: 0 2px 12px rgba(15, 23, 42, 0.08) !important;
-        margin-bottom: 0.35rem !important;
-        padding: 0.55rem 0.25rem !important;
+        background: #F8F5E6 !important;
+        border-radius: 14px !important;
+        border: 1px solid rgba(139, 115, 87, 0.12) !important;
+        border-bottom: 2px solid #D4AF37 !important;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+        margin-bottom: 0.25rem !important;
+        padding: 0.65rem 0.5rem !important;
     }
     /* Force left-to-right flow inside the header so the compact controls
        sit on the far LEFT and the brand is pushed to the far RIGHT. */
@@ -863,7 +868,6 @@ def inject_top_bar_css():
         justify-content: flex-start !important;
         gap: 0.7rem !important;
         width: 100% !important;
-        padding: 0.1rem 0 !important;
         min-width: 0 !important;
     }
     .app-header-logo {
@@ -871,26 +875,26 @@ def inject_top_bar_css():
         height: 60px !important;
         object-fit: cover !important;
         border-radius: 50% !important;
-        border: 3px solid #2563eb !important;
-        box-shadow: 0 2px 10px rgba(37, 99, 235, 0.28) !important;
+        border: 3px solid #550B1F !important;
+        box-shadow: 0 2px 10px rgba(85, 11, 31, 0.15) !important;
         flex-shrink: 0 !important;
-        background: #ffffff !important;
+        background: #F8F5E6 !important;
     }
     .app-header-name {
         font-size: 1.4rem !important;
         font-weight: 800 !important;
-        color: #0f172a !important;
+        color: #550B1F !important;
         font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif !important;
         line-height: 1.3 !important;
         white-space: nowrap !important;
         direction: rtl !important;
         text-align: right !important;
     }
-    /* ===== Compact blue header controls: [☰] [مركز المساعدة] ===== */
+    /* ===== Compact dark-maroon header controls ===== */
     .st-key-app_help_center_btn button,
     .st-key-app_student_menu_btn button,
     .st-key-app_admin_menu_btn button {
-        background-color: #2563eb !important;
+        background-color: #550B1F !important;
         color: #ffffff !important;
         border: none !important;
         border-radius: 8px !important;
@@ -899,7 +903,7 @@ def inject_top_bar_css():
         font-weight: 700 !important;
         font-size: 0.85rem !important;
         line-height: 40px !important;
-        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.22) !important;
+        box-shadow: 0 2px 6px rgba(85, 11, 31, 0.18) !important;
         white-space: nowrap !important;
         width: auto !important;
         justify-content: center !important;
@@ -913,7 +917,7 @@ def inject_top_bar_css():
     .st-key-app_help_center_btn button:hover,
     .st-key-app_student_menu_btn button:hover,
     .st-key-app_admin_menu_btn button:hover {
-        background-color: #1d4ed8 !important;
+        background-color: #4a0819 !important;
         color: #ffffff !important;
     }
     /* Burger icon: small compact square */
@@ -929,7 +933,7 @@ def inject_top_bar_css():
         text-align: center;
         font-size: 1.02rem;
         font-weight: 800;
-        color: #0f172a;
+        color: #550B1F;
         margin: 0.35rem 0 0.85rem 0;
         line-height: 1.45;
     }
@@ -937,18 +941,25 @@ def inject_top_bar_css():
     @media (max-width: 767px) {
         .st-key-app_header {
             padding: 0.45rem 0.1rem !important;
+            border-radius: 12px !important;
         }
         .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type {
             flex-direction: row !important;
             align-items: center !important;
         }
-        /* Give the left controls column enough width for the two compact buttons */
+        /* 3-column layout on mobile: actions | empty spacer | brand */
+        /* Hide the empty centre spacer so the page fits on small screens */
+        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type > [data-testid="stColumn"]:nth-child(2) {
+            display: none !important;
+        }
+        /* Left actions column — needs enough width for the two compact buttons */
         .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type > [data-testid="stColumn"]:nth-child(1) {
             flex: 1 1 48% !important;
             min-width: 48% !important;
             max-width: 50% !important;
         }
-        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type > [data-testid="stColumn"]:nth-child(2) {
+        /* Right brand column — takes the remaining width */
+        .st-key-app_header [data-testid="stHorizontalBlock"]:first-of-type > [data-testid="stColumn"]:nth-child(3) {
             flex: 1 1 52% !important;
             min-width: 52% !important;
         }
@@ -980,7 +991,7 @@ def inject_top_bar_css():
 
 
 def render_help_center_button():
-    """Blue 'مركز المساعدة' button — call at most once per Streamlit run."""
+    """Dark-maroon 'مركز المساعدة' button — call at most once per Streamlit run."""
     if st.button("مركز المساعدة", key="app_help_center_btn", use_container_width=False):
         st.session_state.open_help_dialog = True
         st.rerun()
@@ -1002,20 +1013,22 @@ def _church_logo_data_url():
 
 
 def render_header_burger_button(button_key, open_handler):
-    """Small blue hamburger ☰ button — opens the side menu."""
+    """Small dark-maroon hamburger ☰ button — opens the side menu."""
     if st.button("☰", key=button_key, use_container_width=False):
         open_handler()
         st.rerun()
 
 
 def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", burger_handler=None, extra_title_html=""):
-    """Church header: compact blue controls [☰] [مركز المساعدة] on the far left,
-    and the brand (image + كنيسة الشهيدة دميانة) centered on the right."""
+    """Church header: dark-maroon controls [☰] [مركز المساعدة] on the far left,
+    a large clean empty space in the centre, and the brand (image + كنيسة الشهيدة دميانة) on the far right"""
     inject_top_bar_css()
     logo_url = _church_logo_data_url()
     with st.container(key="app_header"):
-        # Buttons first = far LEFT (the header flex is forced LTR), brand after = far RIGHT
-        c_actions, c_brand = st.columns([1, 3], gap="small", vertical_alignment="center")
+        # Buttons first = far LEFT (the header flex is forced LTR).
+        # The middle column (c_spacer) is intentionally left EMPTY to create
+        # the large clean empty space that matches the dashboard reference.
+        c_actions, c_spacer, c_brand = st.columns([1, 5, 2.2], gap="small", vertical_alignment="center")
         with c_actions:
             if show_burger and burger_handler is not None:
                 c_burger, c_help = st.columns(2, gap="small")
@@ -1025,6 +1038,8 @@ def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", bur
                     render_help_center_button()
             else:
                 render_help_center_button()
+        # c_spacer is deliberately empty — creates the wide gap between
+        # the left controls and the right brand, matching the reference.
         with c_brand:
             st.markdown(
                 f"""<div class="app-header-brand">
@@ -1038,7 +1053,7 @@ def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", bur
 
 
 def render_student_top_bar(current_page):
-    """Student header: compact blue controls [☰] [مركز المساعدة] on the far left, brand centered."""
+    """Student header: dark-maroon controls [☰] [مركز المساعدة] on the far left, brand centered."""
     extra = ""
     if current_page == STUDENT_ASSESSMENTS_PAGE:
         extra = '<p class="app-top-title-center">المسابقات والاختبارات 🏆</p>'
@@ -1058,7 +1073,7 @@ def render_login_top_bar():
 
 
 def render_admin_top_bar(show_menu_button=False):
-    """Admin header: compact blue controls [☰] [مركز المساعدة] on the far left, brand centered."""
+    """Admin header: dark-maroon controls [☰] [مركز المساعدة] on the far left, brand centered."""
     render_church_header(
         show_burger=show_menu_button,
         burger_key="app_admin_menu_btn",
