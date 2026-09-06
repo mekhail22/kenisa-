@@ -406,12 +406,13 @@ def get_design_css():
             position: relative !important;
             z-index: 1 !important;
         }}
-        /* ===== Keep the header pinned to the very top (no empty space above) ===== */
+        /* ===== No header — content starts naturally at the top ===== */
         section.main .block-container {{
             padding-top: 0 !important;
         }}
         .content-area {{
             padding: 1.5rem !important;
+            padding-top: 0.5rem !important;
             max-width: 1400px !important;
             margin: 0 auto !important;
         }}
@@ -834,157 +835,188 @@ def inject_css():
     st.markdown(get_design_css(), unsafe_allow_html=True)
 
 
-def inject_top_bar_css():
-    """Styles for the minimal header bar — clean white background, blue accent
-    controls on the right, compact height, subtle shadow, sticky at the very top."""
+def inject_floating_controls_css():
+    """Styles for the two compact floating controls (Help + Burger) fixed
+    at the top-right of the viewport. No header bar, no brand, no spacer."""
     st.markdown("""
     <style>
-    /* ===== Minimal header bar (sticky at the very top) — controls only, no brand ===== */
-    .st-key-app_header {
-        position: sticky !important;
-        top: 0 !important;
-        z-index: 9999 !important;
-        background: #ffffff !important;
-        border-bottom: 1px solid #e2e8f0 !important;
-        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
-        margin: 0 !important;
-        padding: 0.4rem 0.75rem !important;
-    }
-    /* Flex layout: push controls to the far RIGHT */
-    .st-key-app_header [data-testid="stHorizontalBlock"] {
-        direction: ltr !important;
+    /* ===== Floating controls cluster (top-right, fixed, out of flow) ===== */
+    .st-key-floating-controls-cluster {
+        position: fixed !important;
+        top: 12px !important;
+        right: 14px !important;
+        z-index: 99999 !important;
+        display: flex !important;
+        flex-direction: row !important;
         align-items: center !important;
+        gap: 8px !important;
+        direction: ltr !important;
+        pointer-events: auto !important;
+    }
+    .st-key-floating-controls-cluster [data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        direction: ltr !important;
         justify-content: flex-end !important;
-        gap: 0.5rem !important;
+        width: auto !important;
+        max-width: none !important;
     }
-    /* Remove any extra spacing from the container */
-    .st-key-app_header .stColumn {
+    .st-key-floating-controls-cluster .stColumn {
         min-width: auto !important;
+        width: auto !important;
+        flex: 0 0 auto !important;
+        padding: 0 !important;
     }
-    /* ===== Compact blue header controls ===== */
-    .st-key-app_help_center_btn button,
-    .st-key-app_student_menu_btn button,
-    .st-key-app_admin_menu_btn button {
+    /* ===== Compact blue floating buttons (Help + Burger share look) ===== */
+    .st-key-floating_help_center_btn button,
+    .st-key-floating_admin_menu_btn button,
+    .st-key-floating_student_menu_btn button {
         background-color: #2563eb !important;
         color: #ffffff !important;
         border: none !important;
         border-radius: 8px !important;
-        min-height: 38px !important;
-        padding: 0 1rem !important;
+        height: 36px !important;
+        min-height: 36px !important;
+        max-height: 36px !important;
+        padding: 0 14px !important;
         font-weight: 600 !important;
-        font-size: 0.82rem !important;
-        line-height: 38px !important;
-        box-shadow: 0 1px 3px rgba(37, 99, 235, 0.15) !important;
+        font-size: 0.8rem !important;
+        line-height: 36px !important;
+        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.18) !important;
         white-space: nowrap !important;
         width: auto !important;
+        min-width: auto !important;
         justify-content: center !important;
         text-align: center !important;
-        transition: background-color 0.15s ease !important;
+        transition: background-color 0.15s ease, box-shadow 0.15s ease !important;
         margin: 0 !important;
-    }
-    /* Help Center label is Arabic → render RTL */
-    .st-key-app_help_center_btn button {
         direction: rtl !important;
     }
-    .st-key-app_help_center_btn button:hover,
-    .st-key-app_student_menu_btn button:hover,
-    .st-key-app_admin_menu_btn button:hover {
+    .st-key-floating_help_center_btn button:hover,
+    .st-key-floating_admin_menu_btn button:hover,
+    .st-key-floating_student_menu_btn button:hover {
         background-color: #1d4ed8 !important;
         color: #ffffff !important;
+        box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25) !important;
     }
-    /* Burger icon: small compact square */
-    .st-key-app_student_menu_btn button,
-    .st-key-app_admin_menu_btn button {
-        width: 38px !important;
-        min-width: 38px !important;
+    .st-key-floating_help_center_btn button:active,
+    .st-key-floating_admin_menu_btn button:active,
+    .st-key-floating_student_menu_btn button:active {
+        background-color: #1e40af !important;
+    }
+    /* Burger button: square, icon only */
+    .st-key-floating_admin_menu_btn button,
+    .st-key-floating_student_menu_btn button {
+        width: 36px !important;
+        min-width: 36px !important;
+        max-width: 36px !important;
         padding: 0 !important;
-        font-size: 1rem !important;
-        line-height: 38px !important;
+        font-size: 1.05rem !important;
+        letter-spacing: 0 !important;
     }
-    /* ===== Mobile: compact controls on the right ===== */
+    /* ===== Safe-area + narrow-viewport tuning ===== */
     @media (max-width: 767px) {
-        .st-key-app_header {
-            padding: 0.35rem 0.5rem !important;
+        .st-key-floating-controls-cluster {
+            top: 8px !important;
+            right: 8px !important;
+            gap: 6px !important;
         }
-        .st-key-app_help_center_btn button,
-        .st-key-app_student_menu_btn button,
-        .st-key-app_admin_menu_btn button {
-            min-height: 34px !important;
-            font-size: 0.75rem !important;
-            padding: 0 0.65rem !important;
-            line-height: 34px !important;
+        .st-key-floating-controls-cluster [data-testid="stHorizontalBlock"] {
+            gap: 6px !important;
         }
-        .st-key-app_student_menu_btn button,
-        .st-key-app_admin_menu_btn button {
-            width: 34px !important;
-            min-width: 34px !important;
+        .st-key-floating_help_center_btn button,
+        .st-key-floating_admin_menu_btn button,
+        .st-key-floating_student_menu_btn button {
+            height: 32px !important;
+            min-height: 32px !important;
+            max-height: 32px !important;
+            padding: 0 10px !important;
+            font-size: 0.72rem !important;
+            line-height: 32px !important;
+            border-radius: 7px !important;
+        }
+        .st-key-floating_admin_menu_btn button,
+        .st-key-floating_student_menu_btn button {
+            width: 32px !important;
+            min-width: 32px !important;
+            max-width: 32px !important;
             padding: 0 !important;
-            font-size: 0.9rem !important;
+            font-size: 0.95rem !important;
+        }
+    }
+    @media (max-width: 380px) {
+        .st-key-floating-controls-cluster {
+            top: 6px !important;
+            right: 6px !important;
+            gap: 5px !important;
+        }
+        .st-key-floating_help_center_btn button {
+            padding: 0 8px !important;
+            font-size: 0.68rem !important;
+        }
+    }
+    /* Respect iOS safe areas on notched devices */
+    @supports (padding-top: env(safe-area-inset-top)) {
+        .st-key-floating-controls-cluster {
+            top: calc(env(safe-area-inset-top) + 8px) !important;
+            right: calc(env(safe-area-inset-right) + 8px) !important;
         }
     }
     </style>
     """, unsafe_allow_html=True)
 
 
-def render_help_center_button():
-    """Blue 'مركز المساعدة' button — call at most once per Streamlit run."""
-    if st.button("مركز المساعدة", key="app_help_center_btn", use_container_width=False):
+def render_floating_help_center_button():
+    """Blue 'مركز المساعدة' floating button — call at most once per Streamlit run."""
+    if st.button("مركز المساعدة", key="floating_help_center_btn", use_container_width=False):
         st.session_state.open_help_dialog = True
         st.rerun()
 
 
-def render_header_burger_button(button_key, open_handler):
-    """Small blue hamburger ☰ button — opens the side menu."""
+def render_floating_burger_button(button_key, open_handler):
+    """Small blue hamburger ☰ floating button — opens the side menu."""
     if st.button("☰", key=button_key, use_container_width=False):
         open_handler()
         st.rerun()
 
 
-def render_church_header(show_burger=False, burger_key="app_admin_menu_btn", burger_handler=None, extra_title_html=""):
-    """Minimal header: controls [مركز المساعدة] [☰] on the RIGHT only.
-    No logo, no church name, no brand. Compact, clean, no empty spacer."""
-    inject_top_bar_css()
-    with st.container(key="app_header"):
-        # Single row: controls aligned to the RIGHT
+def render_floating_controls(show_burger=False, burger_key="floating_admin_menu_btn", burger_handler=None):
+    """Render ONLY two compact floating controls on the RIGHT side of the viewport:
+    [ Help Center ] [ ☰ ]
+    No header bar, no brand, no spacer. Fixed position, out of document flow."""
+    inject_floating_controls_css()
+    with st.container(key="floating-controls-cluster"):
+        c_help, c_burger = st.columns([1, 1], gap="small", vertical_alignment="center")
+        with c_help:
+            render_floating_help_center_button()
         if show_burger and burger_handler is not None:
-            _, c_help, c_burger = st.columns([1, 1, 1], gap="small", vertical_alignment="center")
-            with c_help:
-                render_help_center_button()
             with c_burger:
-                render_header_burger_button(burger_key, burger_handler)
-        else:
-            _, c_help = st.columns([1, 1], gap="small", vertical_alignment="center")
-            with c_help:
-                render_help_center_button()
-    if extra_title_html:
-        st.markdown(extra_title_html, unsafe_allow_html=True)
+                render_floating_burger_button(burger_key, burger_handler)
 
 
 def render_student_top_bar(current_page):
-    """Student header: controls [مركز المساعدة] [☰] on the RIGHT only. No brand."""
-    extra = ""
-    if current_page == STUDENT_ASSESSMENTS_PAGE:
-        extra = '<p class="app-top-title-center">المسابقات والاختبارات 🏆</p>'
-    render_church_header(
+    """Student floating controls: [مركز المساعدة] [☰] on the RIGHT only. No header."""
+    render_floating_controls(
         show_burger=True,
-        burger_key="app_student_menu_btn",
+        burger_key="floating_student_menu_btn",
         burger_handler=lambda: st.session_state.update(
             {"sidebar_open": not st.session_state.get("sidebar_open", False)}
         ),
-        extra_title_html=extra,
     )
 
 
 def render_login_top_bar():
-    """Login header: مركز المساعدة on the RIGHT only — no brand, no burger."""
-    render_church_header(show_burger=False)
+    """Login floating controls: مركز المساعدة on the RIGHT only — no burger."""
+    render_floating_controls(show_burger=False)
 
 
 def render_admin_top_bar(show_menu_button=False):
-    """Admin header: controls [مركز المساعدة] [☰] on the RIGHT only. No brand."""
-    render_church_header(
+    """Admin floating controls: [مركز المساعدة] [☰] on the RIGHT only. No header."""
+    render_floating_controls(
         show_burger=show_menu_button,
-        burger_key="app_admin_menu_btn",
+        burger_key="floating_admin_menu_btn",
         burger_handler=lambda: st.session_state.update({"show_sidebar": True}),
     )
 
@@ -5886,7 +5918,8 @@ def show_unified_assessments_admin(db):
                 elif qtype == "صح وخطأ":
                     opts["option1"], opts["option2"] = "صح", "خطأ"
                 correct = st.text_input("الإجابة الصحيحة*")
-                marks = st.number_input("درجة السؤال", min_value=1, max_value=100, value=5 if picked_type == "exam" else 1)
+                _picked_assessment_type = str(picked_row.get("assessment_type", "quiz")).strip()
+                marks = st.number_input("درجة السؤال", min_value=1, max_value=100, value=5 if _picked_assessment_type == "exam" else 1)
                 if st.form_submit_button("إضافة سؤال", use_container_width=True):
                     if not qtext.strip() or not correct.strip():
                         st.error("نص السؤال والإجابة الصحيحة مطلوبان.")
