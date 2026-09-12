@@ -8321,6 +8321,14 @@ def main():
             st.stop()
     db = st.session_state.db_instance
     jwt_secret = get_jwt_secret()
+
+    # Migrate legacy Attendance schema (user_id -> student_id, name -> full_name)
+    # early so any authenticated page (e.g. the dashboard) sees canonical columns.
+    try:
+        db.migrate_attendance_schema()
+    except Exception:
+        pass
+
     if st.session_state.get("authenticated"):
         try:
             migrated = db.migrate_single_supervisors()
