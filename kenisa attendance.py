@@ -16,7 +16,7 @@ import hmac
 import os
 import io
 import zipfile
-from functools import wraps, lru_cache
+from functools import lru_cache
 import threading
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -29,7 +29,7 @@ from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display as _bidi_get_display
 
-# Auto-load background image as base64 from image1.jpg
+
 _BG_IMG_PATH = os.path.join(os.path.dirname(__file__), "image1.jpg")
 if os.path.exists(_BG_IMG_PATH):
     with open(_BG_IMG_PATH, "rb") as _f:
@@ -37,12 +37,10 @@ if os.path.exists(_BG_IMG_PATH):
 else:
     BG_IMAGE_BASE64 = ""
 
-# =============================================================================
-# الإعدادات العامة والثوابت
-# =============================================================================
+
 DEFAULT_JWT_SECRET = "StDemianaChurch2025!Secure#Key"
 CACHE_TTL_SECONDS = 600
-# تحديث مدة الجلسة إلى 24 ساعة
+
 SESSION_TIMEOUT_HOURS = 24
 CAIRO_TZ = timezone(timedelta(hours=3), name='Africa/Cairo')
 
@@ -55,21 +53,21 @@ LEGACY_STUDENT_ASSESSMENT_PAGES = {
 ADMIN_ASSESSMENTS_PAGE = "📝 المسابقات والاختبارات"
 LEGACY_ADMIN_ASSESSMENTS_PAGE = "📝 إدارة الامتحانات"
 
-# أعمدة سجل التدقيق (AuditLog)
+
 AUDIT_LOG_COLUMNS = [
     "log_id", "timestamp", "username", "user_id", "action", "details",
     "ip_address", "country", "city", "browser", "os", "device_type", "screen_size"
 ]
 
-# Password hashing
+
 def hash_password(password: str) -> str:
-    """Hash a password using SHA-256 with a random salt."""
+
     salt = os.urandom(32)
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
     return salt.hex() + ':' + key.hex()
 
 def verify_password(password: str, stored_hash: str) -> bool:
-    """Verify a password against a stored hash (or plaintext fallback)."""
+
     try:
         salt_hex, key_hex = stored_hash.split(':')
         salt = bytes.fromhex(salt_hex)
@@ -85,11 +83,7 @@ def get_cairo_now():
 
 
 def generate_student_code(db=None, existing_codes=None):
-    """
-    توليد كود فريد للطالبة.
-    الكود: STU + 6 أرقام متسلسلة مع أصفار(left padding)
-    مثال: STU000001, STU000002, STU000003
-    """
+
     used_codes = set(existing_codes or [])
     if db is not None:
         try:
@@ -98,8 +92,8 @@ def generate_student_code(db=None, existing_codes=None):
                 used_codes = set(students_df["student_code"].dropna().astype(str).str.strip().tolist())
         except Exception:
             pass
-    
-    # استخراج الأرقام من الأكواد الموجودة
+
+
     max_num = 0
     for code in used_codes:
         code_str = str(code).strip()
@@ -109,8 +103,8 @@ def generate_student_code(db=None, existing_codes=None):
                 max_num = max(max_num, num)
             except ValueError:
                 pass
-    
-    # توليد كود جديد بالرقم التالي
+
+
     next_num = max_num + 1
     return f"STU{next_num:06d}"
 
@@ -129,7 +123,7 @@ AR_MONTHS = [
 
 
 def parse_cairo_datetime(value):
-    """Parse stored datetime string/object into Cairo timezone."""
+
     if value is None:
         return None
     if isinstance(value, float) and pd.isna(value):
@@ -152,10 +146,7 @@ def parse_cairo_datetime(value):
 
 
 def format_arabic_datetime(value, include_time=True):
-    """
-    Format datetime for Arabic UI display.
-    Returns (date_line, time_line) e.g. ('الثلاثاء، 3 يونيو 2026', '03:00 مساءً')
-    """
+
     dt = parse_cairo_datetime(value)
     if dt is None:
         return "—", ""
@@ -179,9 +170,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# =============================================================================
-# Telegram & Support
-# =============================================================================
+
 def get_telegram_config():
     try:
         return st.secrets["telegram"]["bot_token"], st.secrets["telegram"]["chat_id"]
@@ -199,9 +188,6 @@ def get_support_config():
         return "مسؤول النظام", ""
 
 
-# =============================================================================
-# Credentials & IDs
-# =============================================================================
 def get_credentials():
     try:
         return Credentials.from_service_account_info(
@@ -232,9 +218,6 @@ def get_jwt_secret():
         return DEFAULT_JWT_SECRET
 
 
-# =============================================================================
-# helpers: age and colors
-# =============================================================================
 def get_student_age(birthdate):
     if not birthdate:
         return None
@@ -246,15 +229,8 @@ def get_student_age(birthdate):
         return None
 
 
-# =============================================================================
-# Unified Member Stage Helpers — مصدر واحد موحد لبيانات المرحلة لكل الأعضاء
-# =============================================================================
 def resolve_member_stage_id(stage_id, section_id, sections_df=None):
-    """
-    إرجاع معرف المرحلة الفعلي لأي عضو (مستخدم أو طالبة).
-    الأولوية: stage_id المخزن على العضو نفسه، وإلا يُشتق من مرحلة الفصل.
-    يعالج البيانات القديمة بأمان (أعضاء بدون مرحلة).
-    """
+
     sid = str(stage_id or "").strip()
     if not sid or str(sid).lower() in ("nan", "none"):
         sid = ""
@@ -271,10 +247,7 @@ def resolve_member_stage_id(stage_id, section_id, sections_df=None):
 
 
 def resolve_member_stage_name(stage_id, section_id, sections_df=None, stages_df=None):
-    """
-    إرجاع اسم المرحلة الموحد لأي عضو (مستخدم أو طالبة) بالاعتماد على
-    نظام المراحل الموجود مسبقاً في النظام (ورقة Stages) دون تكرار بيانات.
-    """
+
     try:
         if stages_df is None or stages_df.empty:
             return ""
@@ -290,11 +263,8 @@ def resolve_member_stage_name(stage_id, section_id, sections_df=None, stages_df=
         return ""
 
 
-# =============================================================================
-# Premium Design System - Unified CSS
-# =============================================================================
 def get_design_css():
-    """Return the unified premium design system CSS."""
+
     bg_data_url = f"data:image/jpeg;base64,{BG_IMAGE_BASE64}"
     return f"""
     <style id="premium-design-system">
@@ -458,7 +428,7 @@ def get_design_css():
             border-right: none !important;
             box-shadow: -2px 0 8px rgba(0,0,0,0.05) !important;
         }}
-        
+
         /* Full screen sidebar overlay for mobile */
         @media (max-width: 768px) {{
             section[data-testid="stSidebar"] {{
@@ -831,13 +801,12 @@ def get_design_css():
 
 
 def inject_css():
-    """Inject the unified premium design system."""
+
     st.markdown(get_design_css(), unsafe_allow_html=True)
 
 
 def inject_floating_controls_css():
-    """Styles for the two compact floating controls (Help + Burger) fixed
-    at the top-right of the viewport. No header bar, no brand, no spacer."""
+
     st.markdown("""
     <style>
     /* ===== Floating controls cluster (top-right, fixed, out of flow) ===== */
@@ -969,23 +938,21 @@ def inject_floating_controls_css():
 
 
 def render_floating_help_center_button():
-    """Blue 'مركز المساعدة' floating button — call at most once per Streamlit run."""
+
     if st.button("مركز المساعدة", key="floating_help_center_btn", width="content"):
         st.session_state.open_help_dialog = True
         st.rerun()
 
 
 def render_floating_burger_button(button_key, open_handler):
-    """Small blue hamburger ☰ floating button — opens the side menu."""
+
     if st.button("☰", key=button_key, width="content"):
         open_handler()
         st.rerun()
 
 
 def render_floating_controls(show_burger=False, burger_key="floating_admin_menu_btn", burger_handler=None):
-    """Render ONLY two compact floating controls on the RIGHT side of the viewport:
-    [ Help Center ] [ ☰ ]
-    No header bar, no brand, no spacer. Fixed position, out of document flow."""
+
     inject_floating_controls_css()
     with st.container(key="floating-controls-cluster"):
         c_help, c_burger = st.columns([1, 1], gap="small", vertical_alignment="center")
@@ -997,7 +964,7 @@ def render_floating_controls(show_burger=False, burger_key="floating_admin_menu_
 
 
 def render_student_top_bar(current_page):
-    """Student floating controls: [مركز المساعدة] [☰] on the RIGHT only. No header."""
+
     render_floating_controls(
         show_burger=True,
         burger_key="floating_student_menu_btn",
@@ -1008,12 +975,12 @@ def render_student_top_bar(current_page):
 
 
 def render_login_top_bar():
-    """Login floating controls: مركز المساعدة on the RIGHT only — no burger."""
+
     render_floating_controls(show_burger=False)
 
 
 def render_admin_top_bar(show_menu_button=False):
-    """Admin floating controls: [مركز المساعدة] [☰] on the RIGHT only. No header."""
+
     render_floating_controls(
         show_burger=show_menu_button,
         burger_key="floating_admin_menu_btn",
@@ -1022,12 +989,12 @@ def render_admin_top_bar(show_menu_button=False):
 
 
 def inject_user_cards_css():
-    """Design system already applies globally — no-op for backwards compat."""
+
     pass
 
 
 def hero_header(title, subtitle=""):
-    """Render the reusable hero section with background image."""
+
     return f"""
     <div class="hero-banner">
         <div class="hero-content">
@@ -1039,7 +1006,7 @@ def hero_header(title, subtitle=""):
 
 
 def empty_state(message, icon="📭"):
-    """Render an empty state message."""
+
     return f"""
     <div style="text-align:center; padding:3rem 1rem; color:#6b7280;">
         <div style="font-size:3rem; margin-bottom:0.5rem;">{icon}</div>
@@ -1049,33 +1016,23 @@ def empty_state(message, icon="📭"):
 
 
 def under_development_page(title, subtitle, message, button_label="العودة إلى لوحة التحكم", button_key=None, features=None):
-    """
-    Render a premium Arabic 'Under Development' page with RTL support, Cairo font, soft animations, and Bootstrap 5 styling.
-    
-    Args:
-        title: Main title for the page
-        subtitle: Subtitle below the title
-        message: Main message/description
-        button_label: Label for the back button
-        button_key: Unique key for the button
-        features: List of feature strings to display as bullets (optional)
-    """
+
     inject_css()
     st.markdown(hero_header(title, subtitle), unsafe_allow_html=True)
 
-    # Build features HTML if provided
+
     features_html = ""
     if features and isinstance(features, list):
         features_html = "<ul style='text-align: right; line-height: 2;'>"
         for feat in features:
             features_html += f"<li>✅ {feat}</li>"
         features_html += "</ul>"
-    
-    # Replace message with features if provided
+
+
     if features_html:
         message = features_html
 
-    # Custom styles for the under-development page
+
     st.markdown("""
     <style>
         .under-dev-container {
@@ -1179,9 +1136,6 @@ def under_development_page(title, subtitle, message, button_label="العودة 
         st.rerun()
 
 
-# =============================================================================
-# Cache & Retry
-# =============================================================================
 def init_data_cache():
     if 'data_cache' not in st.session_state:
         st.session_state.data_cache = {}
@@ -1189,9 +1143,9 @@ def init_data_cache():
         st.session_state.data_dirty = {}
     if 'cache_stats' not in st.session_state:
         st.session_state.cache_stats = {'hits': 0, 'misses': 0, 'last_cleanup': time.time()}
-    # Auto-invalidation: periodically clean expired cache entries
+
     now = time.time()
-    if now - st.session_state.cache_stats.get('last_cleanup', 0) > 300:  # Every 5 minutes
+    if now - st.session_state.cache_stats.get('last_cleanup', 0) > 300:
         cache = st.session_state.get('data_cache', {})
         expired_keys = [k for k, v in cache.items() if now - v.get('timestamp', 0) > CACHE_TTL_SECONDS]
         for k in expired_keys:
@@ -1199,13 +1153,8 @@ def init_data_cache():
         st.session_state.cache_stats['last_cleanup'] = now
 
 
-# =============================================================================
-# Audit Log - Client Info (IP, location, browser, OS, device)
-# =============================================================================
 def _get_client_ip_and_location():
-    """
-    جلب عنوان IP والموقع الجغرافي باستخدام ipapi.co API المجاني.
-    """
+
     try:
         resp = requests.get("https://ipapi.co/json/", timeout=5)
         if resp.status_code == 200:
@@ -1221,13 +1170,11 @@ def _get_client_ip_and_location():
 
 
 def _parse_user_agent(ua_string):
-    """
-    تحليل User-Agent لاستخراج: browser, os, device_type.
-    """
+
     ua = ua_string or ""
     result = {"browser": "", "os": "", "device_type": "", "screen_size": ""}
 
-    # Browser detection
+
     browser_patterns = [
         (r"Edge|Edg/", "Edge"),
         (r"Chrome/", "Chrome"),
@@ -1241,7 +1188,7 @@ def _parse_user_agent(ua_string):
             result["browser"] = name
             break
 
-    # OS detection
+
     os_patterns = [
         (r"Windows NT 10\.0", "Windows 10/11"),
         (r"Windows NT 6\.\d", "Windows"),
@@ -1255,7 +1202,7 @@ def _parse_user_agent(ua_string):
             result["os"] = name
             break
 
-    # Device type detection
+
     if re.search(r"Mobile|Android|iPhone|iPad|iPod", ua):
         if re.search(r"iPad", ua):
             result["device_type"] = "Tablet"
@@ -1268,14 +1215,11 @@ def _parse_user_agent(ua_string):
 
 
 def _get_screen_size():
-    """
-    محاولة جلب حجم الشاشة باستخدام JavaScript عبر streamlit_js_eval.
-    إذا فشل، نعيد قيمة افتراضية.
-    """
+
     try:
-        # استخدم get_page_location أو get_browser_language كطريقة للحصول على معلومات
+
         from streamlit_js_eval import get_page_location
-        # لا نستطيع الحصول على screen size مباشرة، لذا نعيد قيمة افتراضية
+
         pass
     except Exception:
         pass
@@ -1283,12 +1227,10 @@ def _get_screen_size():
 
 
 def get_client_info():
-    """
-    تجميع معلومات العميل: IP، الموقع، المتصفح، نظام التشغيل، نوع الجهاز.
-    """
+
     info = _get_client_ip_and_location()
-    
-    # محاولة الحصول على User-Agent من streamlit_js_eval
+
+
     ua_string = ""
     try:
         from streamlit_js_eval import get_user_agent
@@ -1299,11 +1241,11 @@ def get_client_info():
             ua_string = ua_result.get("userAgent", "")
     except Exception:
         pass
-    
-    # إذا لم نتمكن من الحصول على User-Agent من JS، نستخدم طريقة بديلة
+
+
     if not ua_string:
         try:
-            # محاولة من request headers (قد لا تكون متاحة في Streamlit)
+
             ua_string = st.context.headers.get("User-Agent", "") if hasattr(st, 'context') else ""
         except Exception:
             pass
@@ -1314,9 +1256,6 @@ def get_client_info():
     return info
 
 
-# =============================================================================
-# Database Class
-# =============================================================================
 class Database:
     _request_times = []
     _lock = threading.Lock()
@@ -1395,15 +1334,12 @@ class Database:
     def _sheet_to_df(self, sheet_name):
         return self._get_cached_df(sheet_name, lambda: self._read_sheet_raw(sheet_name))
 
-    # Google Sheets cell limit: 50,000 characters per cell
+
     GOOGLE_SHEETS_CELL_LIMIT = 50000
 
     @staticmethod
     def _validate_cell_values(df, columns, sheet_name=""):
-        """
-        التحقق من عدم تجاوز قيم الخلايا لحد Google Sheets (50,000 حرف لكل خلية).
-        تُثير خطأ واضح يحدد الحقل المتجاوز بدلاً من السماح بفشل  opaque API.
-        """
+
         for col in columns:
             if col not in df.columns:
                 continue
@@ -1422,7 +1358,7 @@ class Database:
             raise ValueError("df must be a DataFrame")
         if not isinstance(columns, list) or not columns:
             raise ValueError("columns must be a non-empty list")
-        # Validate cell values before writing to Google Sheets
+
         Database._validate_cell_values(df, columns, sheet_name)
         Database._rate_limit()
         ws = self._get_or_create_worksheet(sheet_name, columns)
@@ -1449,7 +1385,7 @@ class Database:
             return str(value)
         return str(value)
 
-    # --- Users ---
+
     def get_users(self):
         return self._sheet_to_df("Users")
 
@@ -1476,7 +1412,7 @@ class Database:
         df = df[df.user_id != user_id]
         self._df_to_sheet("Users", df, df.columns.tolist())
 
-    # --- Stages ---
+
     STAGE_COLUMNS = ["stage_id", "stage_name", "description", "display_order",
                      "status", "created_date", "created_by", "manager_user_id", "notes"]
 
@@ -1514,7 +1450,7 @@ class Database:
         df = df[df["stage_id"] != stage_id]
         self._df_to_sheet("Stages", df, self.STAGE_COLUMNS)
 
-    # --- StageSupervisors (Many-to-Many) ---
+
     STAGE_SUPERVISOR_COLUMNS = ["assignment_id", "stage_id", "supervisor_id", "assigned_date"]
 
     def get_stage_supervisors(self):
@@ -1589,14 +1525,11 @@ class Database:
         return migrated
 
     def migrate_student_codes_and_passwords(self):
-        """
-        Migration: ensure all students have student_code and student_password.
-        Returns: (migrated_count, message)
-        """
+
         students = self.get_students()
         if students.empty:
             return 0, "لا توجد طالبات"
-        
+
         updated = False
         count = 0
         for idx, row in students.iterrows():
@@ -1610,8 +1543,8 @@ class Database:
                     students.at[idx, k] = v
                 count += 1
                 updated = True
-        
-        # التأكد من وجود عمود profile_edit_used وعمود المرحلة stage_id
+
+
         if "profile_edit_used" not in students.columns:
             students["profile_edit_used"] = ""
         if "stage_id" not in students.columns:
@@ -1631,7 +1564,7 @@ class Database:
             return []
         return assignments["stage_id"].tolist()
 
-    # --- SectionTeachers (Many-to-Many) ---
+
     SECTION_TEACHER_COLUMNS = ["assignment_id", "section_id", "teacher_id", "assigned_date"]
 
     def get_section_teachers(self):
@@ -1647,7 +1580,6 @@ class Database:
         return assignments["teacher_id"].tolist()
 
 
-    # --- Sections ---
     SECTION_COLUMNS = ["section_id", "section_name", "stage_id", "teacher_id", "leader_id",
                        "max_students", "room", "meeting_day", "meeting_time",
                        "status", "notes", "manager_user_id"]
@@ -1710,15 +1642,11 @@ class Database:
         return len(students[students.section_id == section_id])
 
 
-    # --- Students ---
     def get_students(self):
         return self._sheet_to_df("Students")
 
     def ensure_student_profile_edit_column(self):
-        """
-        التأكد من وجود عمود profile_edit_used في ورقة Students.
-        إذا لم يكن موجوداً، يتم إضافته مع تعبئة القيم الفارغة بـ "".
-        """
+
         try:
             df = self.get_students()
             if df.empty:
@@ -1731,10 +1659,7 @@ class Database:
             pass
 
     def ensure_member_stage_column(self):
-        """
-        ترحيل آمن: التأكد من وجود عمود المرحلة (stage_id) في ورقتي Users و Students.
-        لا يحذف أو يغير أي بيانات موجودة — فقط يضيف العمود بقيم فارغة إن لم يكن موجوداً.
-        """
+
         try:
             users = self.get_users()
             if not users.empty and "stage_id" not in users.columns:
@@ -1760,10 +1685,10 @@ class Database:
         student_data["teacher_id"] = ""
         student_data.setdefault("profile_edit_used", "")
         student_data.setdefault("stage_id", "")
-        # توليد كود فريد إذا لم يكن موجوداً
+
         if not student_data.get("student_code"):
             student_data["student_code"] = generate_student_code(self)
-        # توليد كلمة مرور تلقائياً إذا لم تكن موجودة
+
         if not student_data.get("student_password"):
             if student_data.get("password"):
                 student_data["student_password"] = student_data["password"]
@@ -1793,27 +1718,14 @@ class Database:
         df = df[df.student_id != student_id]
         self._df_to_sheet("Students", df, df.columns.tolist())
 
-    # --- Attendance ---
-    # Canonical member identifier is student_id (consistent with Students, FollowUp,
-    # EventAttendance sheets and all downstream reports). The older schema used user_id/name
-    # which caused a systemic mismatch: saves wrote student_id while the sheet expected user_id,
-    # silently dropping the identifier, and reads crashed with AttributeError on existing.student_id.
+
     ATTENDANCE_COLUMNS = ["record_id", "date", "student_id", "full_name", "section_id", "status", "notes", "recorded_by"]
 
     def get_attendance(self):
         return self._sheet_to_df("Attendance")
 
     def migrate_attendance_schema(self):
-        """
-        One-time migration: rename legacy columns in the Attendance sheet so the schema
-        matches ATTENDANCE_COLUMNS. Handles:
-          - user_id -> student_id
-          - name    -> full_name
-        Legacy columns not in ATTENDANCE_COLUMNS (time, role, stage_id, attendance_method)
-        are dropped. Existing values in user_id/name are preserved by renaming.
-        Safe to call repeatedly: it is a no-op once the schema is already migrated.
-        Returns True if a migration was performed, False if already up-to-date.
-        """
+
         df = self._read_sheet_raw("Attendance")
         if df.empty:
             return False
@@ -1825,7 +1737,7 @@ class Database:
         if not rename_map:
             return False
         df = df.rename(columns=rename_map)
-        # Drop legacy columns that are no longer part of the schema
+
         legacy_cols = [c for c in ["time", "role", "stage_id", "attendance_method"] if c in df.columns]
         if legacy_cols:
             df = df.drop(columns=legacy_cols)
@@ -1833,11 +1745,7 @@ class Database:
         return True
 
     def get_attendance_by_date_section(self, date_str, section_id):
-        """
-        Return attendance rows for a given date and section.
-        Validates that the required columns exist before filtering so that downstream
-        code never hits an obscure AttributeError / KeyError on schema drift.
-        """
+
         df = self.get_attendance()
         if df.empty:
             return pd.DataFrame(columns=self.ATTENDANCE_COLUMNS)
@@ -1858,7 +1766,7 @@ class Database:
         if df.empty:
             df = pd.DataFrame(columns=self.ATTENDANCE_COLUMNS)
         else:
-            # Guarantee all expected columns exist before operating on them
+
             for col in self.ATTENDANCE_COLUMNS:
                 if col not in df.columns:
                     df[col] = ""
@@ -1871,7 +1779,7 @@ class Database:
                     if k in df.columns:
                         df.at[idx, k] = self._safe_str(v)
             else:
-                # Normalise every new record to the full schema so no column is ever missing
+
                 normalized = {col: self._safe_str(rec.get(col, "")) for col in self.ATTENDANCE_COLUMNS}
                 new_records.append(normalized)
         if new_records:
@@ -1885,7 +1793,6 @@ class Database:
         self._df_to_sheet("Attendance", df, self.ATTENDANCE_COLUMNS)
 
 
-    # --- FollowUp ---
     def get_followup(self):
         return self._sheet_to_df("FollowUp")
 
@@ -1910,7 +1817,7 @@ class Database:
         self._df_to_sheet("FollowUp", df, ["record_id", "student_id", "teacher_id", "followup_date",
                                            "followup_type", "notes", "regularity_status"])
 
-    # --- Quizzes / Unified Assessments ---
+
     QUIZ_COLUMNS = [
         "quiz_id", "title", "description", "created_by", "section_id",
         "num_questions", "time_limit_minutes", "total_marks", "expiry_date",
@@ -1947,7 +1854,7 @@ class Database:
         return work
 
     def _migrate_legacy_exams_into_quizzes(self):
-        """Backfill legacy Exams rows into Quizzes as assessment_type=exam."""
+
         try:
             quizzes = self._sheet_to_df("Quizzes")
             quizzes = self._ensure_quiz_columns(quizzes)
@@ -2054,7 +1961,7 @@ class Database:
                 df[col] = ""
         self._df_to_sheet("QuizQuestions", df, self.QUIZ_QUESTION_COLUMNS)
 
-    # --- Quiz Results ---
+
     def get_quiz_results(self, quiz_id=None):
         df = self._sheet_to_df("QuizResults")
         if df.empty:
@@ -2103,36 +2010,26 @@ class Database:
         df = df[df.result_id != result_id]
         self._df_to_sheet("QuizResults", df, self.QUIZ_RESULT_COLUMNS)
 
-    # =====================================================================
-    # Audit Log - سجل التدقيق الجديد
-    # =====================================================================
+
     def get_audit_log(self):
-        """جلب جميع سجلات التدقيق من ورقة AuditLog."""
+
         return self._sheet_to_df("AuditLog")
 
     def add_audit_log(self, action, details="", user_info=None, client_info=None):
-        """
-        إضافة سجل تدقيق جديد إلى ورقة AuditLog.
-        
-        Parameters:
-        - action: نوع العملية (مثل "تسجيل دخول", "إضافة عضو", ...)
-        - details: تفاصيل إضافية عن العملية
-        - user_info: dict يحتوي على معلومات المستخدم (user_id, username, ...)
-        - client_info: dict يحتوي على معلومات العميل (ip, browser, os, ...)
-        """
+
         if user_info is None:
             user_info = st.session_state.get("user", {}) if "user" in st.session_state else {}
         if client_info is None:
             client_info = get_client_info()
-        
+
         username = user_info.get("username", "") if isinstance(user_info, dict) else ""
         user_id = user_info.get("user_id", "") if isinstance(user_info, dict) else ""
-        # إذا كان user_info هو مجرد user_id string
+
         if isinstance(user_info, str):
             user_id = user_info
             username = ""
         elif isinstance(user_info, dict) and not username and user_id:
-            # حاول الحصول على اسم المستخدم من users sheet إذا كان متاحاً
+
             try:
                 if 'db_instance' in st.session_state:
                     users_df = st.session_state.db_instance.get_users()
@@ -2142,7 +2039,7 @@ class Database:
                             username = match.iloc[0].get("username", "")
             except Exception:
                 pass
-        
+
         log_entry = {
             "log_id": str(uuid.uuid4()),
             "timestamp": get_cairo_now().isoformat(),
@@ -2158,7 +2055,7 @@ class Database:
             "device_type": client_info.get("device_type", ""),
             "screen_size": client_info.get("screen_size", "")
         }
-        
+
         df = self.get_audit_log()
         if df.empty:
             df = pd.DataFrame(columns=AUDIT_LOG_COLUMNS)
@@ -2167,25 +2064,23 @@ class Database:
         return log_entry["log_id"]
 
     def delete_audit_log(self, log_id):
-        """حذف سجل تدقيق معين."""
+
         df = self.get_audit_log()
         if df.empty:
             return
         df = df[df.log_id != log_id]
         self._df_to_sheet("AuditLog", df, AUDIT_LOG_COLUMNS)
 
-    # =====================================================================
-    # دوال قديمة للتوافق العكسي - تشير إلى AuditLog الجديد
-    # =====================================================================
+
     def get_logs(self):
-        """للتوافق مع الكود القديم - يحول إلى AuditLog."""
+
         return self.get_audit_log()
 
     def add_log(self, user_id, action, details=""):
-        """للتوافق مع الكود القديم - يحول إلى AuditLog."""
+
         client_info = get_client_info()
         user_info = {"user_id": user_id, "username": ""}
-        # محاولة الحصول على اسم المستخدم
+
         try:
             users_df = self.get_users()
             if not users_df.empty:
@@ -2198,7 +2093,6 @@ class Database:
         return self.add_audit_log(action, details, user_info=user_info, client_info=client_info)
 
 
-    # --- Events ---
     EVENT_COLUMNS = ["event_id", "event_name", "event_type", "event_date", "event_time",
                      "location", "max_capacity", "description", "created_by", "status"]
 
@@ -2213,7 +2107,6 @@ class Database:
         self._df_to_sheet("Events", df, self.EVENT_COLUMNS)
 
 
-    # --- EventRSVP ---
     EVENT_RSVP_COLUMNS = ["rsvp_id", "event_id", "student_id", "student_name", "rsvp_status", "rsvp_date"]
 
     def get_event_rsvps(self, event_id=None):
@@ -2230,7 +2123,6 @@ class Database:
         self._df_to_sheet("EventRSVP", df, self.EVENT_RSVP_COLUMNS)
 
 
-    # --- EventAttendance ---
     EVENT_ATTENDANCE_COLUMNS = ["record_id", "event_id", "student_id", "status", "notes"]
 
     def get_event_attendance(self, event_id=None):
@@ -2251,7 +2143,7 @@ class Database:
         df = df[df.record_id != record_id]
         self._df_to_sheet("EventAttendance", df, self.EVENT_ATTENDANCE_COLUMNS)
 
-    # --- Exams (compatibility wrappers over unified quiz tables) ---
+
     EXAM_COLUMNS = ["exam_id", "title", "description", "created_by", "stage_id", "section_id", "chapter_lesson", "exam_date", "start_date", "end_date", "duration_minutes", "total_marks", "passing_score", "is_active", "is_published", "created_at"]
     EXAM_QUESTION_COLUMNS = ["question_id", "exam_id", "question_text", "question_type", "option1", "option2", "option3", "option4", "correct_answer", "marks"]
     EXAM_RESULT_COLUMNS = ["result_id", "exam_id", "student_id", "student_name", "score", "total_marks", "start_time", "submission_time", "answers", "status"]
@@ -2302,58 +2194,49 @@ class Database:
         self.submit_quiz_attempt(result_id, score, answers_json)
 
 
-    # --- Exam Engine ---
     def grade_exam_attempt(self, exam_id, answers_dict):
-        """
-        تصحيح امتحان تلقائياً بناءً على الإجابات.
-        returns: (score, total_marks, correct_count, wrong_count)
-        """
+
         questions = self.get_exam_questions(exam_id)
         if questions.empty:
             return 0, 0, 0, 0
-        
+
         correct_count = 0
         wrong_count = 0
         total_marks = 0
-        
+
         for _, q_row in questions.iterrows():
             q = q_row.to_dict()
             q_id = q.get("question_id", "")
             correct = str(q.get("correct_answer", "")).strip().lower()
             student_ans = str(answers_dict.get(q_id, "")).strip().lower()
             marks = float(q.get("marks", 1)) if q.get("marks") else 1
-            
+
             total_marks += marks
             if correct == student_ans:
                 correct_count += 1
             else:
                 wrong_count += 1
-        
-        score = correct_count  # Each correct answer gets its marks
+
+        score = correct_count
         return score, total_marks, correct_count, wrong_count
 
 
     def shuffle_questions(self, exam_id):
-        """
-        خلط أسئلة الامتحان عشوائياً.
-        returns: shuffled questions DataFrame
-        """
+
         questions = self.get_exam_questions(exam_id)
         if questions.empty:
             return pd.DataFrame()
-        
+
         shuffled = questions.sample(frac=1).reset_index(drop=True)
         return shuffled
 
 
-    # --- Homeworks ---
     HOMEWORK_COLUMNS = ["homework_id", "title", "description", "created_by", "section_id", "subject", "due_date", "total_marks", "is_active", "created_at"]
 
     def get_homeworks(self):
         return self._sheet_to_df("Homeworks")
 
 
-    # --- Homework Submissions ---
     HOMEWORK_SUBMISSION_COLUMNS = [
         "submission_id", "homework_id", "student_id", "student_name", "section_id",
         "image_data", "image_name", "submission_note", "status",
@@ -2378,7 +2261,7 @@ class Database:
                 df.at[idx[0], k] = self._safe_str(v)
             self._df_to_sheet("HomeworkSubmissions", df, self.HOMEWORK_SUBMISSION_COLUMNS)
 
-    # --- Notifications ---
+
     NOTIFICATION_COLUMNS = ["notification_id", "user_id", "title", "message", "notification_type", "is_read", "created_at"]
 
     def get_notifications(self, user_id=None):
@@ -2401,9 +2284,7 @@ class Database:
             df.at[idx[0], "is_read"] = "True"
             self._df_to_sheet("Notifications", df, self.NOTIFICATION_COLUMNS)
 
-    # =====================================================================
-    # Card Templates & Member Cards (نظام بطاقات التعريف)
-    # =====================================================================
+
     CARD_TEMPLATE_COLUMNS = [
         "template_id", "template_name", "image_ref", "width", "height",
         "elements_json", "is_default", "created_by", "created_at", "updated_at"
@@ -2442,7 +2323,7 @@ class Database:
         self._df_to_sheet("CardTemplates", df, self.CARD_TEMPLATE_COLUMNS)
 
     def set_default_card_template(self, template_id):
-        """تعيين قالب واحد كافتراضي وإلغاء الافتراضي عن البقية."""
+
         df = self.get_card_templates()
         if df.empty:
             return
@@ -2455,7 +2336,7 @@ class Database:
         return self._sheet_to_df("MemberCards")
 
     def issue_member_card(self, member_id, member_type, member_name, template_id, template_name="", issued_by=""):
-        """تسجيل/تحديث حالة إصدار بطاقة عضو (سجل واحد لكل عضو)."""
+
         df = self.get_member_cards()
         now_iso = get_cairo_now().isoformat()
         if df.empty or "member_id" not in df.columns:
@@ -2483,9 +2364,6 @@ class Database:
         self._df_to_sheet("MemberCards", df, self.MEMBER_CARD_COLUMNS)
 
 
-# =============================================================================
-# JWT & Session Helpers
-# =============================================================================
 def generate_token(user: dict, secret: str) -> str:
     payload = {
         "user_id": user.get("user_id", ""), "role": user.get("role", ""),
@@ -2517,7 +2395,7 @@ def init_session():
         "open_help_dialog": False, "current_attempt_id": None, "last_saved_answers_str": "",
         "quiz_questions": None, "show_review": False, "data_errors": [], "data_validated": False,
         "quiz_load_failures": 0,
-        # Student Dashboard (تسجيل دخول الطالبات)
+
         "student_logged_in": False, "current_student": None,
         "student_dashboard_page": "🏠 الرئيسية",
         "sidebar_open": False,
@@ -2545,7 +2423,7 @@ def logout(db=None):
 
 
 def student_logout(db=None):
-    """تسجيل خروج الطالبة مع الحفاظ على حالة النظام العام."""
+
     student = st.session_state.get("current_student") or {}
     student_id = student.get("student_id", "")
     if db and student_id:
@@ -2596,9 +2474,6 @@ def send_telegram_photo(caption: str, file_bytes, filename: str) -> bool:
         return False
 
 
-# =============================================================================
-# مركز المساعدة
-# =============================================================================
 @st.dialog("🆘 مركز المساعدة والدعم الفني", width="large")
 def show_help_dialog():
     hdr_col1, hdr_col2 = st.columns([0.85, 0.15])
@@ -2646,9 +2521,6 @@ def show_help_dialog():
                     st.error("❌ فشل الإرسال، يرجى المحاولة لاحقاً أو التواصل مباشرة via الواتساب.")
 
 
-# =============================================================================
-# RBAC
-# =============================================================================
 EVENT_TYPES = ["اجتماع", "خدمة", "رحلة", "احتفال"]
 RSVP_STATUSES = ["سأحضر", "لن أحضر", "ربما"]
 
@@ -2660,9 +2532,6 @@ def get_user_status(user_row):
     return str(status).strip().lower()
 
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
 def get_role_menu(role):
     menus = {
         "System Admin": [
@@ -2709,11 +2578,8 @@ def filter_students_by_role(students, role, section_id, db=None, user_id=None):
         return students
 
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
 def get_initials(name: str) -> str:
-    """Get initials from a name (first letters of first 2 words)."""
+
     if not name or not isinstance(name, str):
         return "؟"
     parts = name.strip().split()
@@ -2725,7 +2591,7 @@ def get_initials(name: str) -> str:
 
 
 def get_role_css_class(role: str) -> str:
-    """Get CSS class for role badge."""
+
     role_map = {
         "System Admin": "admin",
         "Father Account": "priest",
@@ -2737,16 +2603,13 @@ def get_role_css_class(role: str) -> str:
 
 
 def get_status_css_class(status: str) -> str:
-    """Get CSS class for status badge."""
+
     if not status:
         return "inactive"
     status_str = str(status).strip().lower()
     return "active" if status_str == "active" else "inactive"
 
 
-# =============================================================================
-# Validation
-# =============================================================================
 def validate_data_integrity(db):
     errors = []
     students = db.get_students()
@@ -2777,9 +2640,6 @@ def auto_fix_missing_sections(db):
     return False
 
 
-# =============================================================================
-# Initialization & Login
-# =============================================================================
 def show_initialization(db):
     users = db.get_users()
     if users.empty:
@@ -2801,10 +2661,10 @@ def show_initialization(db):
 
 def show_login_page(db, jwt_secret):
     render_login_top_bar()
-    # Hero banner for login page
+
     st.markdown(hero_header("نظام إدارة الكنيسة", "كنيسة الشهيدة دميانة"), unsafe_allow_html=True)
     show_initialization(db)
-    # Constrain login form width on large screens for better proportions
+
     st.markdown("""
     <style>
     /* Slightly reduce login form fields width on large screens only */
@@ -2868,14 +2728,14 @@ def show_login_page(db, jwt_secret):
                         st.error("الرجاء إدخال كود الطالبة وكلمة المرور")
                     else:
                         with st.spinner("جاري التحقق..."):
-                            # التأكد من وجود عمود profile_edit_used
+
                             try:
                                 db.ensure_student_profile_edit_column()
                             except Exception:
                                 pass
                             students = db.get_students()
                             student_match = students[
-                                (students.student_code.astype(str).str.strip() == code) & 
+                                (students.student_code.astype(str).str.strip() == code) &
                                 (students.student_password.astype(str).str.strip() == passwd)
                             ]
                             if student_match.empty:
@@ -2900,11 +2760,11 @@ def show_login_page(db, jwt_secret):
 
 
 def grade_attempt(db, quiz_id, answers_dict):
-    """Grade a quiz attempt and return the score."""
+
     questions = db.get_quiz_questions(quiz_id)
     if questions.empty:
         return 0
-    
+
     correct_count = 0
     for _, q_row in questions.iterrows():
         q = q_row.to_dict()
@@ -2918,12 +2778,12 @@ def grade_attempt(db, quiz_id, answers_dict):
 
 
 def show_student_assessment_interface(db):
-    """Unified assessment taking experience for quizzes and exams."""
+
     show_unified_assessment_taking_interface(db)
 
 
 def show_unified_assessment_taking_interface(db):
-    """Single assessment UI — shared timer, save, submit, and navigation."""
+
     if not st.session_state.get("student_logged_in", False):
         st.error("يجب تسجيل الدخول أولاً.")
         st.session_state.quiz_interface_started = False
@@ -3127,9 +2987,6 @@ def show_unified_assessment_taking_interface(db):
                 st.rerun()
 
 
-# =============================================================================
-# Student Portal Helpers
-# =============================================================================
 STUDENT_MENU_ITEMS = [
     "🏠 الرئيسية",
     "👤 ملفي الشخصي",
@@ -3150,7 +3007,7 @@ ASSESSMENT_SESSION_KEYS = [
 
 
 def is_availability_true(value):
-    """تحقق آمن من قيمة التوفر (true/True/TRUE/'true'/1/yes)."""
+
     if value is None:
         return False
     if isinstance(value, float) and pd.isna(value):
@@ -3159,7 +3016,7 @@ def is_availability_true(value):
 
 
 def get_availability_column(df):
-    """إرجاع اسم عمود التوفر من Quizzes أو Exams."""
+
     if df is None or df.empty:
         return None
     for col in ("is_active", "availability", "is_available"):
@@ -3169,7 +3026,7 @@ def get_availability_column(df):
 
 
 def filter_available_rows(df):
-    """فلترة الصفوف المتاحة بناءً على عمود التوفر."""
+
     if df is None or df.empty:
         return pd.DataFrame()
     col = get_availability_column(df)
@@ -3180,13 +3037,13 @@ def filter_available_rows(df):
 
 
 def get_assessment_question_count(db, assessment_type, assessment_id):
-    """عدد أسئلة الاختبار أو الامتحان من QuizQuestions."""
+
     qdf = db.get_quiz_questions(assessment_id)
     return len(qdf) if not qdf.empty else 0
 
 
 def build_unified_assessments(db):
-    """قائمة موحدة من Quizzes فقط مع type مدمج."""
+
     items = []
     quizzes = filter_available_rows(db.get_quizzes())
     if not quizzes.empty:
@@ -3213,12 +3070,12 @@ def build_unified_assessments(db):
 
 
 def normalize_student_dashboard_page(page):
-    """Map legacy student assessment pages to the unified page."""
+
     return LEGACY_STUDENT_ASSESSMENT_PAGES.get(page, page)
 
 
 def normalize_admin_menu_choice(choice):
-    """Map legacy admin exam menu to unified assessments page."""
+
     if choice == LEGACY_ADMIN_ASSESSMENTS_PAGE:
         return ADMIN_ASSESSMENTS_PAGE
     return choice
@@ -3243,7 +3100,7 @@ def _parse_assessment_datetime(value):
 
 
 def get_assessment_record(db, assessment_type, assessment_id):
-    """Load assessment row from unified Quizzes table."""
+
     df = db.get_quizzes()
     id_col = "quiz_id"
     if df.empty or id_col not in df.columns:
@@ -3265,7 +3122,7 @@ def get_assessment_duration_minutes(assessment_row, assessment_type):
 
 
 def student_can_access_assessment(db, student, assessment_type, assessment_id):
-    """Backend eligibility: availability, dates, section/stage, publish rules."""
+
     row = get_assessment_record(db, assessment_type, assessment_id)
     if not row:
         return False, "لم يتم العثور على الاختبار."
@@ -3312,7 +3169,7 @@ def student_can_access_assessment(db, student, assessment_type, assessment_id):
 
 
 def build_unified_assessments_for_student(db, student):
-    """Assessments visible to the logged-in student after eligibility rules."""
+
     eligible = []
     for item in build_unified_assessments(db):
         ok, _reason = student_can_access_assessment(
@@ -3334,7 +3191,7 @@ def get_assessment_attempt_row(db, assessment_type, attempt_id):
 
 
 def get_attempt_deadline(db, assessment_type, assessment_id, attempt_id):
-    """Server-side deadline from stored start_time + configured duration."""
+
     attempt = get_assessment_attempt_row(db, assessment_type, attempt_id)
     if not attempt:
         return None
@@ -3347,7 +3204,7 @@ def get_attempt_deadline(db, assessment_type, assessment_id, attempt_id):
 
 
 def grade_assessment_attempt(db, assessment_type, assessment_id, answers_dict):
-    """Server-side grading — never trust client-provided scores."""
+
     if assessment_type == "exam":
         score, total_marks, correct, wrong = db.grade_exam_attempt(assessment_id, answers_dict)
         return {
@@ -3372,7 +3229,7 @@ def save_assessment_answers(db, assessment_type, attempt_id, answers_dict):
 
 
 def submit_assessment_attempt(db, assessment_type, assessment_id, attempt_id, answers_dict, auto=False):
-    """Grade on server and persist submission."""
+
     graded = grade_assessment_attempt(db, assessment_type, assessment_id, answers_dict)
     answers_json = json.dumps(answers_dict, ensure_ascii=False)
     if assessment_type == "exam":
@@ -3384,7 +3241,7 @@ def submit_assessment_attempt(db, assessment_type, assessment_id, attempt_id, an
 
 
 def load_assessment_questions(db, assessment_type, assessment_id):
-    """Load questions with optional shuffle for quiz/exam engines."""
+
     if assessment_type == "exam":
         questions_df = db.shuffle_questions(assessment_id)
     else:
@@ -3431,7 +3288,7 @@ def render_assessment_timer_html(end_time_iso):
 
 
 def get_in_progress_attempt(db, student_id, assessment_type, assessment_id):
-    """Return (attempt_id, saved_answers) for a started-but-not-submitted attempt."""
+
     results = db.get_quiz_results()
     id_col = "quiz_id"
     if results.empty or id_col not in results.columns or "student_id" not in results.columns:
@@ -3454,7 +3311,7 @@ def get_in_progress_attempt(db, student_id, assessment_type, assessment_id):
 
 
 def get_student_submitted_results(db, student_id):
-    """جمع نتائج المسابقات والامتحانات المسلّمة للطالبة."""
+
     quiz_results = db.get_quiz_results()
     if quiz_results.empty or "student_id" not in quiz_results.columns:
         return pd.DataFrame(), pd.DataFrame()
@@ -3476,7 +3333,7 @@ def get_student_submitted_results(db, student_id):
 
 
 def verify_student_owns_result(db, student_id, result_id, result_type):
-    """التحقق من أن النتيجة تخص الطالبة الحالية."""
+
     results_df = db.get_quiz_results()
     if results_df.empty or "result_id" not in results_df.columns:
         return None
@@ -3495,7 +3352,7 @@ def verify_student_owns_result(db, student_id, result_id, result_type):
 
 
 def inject_student_sidebar_css(sidebar_open):
-    """CSS للقائمة الجانبية الكاملة للطالبة."""
+
     if sidebar_open:
         st.markdown("""
         <style>
@@ -3547,14 +3404,14 @@ def inject_student_sidebar_css(sidebar_open):
 
 
 def render_student_sidebar(db, student, menu_items, current_page):
-    """قائمة جانبية موحدة للطالبة — Streamlit native."""
+
     full_name = student.get("full_name", "طالبة")
     with st.sidebar:
         col_main, col_close = st.columns([9, 1])
         with col_main:
             st.markdown(f"### 👤 {full_name}")
             st.caption("طالبة")
-        
+
 
         if st.button("✕ إغلاق", key="student_sidebar_close_text_btn", width="stretch"):
             st.session_state.sidebar_open = False
@@ -3576,11 +3433,8 @@ def render_student_sidebar(db, student, menu_items, current_page):
             student_logout(db)
 
 
-# =============================================================================
-# Student Dashboard (تسجيل دخول الطالبات)
-# =============================================================================
 def show_student_dashboard(db):
-    """لوحة تحكم الطالبة — Dashboard واحد مع قائمة جانبية موحدة."""
+
     student = st.session_state.get("current_student")
     if not student:
         st.session_state.student_logged_in = False
@@ -3637,7 +3491,7 @@ def show_student_dashboard(db):
 
 
 def show_student_grades_tab(db, student):
-    """درجاتي — نتائج المسابقات والامتحانات للطالبة الحالية."""
+
     st.markdown(hero_header("درجاتي", "📊 درجات ونتائج الاختبارات"), unsafe_allow_html=True)
 
     student_id = student.get("student_id", "")
@@ -3698,7 +3552,7 @@ def show_student_grades_tab(db, student):
 
 
 def show_student_exam_history_tab(db, student):
-    """سجل الامتحانات — مراجعة المحاولات المكتملة."""
+
     st.markdown(hero_header("سجل الامتحانات", "📋 تاريخ الاختبارات والمسابقات"), unsafe_allow_html=True)
 
     student_id = student.get("student_id", "")
@@ -3767,27 +3621,27 @@ def show_student_exam_history_tab(db, student):
 
 
 def show_student_notifications_tab(db, student):
-    """الإشعارات - عرض إشعارات الطالبة."""
+
     st.markdown(hero_header("الإشعارات", "🔔 الإشعارات والرسائل"), unsafe_allow_html=True)
-    
+
     student_id = student.get("student_id", "")
     notifications = db.get_notifications(student_id)
-    
+
     if notifications.empty:
         st.info("لا توجد إشعارات حالياً.")
         return
-    
-    # عرض الإشعارات
+
+
     for _, notif in notifications.iterrows():
         title = notif.get("title", "")
         message = notif.get("message", "")
         created_at = notif.get("created_at", "")
         is_read = notif.get("is_read", "False")
-        
-        # تحديد لون الإشعار
+
+
         bg_color = "#f8fafc" if is_read == "True" else "#dbeafe"
         border_color = "#e2e8f0" if is_read == "True" else "#2563eb"
-        
+
         st.markdown(f"""
         <div style="background: {bg_color}; border: 1px solid {border_color}; border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
             <div style="font-weight: 700; color: #0f172a; margin-bottom: 0.5rem;">{title}</div>
@@ -3795,8 +3649,8 @@ def show_student_notifications_tab(db, student):
             <div style="font-size: 0.75rem; color: #94a3b8;">{created_at}</div>
         </div>
         """, unsafe_allow_html=True)
-    
-    # زر تحديد الكل كمقروء
+
+
     if st.button("✅ تحديد الكل كمقروء", width="stretch", key="mark_all_read_btn"):
         for _, notif in notifications.iterrows():
             if notif.get("is_read", "False") != "True":
@@ -3806,7 +3660,7 @@ def show_student_notifications_tab(db, student):
 
 
 def render_student_attempt_review(db, student, result_id, result_type):
-    """مراجعة تفصيلية — بطاقات أسئلة مدمجة."""
+
     inject_competitions_page_css()
 
     student_id = student.get("student_id", "")
@@ -3917,7 +3771,7 @@ def render_student_attempt_review(db, student, result_id, result_type):
 
 
 def show_student_home_tab(db, student):
-    """الرئيسية — ترحيب وإحصائيات."""
+
     full_name = student.get("full_name", "طالبة")
     st.markdown(f"## مرحبًا، {full_name} 👋")
 
@@ -3952,7 +3806,7 @@ def show_student_home_tab(db, student):
 
 
 def show_student_profile_tab(db, student):
-    """ملفي الشخصي — عرض وتعديل بيانات الطالبة (مرة واحدة فقط)."""
+
     st.markdown(hero_header("ملفي الشخصي", "👤 بياناتي الشخصية"), unsafe_allow_html=True)
 
     students_df = db.get_students()
@@ -4027,7 +3881,7 @@ def show_student_profile_tab(db, student):
 
 
 def _get_assessment_attempt_status(db, student_id, assessment_type, assessment_id):
-    """حالة محاولة الطالبة: available | started | submitted."""
+
     if assessment_type == "exam":
         results = db.get_exam_results()
         id_col = "exam_id"
@@ -4045,7 +3899,7 @@ def _get_assessment_attempt_status(db, student_id, assessment_type, assessment_i
 
 
 def inject_competitions_page_css():
-    """CSS for the redesigned competitions page (RTL, mobile-first)."""
+
     st.markdown("""
     <style>
     .comp-page { direction: rtl; font-family: 'Cairo', sans-serif; max-width: 100%; overflow-x: hidden; }
@@ -4162,7 +4016,7 @@ def inject_competitions_page_css():
 
 
 def render_competitions_hero():
-    """Hero banner with background image."""
+
     bg = f"url('data:image/jpeg;base64,{BG_IMAGE_BASE64}')" if BG_IMAGE_BASE64 else "linear-gradient(135deg, #2563eb, #7c3aed)"
     st.markdown(f"""
     <div class="comp-hero" style="background-image: {bg};">
@@ -4175,7 +4029,7 @@ def render_competitions_hero():
 
 
 def _comp_result_summary(score, total_marks, percent):
-    """Human-readable overall result label."""
+
     if percent is None:
         return "—", "comp-result-fail"
     if percent >= 50:
@@ -4184,7 +4038,7 @@ def _comp_result_summary(score, total_marks, percent):
 
 
 def show_student_assessments_page(db, student):
-    """Unified student page: available assessments, grades, and attempt history."""
+
     inject_competitions_page_css()
     st.markdown('<div class="comp-page">', unsafe_allow_html=True)
     render_competitions_hero()
@@ -4406,9 +4260,6 @@ def _render_student_available_assessments(db, student):
                 st.rerun()
 
 
-# =============================================================================
-# Sidebar Navigation
-# =============================================================================
 def show_sidebar_navigation(db):
     with st.sidebar:
         user = st.session_state.user
@@ -4418,7 +4269,7 @@ def show_sidebar_navigation(db):
             st.warning("صلاحية غير معروفة")
             return None
 
-        # ===== Premium Sidebar Header =====
+
         st.markdown("""
         <div class='sidebar-brand'>
             <div class='brand-logo'>⛪</div>
@@ -4429,7 +4280,7 @@ def show_sidebar_navigation(db):
         </div>
         """, unsafe_allow_html=True)
 
-        # ===== User Card =====
+
         full_name = user.get('full_name', '')
         role_label = {
             "System Admin": "مدير النظام",
@@ -4449,7 +4300,7 @@ def show_sidebar_navigation(db):
         </div>
         """, unsafe_allow_html=True)
 
-        # ===== Notification Badge =====
+
         try:
             unread_count = get_unread_notification_count(db, user.get("user_id", ""))
             if unread_count > 0:
@@ -4466,12 +4317,12 @@ def show_sidebar_navigation(db):
         except Exception:
             pass
 
-        # ===== Collapse button =====
+
         if st.button("إخفاء القائمة", key="hide_sidebar_btn", width="stretch"):
             st.session_state.show_sidebar = False
             st.rerun()
 
-        # ===== Menu items with Arabic icons only =====
+
         current_choice = normalize_admin_menu_choice(st.session_state.get("menu_choice", menu_items[0]))
         if current_choice not in menu_items:
             current_choice = menu_items[0]
@@ -4488,7 +4339,7 @@ def show_sidebar_navigation(db):
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ===== Sidebar footer =====
+
         st.markdown('<div class="sidebar-footer">', unsafe_allow_html=True)
         if st.button("تسجيل الخروج", width="stretch", key="logout_btn"):
             logout(db)
@@ -4496,14 +4347,11 @@ def show_sidebar_navigation(db):
     return current_choice
 
 
-# =============================================================================
-# Dashboard
-# =============================================================================
 def show_dashboard(db):
     user = st.session_state.user
     role = user.get("role", "")
     section_id = user.get("section_id", "")
-    # Hero banner for dashboard
+
     st.markdown(hero_header("لوحة التحكم", "مرحباً بك في نظام إدارة الكنيسة"), unsafe_allow_html=True)
     if role in ["System Admin", "Service Manager"] and st.session_state.get("data_errors"):
         with st.expander("⚠️ تنبيهات هامة - أخطاء في البيانات", expanded=True):
@@ -4534,7 +4382,7 @@ def show_dashboard(db):
     present_today = len(attendance[(attendance.date == today_str) & (attendance.status == "حاضر")]) if not attendance.empty and "status" in attendance.columns else 0
     absent_today = len(attendance[(attendance.date == today_str) & (attendance.status == "غائب")]) if not attendance.empty and "status" in attendance.columns else 0
     need_follow = len(followup[followup.regularity_status == "منقطع"]) if not followup.empty and "regularity_status" in followup.columns else 0
-    # Statistics cards with improved styling
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(f"""
@@ -4616,9 +4464,6 @@ def show_dashboard(db):
                         st.dataframe(section_scores.rename(columns={"section_name": "الفصل", "score": "متوسط الدرجات"}).set_index("الفصل"), width="stretch")
 
 
-# =============================================================================
-# Members Cards Page (Unified)
-# =============================================================================
 def show_members_cards_page(db):
     inject_user_cards_css()
     st.markdown(hero_header("إدارة الأعضاء", "👥 إدارة جميع الأعضاء والطالبات"), unsafe_allow_html=True)
@@ -4631,13 +4476,13 @@ def show_members_cards_page(db):
         st.error("🚫 غير مصرح")
         return
 
-    # ترحيل آمن: التأكد من وجود عمود المرحلة (stage_id) للأعضاء والطالبات
+
     try:
         db.ensure_member_stage_column()
     except Exception:
         pass
 
-    # تشغيل الترحيل التلقائي لكود وكلمة مرور الطالبات
+
     try:
         migrated_count, migrate_msg = db.migrate_student_codes_and_passwords()
         if migrated_count and migrated_count > 0:
@@ -4650,7 +4495,7 @@ def show_members_cards_page(db):
     sections = db.get_sections()
     stages = db.get_stages()
 
-    # ===== بيانات نظام بطاقات التعريف =====
+
     card_tpls = db.get_card_templates()
     member_cards_df = db.get_member_cards()
     member_cards_map = {}
@@ -4658,14 +4503,14 @@ def show_members_cards_page(db):
         for _, cr in member_cards_df.iterrows():
             member_cards_map[str(cr.get("member_id", ""))] = cr.to_dict()
 
-    # Build unified members list (exclude System Admin and Father Account)
+
     members = []
     if not users.empty:
         for _, u in users.iterrows():
             u_role = u.get("role", "")
             if u_role in ["System Admin", "Father Account"]:
                 continue
-            # Teacher cannot see other teachers
+
             if role == "Teacher" and u_role == "Teacher" and u.get("user_id", "") != user_id:
                 continue
             members.append({
@@ -4682,7 +4527,7 @@ def show_members_cards_page(db):
             })
     if not students.empty:
         for _, s in students.iterrows():
-            # Teacher can only see students in their section
+
             if role == "Teacher" and section_id:
                 if s.get("section_id", "") != section_id:
                     continue
@@ -4708,7 +4553,7 @@ def show_members_cards_page(db):
 
     members_df = pd.DataFrame(members) if members else pd.DataFrame(columns=["member_id", "full_name", "role", "section_id", "phone", "email", "status", "type"])
 
-    # RBAC filtering based on stages for Service Manager
+
     if role == "Teacher" and user.get("section_id"):
         if not members_df.empty:
             members_df = members_df[members_df["section_id"] == user.get("section_id")]
@@ -4717,7 +4562,7 @@ def show_members_cards_page(db):
         if section_ids and not members_df.empty:
             members_df = members_df[members_df["section_id"].isin(section_ids)]
 
-    # ===== اختيار Template البطاقات المستخدم عند الإصدار =====
+
     selected_card_tpl = None
     if not card_tpls.empty and "template_id" in card_tpls.columns:
         tpl_names_m = card_tpls.set_index(card_tpls["template_id"].astype(str))["template_name"].to_dict()
@@ -4738,10 +4583,10 @@ def show_members_cards_page(db):
         if not trow_m.empty:
             selected_card_tpl = trow_m.iloc[0].to_dict()
 
-    # Search
+
     search_term = st.text_input("🔍 بحث", placeholder="ابحث في الاسم والتليفون...", label_visibility="collapsed")
 
-    # Filters
+
     col1, col2, col3 = st.columns(3)
     with col1:
         role_options = ["الكل", "طالبة", "أمين خدمة", "مدرسة"]
@@ -4760,10 +4605,10 @@ def show_members_cards_page(db):
             if col in filtered.columns:
                 mask |= filtered[col].astype(str).str.contains(search_term, na=False, case=False)
         filtered = filtered[mask]
-    # Translate Arabic filter values back to English for database filtering
+
     role_filter_map = {"الكل": "الكل", "طالبة": "Student", "أمين خدمة": "Service Manager", "مدرسة": "Teacher"}
     status_filter_map = {"الكل": "الكل", "نشط": "active", "غير نشط": "inactive"}
-    
+
     if role_filter != "الكل" and not filtered.empty and "role" in filtered.columns:
         filtered = filtered[filtered["role"] == role_filter_map.get(role_filter, role_filter)]
     if status_filter != "الكل" and not filtered.empty and "status" in filtered.columns:
@@ -4774,13 +4619,13 @@ def show_members_cards_page(db):
     st.markdown(f"<p style='text-align:left; color:#666;'>عدد الأعضاء: {len(filtered)}</p>", unsafe_allow_html=True)
 
     if not filtered.empty:
-        # جميع بطاقات الأعضاء تظهر دائماً بشكل افتراضي — لا توجد مربعات اختيار تتحكم في الظهور
+
         cols = st.columns(3)
         for idx, (_, m) in enumerate(filtered.iterrows()):
             col = cols[idx % 3]
             with col:
-                # Use member_id (UUID from user_id/student_id) for widget keys
-                # Fall back to DataFrame index if member_id is empty or not unique
+
+
                 mid = m.get("member_id", "")
                 if not mid or not str(mid).strip():
                     mid = f"row_{idx}"
@@ -4802,14 +4647,14 @@ def show_members_cards_page(db):
                     if not sec_match.empty:
                         section_name = sec_match.iloc[0].get("section_name", "")
 
-                # المرحلة الموحدة لكل الأعضاء (مخزنة على العضو أو مشتقة من الفصل)
+
                 stage_display = resolve_member_stage_name(m.get("stage_id", ""), sec_id, sections, stages)
 
                 role_label = {"Service Manager": "أمين خدمة", "Teacher": "مدرسة", "Student": "طالبة", "System Admin": "مدير نظام"}.get(member_role, member_role)
                 status_label = {"active": "نشط", "inactive": "غير نشط"}.get(status, "نشط")
 
                 if member_type == "student":
-                    # Student card - show name, phone, status, section, student code, password
+
                     parent_phone = m.get("parent_phone", "")
                     birthdate = m.get("birthdate", "")
                     address = m.get("address", "")
@@ -4817,7 +4662,7 @@ def show_members_cards_page(db):
                     student_notes = m.get("notes", "")
                     student_code = m.get("student_code", "")
                     student_password = m.get("student_password", "")
-                    
+
                     st.markdown(f"""
                     <div class='user-card' id='card-{mid}'>
                         <div class='card-badge {status_class}'>{status_label}</div>
@@ -4847,7 +4692,7 @@ def show_members_cards_page(db):
                     </div>
                     """, unsafe_allow_html=True)
                 else:
-                    # User card - show name, phone, section + المرحلة لكل الأعضاء
+
                     email = m.get("email", "")
                     st.markdown(f"""
                     <div class='user-card' id='card-{mid}'>
@@ -4872,16 +4717,14 @@ def show_members_cards_page(db):
                     </div>
                     """, unsafe_allow_html=True)
 
-                # Action buttons
-                # Use idx (DataFrame loop index) to ensure widget keys are always unique
-                # even if member_id is missing, duplicate, or contains non-unique values
+
                 action_cols = st.columns(4)
                 with action_cols[0]:
                     if st.button("📋", key=f"view_{mid}_{idx}"):
                         st.session_state.profile_user_id = mid
                         st.rerun()
-                
-                # Check if teacher can edit/delete
+
+
                 can_edit_delete = True
                 is_own_data = True
                 if role == "Teacher":
@@ -4890,10 +4733,10 @@ def show_members_cards_page(db):
                         is_own_data = (created_by == user_id)
                         can_edit_delete = is_own_data
                     else:
-                        # Teacher cannot edit other teachers
+
                         can_edit_delete = False
                         st.warning("⛔ لا يمكنك التعديل على بيانات شخص آخر. هذه البيانات تخص مستخدم آخر.")
-                
+
                 if role == "System Admin" and can_edit_delete:
                     with action_cols[1]:
                         if status == "active":
@@ -4945,14 +4788,14 @@ def show_members_cards_page(db):
                                 time.sleep(1)
                                 st.rerun()
 
-                # حالة بطاقة التعريف (نظام البطاقات)
+
                 card_rec = member_cards_map.get(str(mid))
                 if card_rec is not None:
                     st.markdown("<span class='card-badge active'>🪪 البطاقة: جاهزة</span>", unsafe_allow_html=True)
                 else:
                     st.markdown("<span class='card-badge inactive'>🪪 البطاقة: غير صادرة</span>", unsafe_allow_html=True)
 
-                # زر واحد فقط — الضغط عليه يوفر جميع إجراءات التصدير (عرض / إعادة / تحميل)
+
                 with st.popover("🪪 إجراءات تصدير البطاقة", help="عرض / إعادة / تحميل البطاقة", key=f"card_export_pop_{mid}_{idx}", width="stretch"):
                     if st.button("👁️ عرض", help="عرض البطاقة", key=f"card_view_{mid}_{idx}", width="stretch"):
                         st.session_state.card_preview_member = str(mid)
@@ -4981,7 +4824,7 @@ def show_members_cards_page(db):
                         st.session_state.pop("card_preview_member", None)
                         st.rerun()
 
-                # Edit form
+
                 if st.session_state.get(f"edit_mode_{mid}_{idx}", False):
                     with st.expander("✏️ تعديل البيانات", expanded=True):
                         with st.form(f"edit_member_form_{mid}_{idx}"):
@@ -4991,8 +4834,8 @@ def show_members_cards_page(db):
                             sec_options = sections["section_id"].tolist() if not sections.empty else []
                             current_sec = sec_id if sec_id in sec_options else (sec_options[0] if sec_options else "")
                             edit_section = st.selectbox("الفصل", sec_options, index=sec_options.index(current_sec) if current_sec in sec_options else 0, format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0]) if sec_options else ""
-                            
-                            # خانة المرحلة — متاحة لجميع أنواع الأعضاء ومرتبطة بنظام المراحل الموجود
+
+
                             stage_ids_edit = stages["stage_id"].tolist() if not stages.empty else []
                             eff_stage_id_edit = resolve_member_stage_id(m.get("stage_id", ""), sec_id, sections)
                             stage_choices_edit = [""] + stage_ids_edit
@@ -5007,8 +4850,8 @@ def show_members_cards_page(db):
                                 ),
                                 key=f"edit_stage_{mid}_{idx}"
                             ) if stage_ids_edit else ""
-                            
-                            # Student specific fields
+
+
                             edit_parent_phone = ""
                             edit_birthdate = None
                             edit_address = ""
@@ -5023,7 +4866,7 @@ def show_members_cards_page(db):
                                 edit_school = st.text_input("المدرسة", value=m.get("school", ""))
                                 edit_notes = st.text_area("ملاحظات", value=m.get("notes", ""))
                                 edit_status = st.selectbox("الحالة", ["نشطة", "غير نشطة"], index=0 if m.get("status", "active") == "active" else 1)
-                            
+
                             if st.form_submit_button("💾 حفظ"):
                                 if member_type == "student":
                                     db.update_student(mid, {
@@ -5047,9 +4890,7 @@ def show_members_cards_page(db):
                                 st.rerun()
                 st.markdown("---")
 
-    # =====================================================================
-    # نظام بطاقات التعريف — معاينة فردية + تجهيز جماعي ZIP
-    # =====================================================================
+
     target_mid = st.session_state.get("card_preview_member") or st.session_state.get("card_download_member")
     if target_mid:
         st.markdown("---")
@@ -5093,7 +4934,7 @@ def show_members_cards_page(db):
         else:
             st.error("⚠️ لا يوجد Template للبطاقات. الرجاء إنشاء قالب من صفحة '🪪 تجهيز البطاقات' أولاً.")
 
-    # ===== تجهيز البطاقات بالجملة — ظاهر دائماً لجميع الأعضاء الظاهرين (بدون مربعات اختيار) =====
+
     bulk_mids = [str(m.get("member_id", "")) for _, m in filtered.iterrows()] if not filtered.empty else []
     if bulk_mids:
         st.markdown("---")
@@ -5156,7 +4997,7 @@ def show_members_cards_page(db):
         for err_line in (st.session_state.get("bulk_cards_errors") or [])[:10]:
             st.warning(f"⚠️ {err_line}")
 
-    # Add new member
+
     with st.expander("➕ إضافة عضو جديد"):
         with st.form("add_member_form"):
             member_type = st.selectbox("نوع العضو", ["طالبة", "أمين خدمة", "مدرسة"])
@@ -5165,8 +5006,8 @@ def show_members_cards_page(db):
             new_section_id = ""
             if not sections.empty:
                 new_section_id = st.selectbox("الفصل", sections["section_id"], format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0])
-            
-            # خانة المرحلة — متاحة لجميع أنواع الأعضاء الجدد ومرتبطة بنظام المراحل الموجود
+
+
             new_stage_id = ""
             if not stages.empty:
                 new_stage_id = st.selectbox(
@@ -5178,8 +5019,8 @@ def show_members_cards_page(db):
                     ),
                     key="add_member_stage"
                 )
-            
-            # Student specific fields
+
+
             new_parent_phone = ""
             new_birthdate = None
             new_address = ""
@@ -5234,9 +5075,6 @@ def show_members_cards_page(db):
                     st.rerun()
 
 
-# =============================================================================
-# Stages Management Page (Standalone)
-# =============================================================================
 def show_stages_page(db):
     inject_user_cards_css()
     st.markdown(hero_header("إدارة المراحل الدراسية", "🏫 إدارة مراحل الدراسة والملاحظات"), unsafe_allow_html=True)
@@ -5317,7 +5155,7 @@ def show_stages_page(db):
             eligible_users = users[users.role.isin(["Service Manager", "Teacher", "Father Account", "System Admin"])] if not users.empty else pd.DataFrame()
             if not eligible_users.empty:
                 supervisor_options = eligible_users["user_id"].tolist()
-                # Filter default to only include IDs that exist in options
+
                 valid_supervisors = [s for s in current_supervisors if s in supervisor_options]
                 selected_supervisors = st.multiselect("اختر المشرفين", supervisor_options,
                                                       default=valid_supervisors,
@@ -5349,9 +5187,6 @@ def show_stages_page(db):
                     st.rerun()
 
 
-# =============================================================================
-# Sections Management Page (Standalone)
-# =============================================================================
 def show_sections_page(db):
     inject_user_cards_css()
     st.markdown(hero_header("إدارة الفصول", "📚 إدارة بيانات الفصول الدراسية"), unsafe_allow_html=True)
@@ -5455,7 +5290,7 @@ def show_sections_page(db):
                     current_leaders_raw = str(sec_leader).split(",") if sec_leader else []
                     valid_teacher_ids = eligible_teachers["user_id"].tolist() if not eligible_teachers.empty else []
                     valid_leader_ids = eligible_leaders["user_id"].tolist() if not eligible_leaders.empty else []
-                    # Filter defaults to only include IDs that still exist in the options
+
                     current_teachers = [t.strip() for t in current_teachers_raw if t.strip() and t.strip() in valid_teacher_ids]
                     current_leaders = [l.strip() for l in current_leaders_raw if l.strip() and l.strip() in valid_leader_ids]
 
@@ -5534,29 +5369,19 @@ def show_sections_page(db):
                         st.rerun()
 
 
-# =============================================================================
-# Attendance
-# =============================================================================
 def _validate_attendance_df(df, context=""):
-    """
-    Validate that an attendance DataFrame exposes the columns required by the
-    attendance workflow. Returns a list of missing column names (empty = valid).
-    """
+
     required = ["student_id", "status", "record_id"]
     return [c for c in required if c not in df.columns]
 
 
 def _safe_match(existing_df, sid):
-    """
-    Safely return the rows in existing_df matching student_id == sid.
-    Handles missing columns, empty frames, and type mismatches between the
-    identifier in the sheet (often str) and the lookup value.
-    """
+
     if existing_df is None or existing_df.empty:
         return pd.DataFrame(columns=existing_df.columns if existing_df is not None else [])
     if "student_id" not in existing_df.columns:
         return pd.DataFrame(columns=existing_df.columns)
-    # Normalise both sides to string to avoid int vs str mismatch
+
     mask = existing_df["student_id"].astype(str).str.strip() == str(sid).strip()
     return existing_df[mask]
 
@@ -5567,14 +5392,13 @@ def show_attendance(db):
     user_id = user.get("user_id", "")
     st.markdown(hero_header("تسجيل الحضور", "📋 تسجيل ومتابعة حضور الطالبات"), unsafe_allow_html=True)
 
-    # Migrate legacy Attendance schema (user_id/name -> student_id/full_name) once.
-    # Safe to call every run; it is a no-op once migrated.
+
     try:
         db.migrate_attendance_schema()
     except Exception:
-        pass  # Never block the UI on a migration hiccup
+        pass
 
-    # Service Manager can view attendance for their sections but not edit
+
     if role == "Service Manager":
         section_ids = get_sections_for_supervisor(db, user_id)
         if not section_ids:
@@ -5603,12 +5427,12 @@ def show_attendance(db):
         if existing.empty:
             st.info("لا يوجد سجل حضور لهذا اليوم.")
             return
-        # Merge student names
+
         display = existing.merge(section_students[["student_id", "full_name"]], on="student_id", how="left")
         st.dataframe(display[["full_name", "status", "notes"]], width="stretch")
         return
 
-    # Teacher and System Admin flow continues below
+
     sections = db.get_sections()
     if sections.empty:
         st.warning("لا توجد فصول.")
@@ -5656,7 +5480,7 @@ def show_attendance(db):
             for sid, status in statuses.items():
                 prev_record = _safe_match(existing, sid) if already_filled else pd.DataFrame()
                 record_id = prev_record.iloc[0]["record_id"] if not prev_record.empty else str(uuid.uuid4())
-                # Resolve the student's full name for the denormalised column
+
                 name_match = section_students[section_students["student_id"].astype(str).str.strip() == str(sid).strip()]
                 sname = name_match["full_name"].values[0] if not name_match.empty else ""
                 records.append({
@@ -5681,7 +5505,7 @@ def show_attendance(db):
         rec = rec[["record_id", "student_name", "status", "notes"]]
         st.dataframe(rec, width="stretch")
 
-        # Teacher can only delete attendance records they created
+
         can_delete_attendance = True
         if role == "Teacher":
             can_delete_attendance = False
@@ -5696,9 +5520,6 @@ def show_attendance(db):
                 st.rerun()
 
 
-# =============================================================================
-# Follow-up
-# =============================================================================
 def show_followup(db):
     st.markdown(hero_header("متابعة الافتقاد", "💬 متابعة حالة الطالبات المنتظمات"), unsafe_allow_html=True)
     user = st.session_state.user
@@ -5706,8 +5527,8 @@ def show_followup(db):
     user_id = user.get("user_id", "")
     students = db.get_students()
     followup = db.get_followup()
-    
-    # Service Manager filtering by stages
+
+
     if role == "Service Manager" and db and user_id:
         section_ids = get_sections_for_supervisor(db, user_id)
         if section_ids:
@@ -5764,8 +5585,8 @@ def show_followup(db):
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e))
-    
-    # Show existing followup records with delete option for admin
+
+
     if not followup.empty and role == "System Admin":
         st.markdown("---")
         st.subheader("🗑️ إدارة سجلات الافتقاد")
@@ -5784,13 +5605,10 @@ def show_followup(db):
                 st.rerun()
 
 
-# =============================================================================
-# Class Competition Scores
-# =============================================================================
     role = user.get("role", "")
     user_id = user.get("user_id", "")
-    
-    # Service Manager can view competition scores for their stages
+
+
     if role == "Service Manager":
         section_ids = get_sections_for_supervisor(db, user_id)
         if not section_ids:
@@ -5874,7 +5692,7 @@ def show_followup(db):
     if not filtered_df.empty:
         filtered_df = filtered_df.reset_index(drop=True)
         filtered_df.index = filtered_df.index + 1
-        # Rename English columns to Arabic
+
         display_final = filtered_df.rename(columns={
             "score": "الدرجة",
             "total_marks": "الدرجة الكلية",
@@ -5902,11 +5720,8 @@ def show_followup(db):
         st.info("لا توجد نتائج مطابقة للبحث.")
 
 
-# =============================================================================
-# Unified Admin — Competitions & Exams
-# =============================================================================
 def show_unified_assessments_admin(db):
-    """Unified admin page: one workflow for tests and exams."""
+
     st.markdown(
         hero_header("المسابقات والاختبارات", "📝 إنشاء وإدارة المسابقات والامتحانات في مكان واحد"),
         unsafe_allow_html=True,
@@ -5935,8 +5750,8 @@ def show_unified_assessments_admin(db):
 
     if role in ["System Admin", "Service Manager"]:
         st.subheader("➕ إنشاء جديد")
-        
-        # Unified form - no type selection needed
+
+
         with st.form("unified_assessment_create_form"):
             col1, col2 = st.columns(2)
             with col1:
@@ -5954,7 +5769,7 @@ def show_unified_assessments_admin(db):
                     )
                 )
 
-            # All fields visible immediately - no conditional rendering
+
             c3, c4 = st.columns(2)
             with c3:
                 stage_options = stages["stage_id"].tolist() if not stages.empty else []
@@ -5987,7 +5802,7 @@ def show_unified_assessments_admin(db):
                     st.error("درجة النجاح لا يمكن أن تتجاوز الدرجة الكلية.")
                 else:
                     quiz_id = str(uuid.uuid4())
-                    # Use default exam type for unified assessments
+
                     assessment_type = "exam"
                     db.add_quiz({
                         "quiz_id": quiz_id,
@@ -5995,12 +5810,12 @@ def show_unified_assessments_admin(db):
                         "description": description.strip(),
                         "created_by": user_id,
                         "section_id": selected_section,
-                        "num_questions": "",  # Not used in unified form
+                        "num_questions": "",
                         "time_limit_minutes": str(duration),
                         "total_marks": str(total_marks),
                         "expiry_date": expiry_date,
-                        "quiz_code": "",  # Not used in unified form
-                        "password": "",  # Not used in unified form
+                        "quiz_code": "",
+                        "password": "",
                         "is_active": "True",
                         "assessment_type": assessment_type,
                         "stage_id": stage_id,
@@ -6010,7 +5825,7 @@ def show_unified_assessments_admin(db):
                         "end_date": end_date or "",
                         "duration_minutes": str(duration),
                         "passing_score": passing_score,
-                        "is_published": "True",  # Auto-publish for unified assessments
+                        "is_published": "True",
                         "created_at": get_cairo_now().isoformat(),
                     })
                     st.success("✅ تم إنشاء الاختبار بنجاح.")
@@ -6118,14 +5933,14 @@ def show_unified_assessments_admin(db):
                     e_marks = st.number_input("الدرجة الكلية", min_value=1, max_value=500, value=int(float(row.get("total_marks", "20") or 20)))
                     e_duration = st.number_input("الوقت (بالدقائق)", min_value=1, max_value=240, value=int(float((row.get("duration_minutes") or row.get("time_limit_minutes") or "15"))))
                     e_is_active = st.checkbox("نشط", value=str(row.get("is_active", "True")).strip() == "True")
-                    
-                    # Store current total marks for passing score validation
+
+
                     current_total_marks = e_marks
-                    
-                    # All fields visible immediately - no conditional rendering
+
+
                     e_chapter = st.text_input("الأصحاح أو الدرس", value=row.get("chapter_lesson", ""))
-                    
-                    # المرحلة المستهدفة
+
+
                     stage_options = stages["stage_id"].tolist() if not stages.empty else []
                     current_stage_id = row.get("stage_id", "")
                     if stage_options:
@@ -6139,11 +5954,11 @@ def show_unified_assessments_admin(db):
                     else:
                         st.warning("⚠️ لا توجد مراحل متاحة.")
                         e_stage_id = ""
-                    
+
                     e_pass = st.number_input("درجة النجاح", min_value=1, max_value=current_total_marks, value=min(int(float(row.get("passing_score", "50") or 50)), current_total_marks))
                     e_start = st.date_input("تاريخ البداية", value=pd.to_datetime(row.get("start_date")).date() if str(row.get("start_date", "")).strip() else get_cairo_now().date(), key=f"start_{a_id}")
                     e_end = st.date_input("تاريخ النهاية", value=pd.to_datetime(row.get("end_date")).date() if str(row.get("end_date", "")).strip() else get_cairo_now().date(), key=f"end_{a_id}")
-                    
+
                     updates = {
                         "title": e_title.strip(),
                         "description": e_desc.strip(),
@@ -6160,7 +5975,7 @@ def show_unified_assessments_admin(db):
                         "expiry_date": e_end.strftime("%Y-%m-%d"),
                     }
                     if st.form_submit_button("💾 حفظ"):
-                        # Unified validation
+
                         if not updates.get("stage_id"):
                             st.error("المرحلة المستهدفة مطلوبة.")
                             return
@@ -6172,7 +5987,7 @@ def show_unified_assessments_admin(db):
                         if passing_score_val > total_marks_val:
                             st.error("درجة النجاح لا يمكن أن تتجاوز الدرجة الكلية.")
                             return
-                        
+
                         db.update_quiz(a_id, updates)
                         st.session_state.pop(f"u_edit_open_{a_id}", None)
                         st.rerun()
@@ -6231,11 +6046,8 @@ def show_unified_assessments_admin(db):
             st.dataframe(ranking.rename(columns={"full_name": "اسم الطالبة", "score": "المجموع"}), width="stretch")
 
 
-# =============================================================================
-# Reports - Advanced Reports & Statistics Page
-# =============================================================================
 def _export_to_csv_bytes(df):
-    """Convert DataFrame to CSV bytes for download."""
+
     buf = io.BytesIO()
     df.to_csv(buf, index=False, encoding='utf-8-sig')
     buf.seek(0)
@@ -6243,18 +6055,15 @@ def _export_to_csv_bytes(df):
 
 
 def _export_to_excel_with_charts(report_title, df, charts_list=None):
-    """
-    إنشاء ملف Excel (.xlsx) يحتوي على التقرير + الرسوم البيانية كصور داخل الملف.
-    charts_list: list of (plotly_figure, sheet_name) tuples
-    """
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # Write data sheet
+
         df.to_excel(writer, sheet_name='التقرير', index=False)
         workbook = writer.book
         ws = writer.sheets['التقرير']
-        
-        # Style header
+
+
         header_font = Font(name='Cairo', bold=True, color='FFFFFF', size=12)
         header_fill = PatternFill(start_color='667EEA', end_color='764BA2', fill_type='solid')
         header_alignment = Alignment(horizontal='center', vertical='center')
@@ -6264,23 +6073,23 @@ def _export_to_excel_with_charts(report_title, df, charts_list=None):
             top=Side(style='thin'),
             bottom=Side(style='thin')
         )
-        
+
         for col_idx, col in enumerate(df.columns, 1):
             cell = ws.cell(row=1, column=col_idx)
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = header_alignment
             cell.border = thin_border
-        
-        # Auto-adjust column widths
+
+
         for col_idx, col in enumerate(df.columns, 1):
             max_len = max(
                 df[col].astype(str).map(len).max() if not df.empty else 0,
                 len(str(col))
             )
             ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 4, 50)
-        
-        # Add charts as images if provided
+
+
         if charts_list:
             import warnings
             for fig, sheet_name in charts_list:
@@ -6291,36 +6100,36 @@ def _export_to_excel_with_charts(report_title, df, charts_list=None):
                     img = XLImage(img_stream)
                     img.width = 800
                     img.height = 350
-                    
-                    # Create new sheet for chart
+
+
                     ws_chart = workbook.create_sheet(title=sheet_name)
                     ws_chart.add_image(img, 'A1')
                 except Exception:
                     warnings.warn(f"Chart export skipped for {sheet_name}: Kaleido not available")
                     note_ws = workbook.create_sheet(title=sheet_name)
                     note_ws['A1'] = "الرسوم البيانية غير متاحة في بيئة التشغيل الحالية. استخدم خيار CSV أو شاهد الرسوم في التطبيق."
-    
+
     output.seek(0)
     return output.getvalue()
 
 
 def show_reports_page(db):
-    """صفحة التقارير والإحصائيات المتقدمة"""
+
     st.markdown(hero_header("التقارير والإحصائيات", "📊 عرض التقارير والرسوم البيانية"), unsafe_allow_html=True)
-    
+
     user = st.session_state.user
     role = user.get("role", "")
     user_id = user.get("user_id", "")
     user_section_id = user.get("section_id", "")
-    
-    # Load data
+
+
     attendance = db.get_attendance()
     students = db.get_students()
     sections = db.get_sections()
     stages = db.get_stages()
     events = db.get_events()
-    
-    # RBAC filtering
+
+
     if role == "Service Manager" and db and user_id:
         section_ids = get_sections_for_supervisor(db, user_id)
         if section_ids:
@@ -6337,32 +6146,30 @@ def show_reports_page(db):
                 students = students[students.section_id == user_section_id]
             if not attendance.empty and "section_id" in attendance.columns:
                 attendance = attendance[attendance.section_id == user_section_id]
-    
+
     if attendance.empty:
         st.info("لا توجد بيانات حضور كافية لإنشاء التقارير.")
         return
-    
-    # Parse dates
+
+
     if "date" in attendance.columns:
         attendance["date"] = pd.to_datetime(attendance["date"], errors="coerce")
     if "student_id" in attendance.columns and not students.empty and "student_id" in students.columns:
         attendance = attendance.merge(students[["student_id", "full_name", "section_id"]], on="student_id", how="left")
-    
-    # =========================================================================
-    # FILTERS
-    # =========================================================================
+
+
     st.markdown("### 🔍 الفلاتر")
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-    
+
     with col_f1:
-        # Date range filter
+
         min_date = attendance["date"].min().date() if not attendance.empty and "date" in attendance.columns else get_cairo_now().date() - timedelta(days=30)
         max_date = attendance["date"].max().date() if not attendance.empty and "date" in attendance.columns else get_cairo_now().date()
         date_from = st.date_input("من تاريخ", min_date)
         date_to = st.date_input("إلى تاريخ", max_date)
-    
+
     with col_f2:
-        # Section filter
+
         section_options = ["الكل"]
         if not sections.empty and "section_id" in sections.columns:
             section_options += sections["section_id"].tolist()
@@ -6372,13 +6179,13 @@ def show_reports_page(db):
                 sections[sections.section_id == x]["section_name"].values[0] if not sections.empty and x in sections["section_id"].values else x
             )
         )
-    
+
     with col_f3:
-        # Event type filter (for event reports)
+
         event_type_filter = st.selectbox("نوع الحدث", ["الكل"] + EVENT_TYPES)
-    
+
     with col_f4:
-        # Report type selector
+
         report_type = st.selectbox(
             "نوع التقرير",
             [
@@ -6388,55 +6195,53 @@ def show_reports_page(db):
                 "تقرير الأعضاء الغائبين (أكثر من 3 أيام)"
             ]
         )
-    
-    # Apply date filter
+
+
     filtered_attendance = attendance.copy()
     if "date" in filtered_attendance.columns:
         filtered_attendance = filtered_attendance[
             (filtered_attendance["date"].dt.date >= date_from) &
             (filtered_attendance["date"].dt.date <= date_to)
         ]
-    
-    # Apply section filter
+
+
     if section_filter != "الكل" and "section_id" in filtered_attendance.columns:
         filtered_attendance = filtered_attendance[filtered_attendance["section_id"] == section_filter]
-    
-    # Apply event type filter (for events)
+
+
     filtered_events = events.copy() if not events.empty else pd.DataFrame()
     if event_type_filter != "الكل" and not filtered_events.empty and "event_type" in filtered_events.columns:
         filtered_events = filtered_events[filtered_events["event_type"] == event_type_filter]
-    
-    # =========================================================================
-    # REPORT GENERATION
-    # =========================================================================
+
+
     st.markdown("---")
     st.markdown("### 📋 التقرير")
-    
+
     report_df = pd.DataFrame()
     report_title = ""
     charts_to_export = []
-    
+
     if report_type == "تقرير الحضور الأسبوعي (آخر 7 أيام)":
         report_title = "تقرير الحضور الأسبوعي"
         week_ago = get_cairo_now().date() - timedelta(days=7)
         weekly = filtered_attendance[filtered_attendance["date"].dt.date >= week_ago].copy()
-        
+
         if not weekly.empty:
-            # Summary by day
+
             daily_summary = weekly.groupby([weekly["date"].dt.date, "status"]).size().reset_index(name="العدد")
             daily_pivot = daily_summary.pivot(index="date", columns="status", values="العدد").fillna(0).reset_index()
             daily_pivot.columns.name = None
             daily_pivot["date"] = pd.to_datetime(daily_pivot["date"]).dt.strftime("%Y-%m-%d")
             daily_pivot = daily_pivot.rename(columns={"date": "التاريخ"})
-            
-            # Add total
+
+
             status_cols = [c for c in daily_pivot.columns if c != "التاريخ"]
             if status_cols:
                 daily_pivot["الإجمالي"] = daily_pivot[status_cols].sum(axis=1)
-            
+
             report_df = daily_pivot
-            
-            # Line chart for weekly attendance
+
+
             fig_line = px.line(
                 weekly.groupby([weekly["date"].dt.date, "status"]).size().reset_index(name="العدد"),
                 x="date", y="العدد", color="status",
@@ -6450,8 +6255,8 @@ def show_reports_page(db):
             )
             st.plotly_chart(fig_line, width="stretch")
             charts_to_export.append((fig_line, "الحضور اليومي"))
-            
-            # Pie chart for status distribution
+
+
             status_counts = weekly["status"].value_counts().reset_index()
             status_counts.columns = ["الحالة", "العدد"]
             fig_pie = px.pie(
@@ -6464,7 +6269,7 @@ def show_reports_page(db):
             charts_to_export.append((fig_pie, "توزيع الحالات"))
         else:
             st.info("لا توجد بيانات للأيام السبعة الماضية.")
-    
+
     elif report_type == "تقرير الحضور الشهري (شهر محدد)":
         report_title = "تقرير الحضور الشهري"
         col_m1, col_m2 = st.columns(2)
@@ -6472,42 +6277,42 @@ def show_reports_page(db):
             month = st.selectbox("الشهر", range(1, 13), index=get_cairo_now().month - 1)
         with col_m2:
             year = st.number_input("السنة", value=get_cairo_now().year, min_value=2020, max_value=2100)
-        
+
         monthly = filtered_attendance[
             (filtered_attendance["date"].dt.month == month) &
             (filtered_attendance["date"].dt.year == year)
         ].copy()
-        
+
         if not monthly.empty:
-            # Student-level summary
+
             student_summary = monthly.groupby(["student_id", "full_name", "status"]).size().reset_index(name="عدد الأيام")
             student_pivot = student_summary.pivot(index=["student_id", "full_name"], columns="status", values="عدد الأيام").fillna(0).reset_index()
             student_pivot.columns.name = None
-            
-            # Rename columns
+
+
             student_pivot = student_pivot.rename(columns={"full_name": "اسم الطالبة"})
             if "student_id" in student_pivot.columns:
                 student_pivot = student_pivot.drop(columns=["student_id"])
-            
-            # Add total
+
+
             status_cols = [c for c in student_pivot.columns if c != "اسم الطالبة"]
             if status_cols:
                 student_pivot["إجمالي الأيام"] = student_pivot[status_cols].sum(axis=1)
-            
+
             report_df = student_pivot
-            
-            # Bar chart comparing sections
+
+
             if "section_id" in monthly.columns:
                 section_attendance = monthly.groupby(["section_id", "status"]).size().reset_index(name="العدد")
                 section_pivot = section_attendance.pivot(index="section_id", columns="status", values="العدد").fillna(0).reset_index()
                 section_pivot.columns.name = None
-                
+
                 if not sections.empty and "section_id" in sections.columns:
                     section_pivot = section_pivot.merge(
                         sections[["section_id", "section_name"]], on="section_id", how="left"
                     )
                     section_pivot["section_id"] = section_pivot["section_name"].fillna(section_pivot["section_id"])
-                
+
                 fig_bar = px.bar(
                     section_pivot, x="section_id",
                     y=[c for c in ["حاضر", "غائب", "متأخر"] if c in section_pivot.columns],
@@ -6522,8 +6327,8 @@ def show_reports_page(db):
                 )
                 st.plotly_chart(fig_bar, width="stretch")
                 charts_to_export.append((fig_bar, "مقارنة الفصول"))
-            
-            # Pie chart
+
+
             status_counts = monthly["status"].value_counts().reset_index()
             status_counts.columns = ["الحالة", "العدد"]
             fig_pie = px.pie(
@@ -6536,16 +6341,16 @@ def show_reports_page(db):
             charts_to_export.append((fig_pie, "توزيع الحالات"))
         else:
             st.info(f"لا توجد بيانات للشهر {month}/{year}.")
-    
+
     elif report_type == "تقرير الأعضاء الجدد (آخر 30 يوم)":
         report_title = "تقرير الأعضاء الجدد"
         thirty_days_ago = get_cairo_now().date() - timedelta(days=30)
-        
-        # New students
+
+
         new_students = pd.DataFrame()
         if not students.empty:
             if "created_by" in students.columns:
-                # Try to find creation date from attendance first record
+
                 student_ids = students["student_id"].tolist()
                 first_attendance = attendance[attendance["student_id"].isin(student_ids)].copy()
                 if not first_attendance.empty:
@@ -6554,11 +6359,11 @@ def show_reports_page(db):
                     new_students = students.merge(first_dates, on="student_id", how="inner")
                     new_students = new_students[new_students["first_date"].dt.date >= thirty_days_ago]
                 else:
-                    # No attendance records, show all students as new
+
                     new_students = students.copy()
                     new_students["first_date"] = get_cairo_now()
             else:
-                # No created_by column, use first attendance date
+
                 student_ids = students["student_id"].tolist()
                 first_attendance = attendance[attendance["student_id"].isin(student_ids)].copy()
                 if not first_attendance.empty:
@@ -6566,14 +6371,14 @@ def show_reports_page(db):
                     first_dates.columns = ["student_id", "first_date"]
                     new_students = students.merge(first_dates, on="student_id", how="inner")
                     new_students = new_students[new_students["first_date"].dt.date >= thirty_days_ago]
-        
+
         if not new_students.empty:
             new_students["first_date_str"] = new_students["first_date"].dt.strftime("%Y-%m-%d")
             report_df = new_students[["full_name", "phone", "section_id", "first_date_str"]].rename(
                 columns={"full_name": "الاسم", "phone": "الهاتف", "section_id": "الفصل", "first_date_str": "تاريخ أول حضور"}
             )
-            
-            # Add section names
+
+
             if not sections.empty and "section_id" in sections.columns:
                 report_df = report_df.merge(
                     sections[["section_id", "section_name"]],
@@ -6581,10 +6386,10 @@ def show_reports_page(db):
                 )
                 report_df["الفصل"] = report_df["section_name"].fillna(report_df["الفصل"])
                 report_df = report_df.drop(columns=["section_id", "section_name"], errors="ignore")
-            
+
             st.success(f"✅ تم إضافة {len(new_students)} أعضاء جدد في آخر 30 يوم")
-            
-            # Bar chart for new members by section
+
+
             if not report_df.empty and "الفصل" in report_df.columns:
                 section_counts = report_df["الفصل"].value_counts().reset_index()
                 section_counts.columns = ["الفصل", "العدد"]
@@ -6601,24 +6406,24 @@ def show_reports_page(db):
                 charts_to_export.append((fig_bar, "أعضاء جدد حسب الفصل"))
         else:
             st.info("لا يوجد أعضاء جدد في آخر 30 يوم.")
-    
+
     elif report_type == "تقرير الأعضاء الغائبين (أكثر من 3 أيام)":
         report_title = "تقرير الأعضاء الغائبين"
         month_start = get_cairo_now().replace(day=1).date()
         month_attendance = filtered_attendance[filtered_attendance["date"].dt.date >= month_start].copy()
-        
+
         if not month_attendance.empty and "status" in month_attendance.columns:
-            # Count absences per student
+
             absent_counts = month_attendance[month_attendance["status"] == "غائب"].groupby(
                 ["student_id", "full_name"]
             ).size().reset_index(name="أيام الغياب")
-            
+
             absent_counts = absent_counts[absent_counts["أيام الغياب"] > 3].sort_values("أيام الغياب", ascending=False)
-            
+
             if not absent_counts.empty:
                 report_df = absent_counts.rename(columns={"full_name": "اسم الطالبة", "أيام الغياب": "أيام الغياب"})
-                
-                # Add section info
+
+
                 if not students.empty and "section_id" in students.columns:
                     report_df = report_df.merge(
                         students[["student_id", "section_id"]], on="student_id", how="left"
@@ -6632,12 +6437,12 @@ def show_reports_page(db):
                     else:
                         report_df["الفصل"] = report_df.get("section_id", "")
                         report_df = report_df.drop(columns=["section_id"], errors="ignore")
-                
+
                 report_df = report_df.drop(columns=["student_id"], errors="ignore")
-                
+
                 st.warning(f"⚠️ يوجد {len(absent_counts)} طالبة غائبة أكثر من 3 أيام هذا الشهر")
-                
-                # Bar chart
+
+
                 fig_bar = px.bar(
                     absent_counts.head(15), x="full_name", y="أيام الغياب",
                     title="أكثر الطالبات غياباً (أكثر من 3 أيام)",
@@ -6654,29 +6459,25 @@ def show_reports_page(db):
                 st.success("✅ لا توجد طالبات غائبات أكثر من 3 أيام هذا الشهر.")
         else:
             st.info("لا توجد بيانات كافية.")
-    
-    # =========================================================================
-    # DISPLAY REPORT TABLE
-    # =========================================================================
+
+
     if not report_df.empty:
         st.markdown("#### 📊 بيانات التقرير")
         st.dataframe(report_df, width="stretch")
-    
-    # =========================================================================
-    # INTERACTIVE CHARTS SECTION
-    # =========================================================================
+
+
     st.markdown("---")
     st.markdown("### 📈 الرسوم البيانية التفاعلية")
-    
+
     tab_chart1, tab_chart2, tab_chart3 = st.tabs([
         "📈 الحضور عبر الزمن", "📊 مقارنة بين الفصول", "🥧 توزيع الحالات"
     ])
-    
+
     with tab_chart1:
-        # Line chart: attendance over time (last 30 days)
+
         thirty_days_ago = get_cairo_now().date() - timedelta(days=30)
         last_30 = filtered_attendance[filtered_attendance["date"].dt.date >= thirty_days_ago].copy()
-        
+
         if not last_30.empty:
             daily = last_30.groupby([last_30["date"].dt.date, "status"]).size().reset_index(name="العدد")
             fig_line = px.line(
@@ -6694,14 +6495,14 @@ def show_reports_page(db):
             st.plotly_chart(fig_line, width="stretch")
         else:
             st.info("لا توجد بيانات كافية لآخر 30 يوم.")
-    
+
     with tab_chart2:
-        # Bar chart: compare sections
+
         if not filtered_attendance.empty and "section_id" in filtered_attendance.columns:
             section_comp = filtered_attendance.groupby(["section_id", "status"]).size().reset_index(name="العدد")
             section_pivot = section_comp.pivot(index="section_id", columns="status", values="العدد").fillna(0).reset_index()
             section_pivot.columns.name = None
-            
+
             if not sections.empty and "section_id" in sections.columns:
                 section_pivot = section_pivot.merge(
                     sections[["section_id", "section_name"]], on="section_id", how="left"
@@ -6709,7 +6510,7 @@ def show_reports_page(db):
                 section_pivot["الفصل"] = section_pivot["section_name"].fillna(section_pivot["section_id"])
             else:
                 section_pivot["الفصل"] = section_pivot["section_id"]
-            
+
             fig_bar = px.bar(
                 section_pivot, x="الفصل",
                 y=[c for c in ["حاضر", "غائب", "متأخر"] if c in section_pivot.columns],
@@ -6726,13 +6527,13 @@ def show_reports_page(db):
             st.plotly_chart(fig_bar, width="stretch")
         else:
             st.info("لا توجد بيانات كافية للمقارنة بين الفصول.")
-    
+
     with tab_chart3:
-        # Pie chart: status distribution
+
         if not filtered_attendance.empty and "status" in filtered_attendance.columns:
             status_counts = filtered_attendance["status"].value_counts().reset_index()
             status_counts.columns = ["الحالة", "العدد"]
-            
+
             fig_pie = px.pie(
                 status_counts, names="الحالة", values="العدد",
                 title="توزيع الحالات (حاضر / غائب / متأخر)",
@@ -6744,18 +6545,16 @@ def show_reports_page(db):
             st.plotly_chart(fig_pie, width="stretch")
         else:
             st.info("لا توجد بيانات كافية لتوزيع الحالات.")
-    
-    # =========================================================================
-    # EXPORT BUTTONS
-    # =========================================================================
+
+
     if not report_df.empty:
         st.markdown("---")
         st.markdown("### 📥 تصدير التقرير")
-        
+
         col_exp1, col_exp2 = st.columns(2)
-        
+
         with col_exp1:
-            # CSV Export
+
             csv_bytes = _export_to_csv_bytes(report_df)
             st.download_button(
                 label="📄 تصدير CSV",
@@ -6765,9 +6564,9 @@ def show_reports_page(db):
                 width="stretch",
                 key="export_csv_btn"
             )
-        
+
         with col_exp2:
-            # Excel Export
+
             try:
                 excel_bytes = _export_to_excel_with_charts(report_title, report_df, charts_to_export)
                 st.download_button(
@@ -6780,10 +6579,8 @@ def show_reports_page(db):
                 )
             except Exception as e:
                 st.error("تعذر تصدير Excel: " + str(e))
-    
-    # =========================================================================
-    # EVENT REPORT (if events data available)
-    # =========================================================================
+
+
     if not filtered_events.empty and event_type_filter != "الكل":
         st.markdown("---")
         st.markdown("### 📅 تقرير الفعاليات")
@@ -6795,11 +6592,8 @@ def show_reports_page(db):
         ), width="stretch")
 
 
-# =============================================================================
-# Events Management
-# ==============================================================================
 def inject_events_css():
-    """Design system already applies globally — no-op for backwards compat."""
+
     pass
 
 
@@ -6814,7 +6608,7 @@ def get_event_type_css(event_type):
 
 
 def show_upcoming_events(db, user, role):
-    """عرض الفعاليات القادمة مع خيار التسجيل (RSVP)"""
+
     events = db.get_events()
     if events.empty or "event_date" not in events.columns:
         st.info("لا توجد فعاليات مسجلة.")
@@ -6860,7 +6654,7 @@ def show_upcoming_events(db, user, role):
         </div>
         """, unsafe_allow_html=True)
 
-        # RSVP for non-admin users
+
         if role not in ["System Admin", "Father Account"]:
             rsvp_df = db.get_event_rsvps(ev_id)
             already_rsvped = False
@@ -6901,7 +6695,7 @@ def show_upcoming_events(db, user, role):
 
 
 def add_event_form(db, user):
-    """نموذج إضافة فعالية جديدة"""
+
     st.subheader("➕ إضافة فعالية جديدة")
     with st.form("add_event_form"):
         col1, col2 = st.columns(2)
@@ -6938,7 +6732,7 @@ def add_event_form(db, user):
 
 
 def show_event_actual_attendance(db, user):
-    """تسجيل الحضور الفعلي للفعاليات المنتهية مع ملخص إحصائي"""
+
     st.subheader("📊 تسجيل الحضور الفعلي")
     events = db.get_events()
     if events.empty or "event_date" not in events.columns:
@@ -6962,7 +6756,7 @@ def show_event_actual_attendance(db, user):
     if not selected_event:
         return
 
-    # Get RSVPs and students
+
     rsvp_df = db.get_event_rsvps(selected_event)
     existing_attendance = db.get_event_attendance(selected_event)
     students = db.get_students()
@@ -6974,7 +6768,7 @@ def show_event_actual_attendance(db, user):
 
     st.markdown("#### اختر الحاضرات فعلياً")
 
-    # Build options from RSVP list or all students
+
     options = []
     labels = []
     if not rsvp_df.empty and not students.empty:
@@ -6996,7 +6790,7 @@ def show_event_actual_attendance(db, user):
     )
 
     if st.button("💾 حفظ الحضور الفعلي", width="stretch"):
-        # Remove old records if any
+
         if already_recorded:
             for _, rec in existing_attendance.iterrows():
                 db.delete_event_attendance(rec["record_id"])
@@ -7009,7 +6803,7 @@ def show_event_actual_attendance(db, user):
                 "status": "حاضر",
                 "notes": ""
             })
-        # Add absent records for RSVPed but not present
+
         for _, row in rsvp_df.iterrows():
             sid = row["student_id"]
             if sid not in selected:
@@ -7030,7 +6824,7 @@ def show_event_actual_attendance(db, user):
     max_cap = int(event_row.get("max_capacity", 0) or 0)
     total_rsvp = len(rsvp_df)
 
-    # Reload attendance records for summary
+
     attendance_df = db.get_event_attendance(selected_event)
     total_present = len(attendance_df[attendance_df["status"] == "حاضر"]) if not attendance_df.empty else 0
     total_absent = len(attendance_df[attendance_df["status"] == "غائب"]) if not attendance_df.empty else 0
@@ -7041,7 +6835,7 @@ def show_event_actual_attendance(db, user):
     c3.metric("الغائبين", total_absent)
     c4.metric("السعة القصوى", max_cap)
 
-    # Show detailed table
+
     if not attendance_df.empty and not students.empty:
         detail = attendance_df.merge(students[["student_id", "full_name"]], on="student_id", how="left")
         st.dataframe(detail[["full_name", "status", "notes"]].rename(
@@ -7050,7 +6844,7 @@ def show_event_actual_attendance(db, user):
 
 
 def show_events_page(db):
-    """الصفحة الرئيسية لإدارة الفعاليات"""
+
     inject_events_css()
     st.markdown(hero_header("إدارة الفعاليات", "📅 إنشاء وإدارة الفعاليات والأنشطة"), unsafe_allow_html=True)
     user = st.session_state.user
@@ -7076,18 +6870,8 @@ def show_events_page(db):
         show_event_actual_attendance(db, user)
 
 
-# =============================================================================
-# PHASE 2 — QR CODE ATTENDANCE SYSTEM (Future Feature — NOT yet active)
-# =============================================================================
-# This module is RESERVED for Phase 2 implementation.
-# Active helpers kept: generate_qr_image (used by the member card system),
-# show_qr_scanner_page (menu page placeholder).
-# The full QR attendance system features (encrypted JWT tokens, opening/closing
-# times, sound feedback, dashboard widgets, advanced reports) are NOT yet implemented.
-# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE A: QR CODE ATTENDANCE SYSTEM"
-# =============================================================================
 def generate_qr_image(data: str, size: int = 250) -> Image.Image:
-    """Generate PIL Image QR code from string data."""
+
     qr = qrcode.QRCode(version=3, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=2)
     qr.add_data(data)
     qr.make(fit=True)
@@ -7096,14 +6880,8 @@ def generate_qr_image(data: str, size: int = 250) -> Image.Image:
     return img
 
 
-# =============================================================================
-# PHASE 2 — QR CODE ATTENDANCE SYSTEM (Future Feature — NOT yet active)
-# =============================================================================
-# This module is RESERVED for Phase 2 implementation.
-# See: FUTURE_FEATURES_ROADMAP.md → "PHASE 2 — MODULE A: QR CODE ATTENDANCE SYSTEM"
-# =============================================================================
 def show_qr_scanner_page(db):
-    """QR Code Scanner page - Under Development."""
+
     under_development_page(
         title="ماسح QR Code",
         subtitle="📷 نظام الحضور الذكي",
@@ -7119,9 +6897,6 @@ def show_qr_scanner_page(db):
     )
 
 
-# =============================================================================
-# Student Profile Page
-# ==============================================================================
 def show_student_profile(db, student_id):
     students_df = db.get_students()
     student_row = students_df[students_df.student_id == student_id]
@@ -7131,29 +6906,29 @@ def show_student_profile(db, student_id):
             st.session_state.profile_user_id = None
             st.rerun()
         return
-    
+
     student = student_row.iloc[0].to_dict()
     sections = db.get_sections()
     user = st.session_state.user
     role = user.get("role", "")
-    
-    # Get section name
+
+
     section_name = ""
     sec_id = student.get("section_id", "")
     if not sections.empty and sec_id:
         sec_match = sections[sections["section_id"] == sec_id]
         if not sec_match.empty:
             section_name = sec_match.iloc[0].get("section_name", "")
-    
-    # المرحلة الموحدة للبطاقة الشخصية (نفس مصدر بيانات إدارة الأعضاء)
+
+
     stages_profile = db.get_stages()
     stage_name_profile = resolve_member_stage_name(student.get("stage_id", ""), sec_id, sections, stages_profile)
-    
+
     full_name = student.get("full_name", "غير معروف")
     initials = get_initials(full_name)
     status = student.get("status", "active")
     status_label = {"active": "نشطة", "inactive": "غير نشطة"}.get(status, "نشطة")
-    
+
     st.markdown(f"""
     <div class="profile-header">
         <div style="display:flex; align-items:center; gap:2rem;">
@@ -7166,7 +6941,7 @@ def show_student_profile(db, student_id):
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
         st.markdown('<div class="profile-stat-card">', unsafe_allow_html=True)
@@ -7185,7 +6960,7 @@ def show_student_profile(db, student_id):
         st.markdown(f"<h3>{section_name or '—'}</h3>", unsafe_allow_html=True)
         st.markdown("<p>🏫 الفصل</p>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
-    
+
     with st.expander("📋 المعلومات الشخصية", expanded=True):
         info_cols = st.columns(2)
         with info_cols[0]:
@@ -7199,14 +6974,14 @@ def show_student_profile(db, student_id):
             st.markdown(f"**🏫 المدرسة:** {student.get('school', '—') or '—'}")
             st.markdown(f"**📍 العنوان:** {student.get('address', '—') or '—'}")
             st.markdown(f"**📌 الحالة:** {status_label}")
-    
+
     if student.get("notes"):
         with st.expander("📝 ملاحظات"):
             st.markdown(student.get("notes", ""))
-    
+
     st.markdown("---")
-    
-    # Action buttons based on role
+
+
     if role in ["System Admin", "Service Manager"]:
         act_col1, act_col2, act_col3 = st.columns(3)
         with act_col1:
@@ -7239,12 +7014,12 @@ def show_student_profile(db, student_id):
                 st.rerun()
     elif role == "Teacher":
         st.info("👁️ وضع العرض فقط - لا يمكنك التعديل على بيانات الطالبات")
-    
+
     if st.button("🔙 العودة", width="stretch"):
         st.session_state.profile_user_id = None
         st.rerun()
-    
-    # Edit form for System Admin and Service Manager
+
+
     if role in ["System Admin", "Service Manager"] and st.session_state.get("edit_student_id") == student_id:
         st.markdown("---")
         with st.expander("✏️ تعديل بيانات الطالبة", expanded=True):
@@ -7257,14 +7032,14 @@ def show_student_profile(db, student_id):
                 edit_address = st.text_input("العنوان", value=student.get("address", ""))
                 edit_school = st.text_input("المدرسة", value=student.get("school", ""))
                 edit_notes = st.text_area("ملاحظات", value=student.get("notes", ""))
-                
+
                 sec_options = sections["section_id"].tolist() if not sections.empty else []
                 current_sec = sec_id if sec_id in sec_options else (sec_options[0] if sec_options else "")
-                edit_section = st.selectbox("الفصل", sec_options, 
+                edit_section = st.selectbox("الفصل", sec_options,
                                            index=sec_options.index(current_sec) if current_sec in sec_options else 0,
                                            format_func=lambda x: sections[sections.section_id == x]["section_name"].values[0]) if sec_options else ""
-                
-                # خانة المرحلة — مرتبطة بنظام المراحل الموجود مسبقاً
+
+
                 stage_ids_prof = stages_profile["stage_id"].tolist() if not stages_profile.empty else []
                 eff_stage_id_prof = resolve_member_stage_id(student.get("stage_id", ""), sec_id, sections)
                 stage_choices_prof = [""] + stage_ids_prof
@@ -7279,9 +7054,9 @@ def show_student_profile(db, student_id):
                     ),
                     key="edit_student_stage_profile"
                 ) if stage_ids_prof else ""
-                
+
                 edit_status = st.selectbox("الحالة", ["نشطة", "غير نشطة"], index=0 if status == "active" else 1)
-                
+
                 if st.form_submit_button("💾 حفظ التعديلات"):
                     db.update_student(student_id, {
                         "full_name": edit_name,
@@ -7302,9 +7077,6 @@ def show_student_profile(db, student_id):
                     st.rerun()
 
 
-# =============================================================================
-# User Profile Page
-# =============================================================================
 def show_user_profile(db, user_id):
     users_df = db.get_users()
     user_row = users_df[users_df.user_id == user_id]
@@ -7323,7 +7095,7 @@ def show_user_profile(db, user_id):
     if not sections.empty:
         sec = sections[sections.section_id == user.get("section_id", "")]
         section_name = sec.iloc[0]["section_name"] if not sec.empty else ""
-    # المرحلة الموحدة للبطاقة الشخصية (نفس مصدر بيانات إدارة الأعضاء)
+
     stage_name_uprofile = resolve_member_stage_name(user.get("stage_id", ""), user.get("section_id", ""), sections, stages)
     initials = get_initials(user.get("full_name", ""))
     role = user.get("role", "")
@@ -7426,44 +7198,41 @@ def show_user_profile(db, user_id):
             st.rerun()
 
 
-# =============================================================================
-# Audit Log Page - سجل التدقيق
-# =============================================================================
 def show_logs(db):
     st.markdown(hero_header("سجل العمليات", "📜 عرض سجل العمليات والتدقيق"), unsafe_allow_html=True)
     logs = db.get_audit_log()
     if not logs.empty:
         if "timestamp" in logs.columns:
             logs["timestamp"] = pd.to_datetime(logs["timestamp"])
-        
-        # إضافة عمليات البحث والتصفية
+
+
         st.markdown("#### 🔍 تصفية السجلات")
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
-            # فلتر حسب المستخدم
+
             user_ids = ["الكل"] + sorted(logs["user_id"].dropna().unique().tolist()) if "user_id" in logs.columns else ["الكل"]
             if user_ids:
                 selected_user = st.selectbox("المستخدم", user_ids, format_func=lambda x: "الكل" if x == "الكل" else str(x)[:30])
         with col_f2:
-            # فلتر حسب نوع العملية
+
             actions = ["الكل"] + sorted(logs["action"].dropna().unique().tolist()) if "action" in logs.columns else ["الكل"]
             selected_action = st.selectbox("نوع العملية", actions)
         with col_f3:
-            # فلتر حسب التاريخ
+
             date_options = ["الكل", "آخر 24 ساعة", "آخر 7 أيام", "آخر 30 يوم"]
             selected_date_range = st.selectbox("الفترة الزمنية", date_options)
-        
+
         filtered_logs = logs.copy()
-        
-        # تطبيق فلتر المستخدم
+
+
         if selected_user != "الكل" and "user_id" in filtered_logs.columns:
             filtered_logs = filtered_logs[filtered_logs["user_id"] == selected_user]
-        
-        # تطبيق فلتر العملية
+
+
         if selected_action != "الكل" and "action" in filtered_logs.columns:
             filtered_logs = filtered_logs[filtered_logs["action"] == selected_action]
-        
-        # تطبيق فلتر التاريخ
+
+
         if selected_date_range != "الكل":
             now = get_cairo_now()
             if selected_date_range == "آخر 24 ساعة":
@@ -7475,12 +7244,12 @@ def show_logs(db):
             elif selected_date_range == "آخر 30 يوم":
                 cutoff = now - timedelta(days=30)
                 filtered_logs = filtered_logs[filtered_logs["timestamp"] >= cutoff]
-        
-        # أعمدة العرض
-        display_columns = ["timestamp", "username", "user_id", "action", "details", 
+
+
+        display_columns = ["timestamp", "username", "user_id", "action", "details",
                           "ip_address", "country", "city", "browser", "os", "device_type"]
         available = [c for c in display_columns if c in filtered_logs.columns]
-        
+
         st.markdown(f"**عدد السجلات:** {len(filtered_logs)}")
         st.dataframe(
             filtered_logs[available].sort_values("timestamp", ascending=False),
@@ -7499,8 +7268,8 @@ def show_logs(db):
                 "device_type": "الجهاز"
             }
         )
-        
-        # حذف السجلات
+
+
         if st.session_state.user.get("role") == "System Admin" and "log_id" in filtered_logs.columns:
             st.markdown("---")
             st.subheader("🗑️ حذف سجل")
@@ -7514,9 +7283,6 @@ def show_logs(db):
         st.info("لا توجد سجلات تدقيق بعد.")
 
 
-# =============================================================================
-# Change Password
-# =============================================================================
 def change_password(db):
     st.markdown(hero_header("تغيير كلمة المرور", "🔒 تحديث كلمة المرور الخاصة بك"), unsafe_allow_html=True)
     with st.form("change_password_form"):
@@ -7540,11 +7306,8 @@ def change_password(db):
                 st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
 
-# =============================================================================
-# Notifications Panel - لوحة الإشعارات
-# =============================================================================
 def get_notification_icon(notif_type):
-    """إرجاع أيقونة مناسبة لنوع الإشعار."""
+
     icons = {
         "exam_open": "📝",
         "exam_result": "📊",
@@ -7559,7 +7322,7 @@ def get_notification_icon(notif_type):
 
 
 def get_notification_color(notif_type):
-    """إرجاع لون مناسب لنوع الإشعار."""
+
     colors = {
         "exam_open": "#2563eb",
         "exam_result": "#059669",
@@ -7574,7 +7337,7 @@ def get_notification_color(notif_type):
 
 
 def get_unread_notification_count(db, user_id):
-    """حساب عدد الإشعارات غير المقروءة للمستخدم."""
+
     try:
         notifications = db.get_notifications(user_id)
         if notifications.empty or "is_read" not in notifications.columns:
@@ -7586,27 +7349,19 @@ def get_unread_notification_count(db, user_id):
 
 
 def show_notifications_panel(db):
-    """
-    لوحة الإشعارات الكاملة:
-    - عرض جميع الإشعارات مع شارة العدد غير المقروء
-    - قراءة الإشعارات (تحديد كـ مقروء)
-    - إنشاء إشعار جديد (للمدرسين والمسؤولين)
-    - إشعار فتح الامتحان
-    - إشعار النتيجة
-    - إشعار الواجب
-    """
+
     st.markdown(hero_header("الإشعارات", "🔔 عرض وإدارة جميع الإشعارات"), unsafe_allow_html=True)
 
     user = st.session_state.get("user", {})
     user_id = user.get("user_id", "")
     role = user.get("role", "")
 
-    # ===== جلب الإشعارات =====
+
     notifications = db.get_notifications(user_id)
     if notifications.empty:
         notifications = pd.DataFrame(columns=db.NOTIFICATION_COLUMNS)
 
-    # ===== الإحصائيات =====
+
     total_count = len(notifications)
     unread_count = get_unread_notification_count(db, user_id)
     read_count = total_count - unread_count
@@ -7618,12 +7373,12 @@ def show_notifications_panel(db):
 
     st.markdown("---")
 
-    # ===== تبويبات: الإشعارات / إنشاء إشعار =====
+
     tab1, tab2 = st.tabs(["📥 الإشعارات", "➕ إنشاء إشعار"])
 
-    # ===== تبويب عرض الإشعارات =====
+
     with tab1:
-        # ===== فلاتر =====
+
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             type_filter = st.selectbox(
@@ -7633,10 +7388,10 @@ def show_notifications_panel(db):
         with col_f2:
             read_filter = st.selectbox("الحالة", ["الكل", "غير مقروء", "مقروء"])
 
-        # ===== تصفية الإشعارات =====
+
         filtered = notifications.copy()
         if not filtered.empty:
-            # تصفية حسب النوع
+
             type_map = {
                 "فتح الامتحان": "exam_open",
                 "النتيجة": "exam_result",
@@ -7649,7 +7404,7 @@ def show_notifications_panel(db):
             if type_filter != "الكل" and "notification_type" in filtered.columns:
                 filtered = filtered[filtered["notification_type"] == type_map.get(type_filter, type_filter)]
 
-            # تصفية حسب الحالة
+
             if read_filter == "غير مقروء" and "is_read" in filtered.columns:
                 filtered = filtered[filtered["is_read"].astype(str).str.strip().str.lower() != "true"]
             elif read_filter == "مقروء" and "is_read" in filtered.columns:
@@ -7658,7 +7413,7 @@ def show_notifications_panel(db):
         if filtered.empty:
             st.markdown(empty_state("لا توجد إشعارات مطابقة.", "🔕"), unsafe_allow_html=True)
         else:
-            # ===== زر قراءة الكل =====
+
             if unread_count > 0:
                 if st.button("✅ تحديد الكل كمقروء", width="stretch", key="mark_all_read_btn"):
                     for _, notif in filtered.iterrows():
@@ -7670,8 +7425,7 @@ def show_notifications_panel(db):
                     st.rerun()
                 st.markdown("---")
 
-            # ===== عرض الإشعارات =====
-            # ترتيب من الأحدث إلى الأقدم
+
             if "created_at" in filtered.columns:
                 filtered = filtered.sort_values("created_at", ascending=False)
 
@@ -7684,7 +7438,7 @@ def show_notifications_panel(db):
                 nread = str(notif.get("is_read", "False")).strip().lower() == "true"
                 ncreated = notif.get("created_at", "")
 
-                # تنسيق الوقت
+
                 time_display = "غير متاح"
                 try:
                     dt = pd.to_datetime(ncreated)
@@ -7700,7 +7454,7 @@ def show_notifications_panel(db):
                 icon = get_notification_icon(ntype)
                 color = get_notification_color(ntype)
 
-                # بطاقة الإشعار
+
                 bg_color = "#f8fafc" if nread else "#dbeafe"
                 border_color = "#e2e8f0" if nread else color
 
@@ -7718,7 +7472,7 @@ def show_notifications_panel(db):
                 </div>
                 """, unsafe_allow_html=True)
 
-                # أزرار الإجراءات
+
                 act_cols = st.columns([1, 1, 3])
                 if not nread:
                     with act_cols[0]:
@@ -7729,7 +7483,7 @@ def show_notifications_panel(db):
                     with act_cols[0]:
                         st.markdown("<div style='text-align:center; color:#059669; font-size:0.8rem; padding:0.3rem;'>✅ مقروء</div>", unsafe_allow_html=True)
 
-                # زر حذف الإشعار
+
                 with act_cols[1]:
                     if st.button("🗑️ حذف", key=f"del_notif_{nid}", width="stretch"):
                         try:
@@ -7745,17 +7499,17 @@ def show_notifications_panel(db):
 
                 st.markdown("---")
 
-    # ===== تبويب إنشاء إشعار =====
+
     with tab2:
-        # المدرسين والمسؤولين فقط يمكنهم إنشاء إشعارات
+
         if role in ["System Admin", "Father Account", "Service Manager", "Teacher"]:
             st.markdown("### ➕ إنشاء إشعار جديد")
 
-            # جلب المستخدمين والطالبات
+
             users_df = db.get_users()
             students_df = db.get_students()
 
-            # بناء قائمة المستلمين
+
             recipients = {}
             if not users_df.empty and "user_id" in users_df.columns:
                 for _, u in users_df.iterrows():
@@ -7807,18 +7561,18 @@ def show_notifications_panel(db):
                             }
                             notif_type_eng = type_map.get(notif_type, "general")
 
-                            # تحديد المستلمين
+
                             target_ids = []
                             if recipient_type == "مستخدم محدد":
                                 target_ids = [selected_recipient]
                             elif recipient_type == "جميع الطالبات":
                                 if not students_df.empty and "student_id" in students_df.columns:
                                     target_ids = students_df["student_id"].astype(str).tolist()
-                            else:  # جميع المستخدمين
+                            else:
                                 if not users_df.empty and "user_id" in users_df.columns:
                                     target_ids = users_df["user_id"].astype(str).tolist()
 
-                            # إرسال الإشعارات
+
                             sent_count = 0
                             for target_id in target_ids:
                                 if not target_id:
@@ -7842,20 +7596,12 @@ def show_notifications_panel(db):
             st.info("👁️ يمكنك فقط عرض الإشعارات. المدرسون والمسؤولون يمكنهم إنشاء إشعارات جديدة.")
 
 
-# =============================================================================
-# نظام بطاقات التعريف - ID Cards System
-# =============================================================================
-# محرك توليد بطاقات PNG عالية الجودة + صفحة "تجهيز البطاقات" (Template Designer)
-# العناصر قابلة للتوسعة مستقبلاً عبر إضافة مفاتيح جديدة إلى CARD_ELEMENT_TYPES
-# =============================================================================
-
 CARD_TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "card_templates")
 
-# صورة تصميم البطاقة الرسمية — ملف ثابت داخل المستودع (template_1.png)
-# مسار نسبي لمجلد المشروع يعمل محلياً وعلى Streamlit Cloud، ولا يعتمد على أي ملف مرفوع/مؤقت.
+
 CARD_TEMPLATE_REPO_IMAGE = os.path.join(os.path.dirname(__file__), "template_1.png")
 
-# أنواع عناصر البطاقة المدعومة — يمكن إضافة عناصر جديدة هنا مستقبلاً بدون إعادة بناء النظام
+
 CARD_ELEMENT_TYPES = {
     "name": {"label": "الاسم"},
     "stage": {"label": "المرحلة"},
@@ -7864,7 +7610,7 @@ CARD_ELEMENT_TYPES = {
     "photo": {"label": "الصورة الشخصية (اختياري)"},
 }
 
-# خطوط عربية مرشحة بالترتيب (Windows + محلي)
+
 _CARD_FONT_CANDIDATES_BOLD = [
     os.path.join(os.path.dirname(__file__), "Cairo-Bold.ttf"),
     r"C:\Windows\Fonts\arialbd.ttf",
@@ -7881,16 +7627,13 @@ _CARD_FONT_CANDIDATES_REGULAR = [
 ]
 
 
-# مُشكِّل عربي مُهيأ: الحروف المنفصلة تُترك بالشكل الأساسي (U+0621..U+064A)
-# لأن ملفات Cairo المرفقة مقتطعة (subsetted) وتفتقد أشكال العرض المنفصلة (U+FE80..U+FEF1)
-# بينما تحتوي على كل الحروف الأساسية وأشكال الوصل — هذا الإعداد يمنع ظهور مربعات التوفو.
 _ARABIC_RESHAPER = arabic_reshaper.ArabicReshaper(
     configuration={"use_unshaped_instead_of_isolated": True}
 )
 
 
 def shape_arabic_text(text):
-    """تشكيل النص العربي وترتيبه للعرض الصحيح داخل صور PIL."""
+
     try:
         return _bidi_get_display(_ARABIC_RESHAPER.reshape(str(text)))
     except Exception:
@@ -7902,7 +7645,7 @@ def shape_arabic_text(text):
 
 @lru_cache(maxsize=128)
 def _load_font_cached(path, size):
-    # التحميل عبر BytesIO لتجاوز مشكلة PIL مع المسارات غير اللاتينية على Windows
+
     try:
         with open(path, "rb") as f:
             return ImageFont.truetype(BytesIO(f.read()), size)
@@ -7911,7 +7654,7 @@ def _load_font_cached(path, size):
 
 
 def get_card_font(size, bold=False):
-    """تحميل خط عربي مناسب مع سلسلة بدائل آمنة."""
+
     size = max(8, int(size))
     candidates = _CARD_FONT_CANDIDATES_BOLD if bold else _CARD_FONT_CANDIDATES_REGULAR
     for path in candidates:
@@ -7927,7 +7670,7 @@ def get_card_font(size, bold=False):
 
 
 def _fit_card_font(draw, text, start_size, max_width, bold):
-    """تصغير حجم الخط تدريجياً حتى يتسع النص داخل عرض المستطيل المحدد."""
+
     size = int(start_size)
     while size > 8:
         font = get_card_font(size, bold)
@@ -7943,15 +7686,10 @@ def _fit_card_font(draw, text, start_size, max_width, bold):
 
 @st.cache_data(show_spinner=False)
 def _load_card_template_image_cached(image_ref, mtime):
-    """
-    تحميل صورة تصميم القالب مع تخزين مؤقت (caching) لتسريع توليد البطاقات.
-    ترتيب المصادر لضمان بقاء التصميم عند إعادة تشغيل التطبيق:
-    1) مرجع ملف محلي (file:filename.ext) داخل مجلد card_templates.
-    2) مرجع base64 قديم (للتوافق مع البيانات المخزنة سابقاً).
-    3) ملف المستودع الثابت template_1.png كبديل آمن أخير."""
+
     ref = str(image_ref or "").strip()
-    
-    # Handle file: reference format (new storage method)
+
+
     if ref.startswith("file:"):
         fname = ref[5:].strip()
         path = os.path.join(CARD_TEMPLATES_DIR, fname)
@@ -7960,16 +7698,16 @@ def _load_card_template_image_cached(image_ref, mtime):
                 return Image.open(path).convert("RGB")
             except Exception:
                 pass
-    
-    # Handle legacy base64: reference format (backward compatibility)
+
+
     if ref.startswith("base64:"):
         try:
             img_bytes = base64.b64decode(ref[len("base64:"):])
             return Image.open(BytesIO(img_bytes)).convert("RGB")
         except Exception:
             pass
-    
-    # Try as a direct file path (legacy support)
+
+
     if ref:
         try:
             fname = os.path.basename(ref.replace("file:", ""))
@@ -7980,14 +7718,13 @@ def _load_card_template_image_cached(image_ref, mtime):
                 return Image.open(ref).convert("RGB")
         except Exception:
             pass
-    
-    # Fallback to default template image
+
+
     return _load_repo_card_template_image()
 
 
 def _load_repo_card_template_image():
-    """تحميل صورة تصميم القالب من ملف المستودع template_1.png مباشرة
-    (مسار نسبي بجانب هذا الملف — يعمل محلياً وعلى Streamlit Cloud)."""
+
     try:
         if not os.path.exists(CARD_TEMPLATE_REPO_IMAGE):
             return None
@@ -7997,12 +7734,11 @@ def _load_repo_card_template_image():
 
 
 def load_card_template_image(template_row):
-    """إرجاع PIL.Image لقالب البطاقة أو None إذا لم توجد الصورة.
-    يدعم مراجع الملفات (file:filename.ext) والمراجع القديمة (base64:) للتوافق."""
+
     image_ref = str((template_row or {}).get("image_ref", "") or "").strip()
     mtime = 0
     try:
-        # Get filename from file: reference or legacy formats
+
         fname = os.path.basename(image_ref.replace("base64:", "").replace("file:", ""))
         if fname:
             p = os.path.join(CARD_TEMPLATES_DIR, fname)
@@ -8016,12 +7752,7 @@ def load_card_template_image(template_row):
 
 
 def save_card_template_image(uploaded_file, max_dim=1200):
-    """
-    حفظ صورة تصميم القالب بحيث تبقى حتى بعد إعادة تشغيل التطبيق.
-    تُحفظ الصورة كملف محلي داخل مجلد card_templates،
-    ويُخزَّن مرجع الملف (file:filename.ext) فقط في ورقة البيانات.
-    Returns: (image_ref, width, height) أو يرفع ValueError برسالة عربية.
-    """
+
     try:
         img = Image.open(uploaded_file).convert("RGB")
     except Exception:
@@ -8030,8 +7761,8 @@ def save_card_template_image(uploaded_file, max_dim=1200):
     if w > max_dim or h > max_dim:
         scale = min(max_dim / w, max_dim / h)
         img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
-    
-    # Save image to local file and return a file reference
+
+
     try:
         os.makedirs(CARD_TEMPLATES_DIR, exist_ok=True)
         fname = f"tpl_{uuid.uuid4().hex[:12]}.jpg"
@@ -8040,16 +7771,12 @@ def save_card_template_image(uploaded_file, max_dim=1200):
         image_ref = f"file:{fname}"
     except Exception as e:
         raise ValueError(f"تعذر حفظ ملف الصورة محلياً: {str(e)}")
-    
+
     return image_ref, img.size[0], img.size[1]
 
 
 def _member_qr_image(member):
-    """
-    إرجاع صورة QR العضو المعروفة في النظام (نفس بيانات QR القديمة) لاستخدامها داخل البطاقة.
-    لا يتم إنشاء نظام QR جديد — تُعاد استخدام نفس صيغة البيانات الحالية:
-    الطالبات: SCODE:<student_code>|PWD:<student_password> — باقي الأعضاء: UID:<user_id>.
-    """
+
     try:
         code = str((member or {}).get("student_code", "") or "").strip()
         pwd = str((member or {}).get("student_password", "") or "").strip()
@@ -8067,10 +7794,7 @@ def _member_qr_image(member):
 
 
 def build_member_card_data(member, sections_df=None, stages_df=None):
-    """
-    بناء بيانات البطاقة من بيانات العضو الأصلية في قاعدة البيانات.
-    لا يتم إدخال أي بيانات يدوياً — الاسم/المرحلة/الفصل/QR تُقرأ من مصادرها الحالية.
-    """
+
     sec_id = str(member.get("section_id", "") or "").strip()
     section_name = ""
     if sections_df is not None and not sections_df.empty and sec_id:
@@ -8090,12 +7814,7 @@ def build_member_card_data(member, sections_df=None, stages_df=None):
 
 
 def render_member_card(template_row, data):
-    """
-    توليد بطاقة PNG عالية الجودة (بمقياس القالب الأصلي + DPI 300).
-    template_row: dict من ورقة CardTemplates
-    data: dict يحتوي name/stage/section (+ photo اختيارياً كـ PIL Image)
-    Raises ValueError برسالة عربية عند فشل أي خطوة.
-    """
+
     if not template_row:
         raise ValueError("لم يتم اختيار Template للبطاقة.")
     img = load_card_template_image(template_row)
@@ -8125,7 +7844,7 @@ def render_member_card(template_row, data):
         if w <= 1 or h <= 1:
             continue
 
-        # عنصر الصورة الشخصية (اختياري — لا يعتمد عليه النظام إن لم تتوفر بياناته)
+
         if key == "photo":
             photo = data.get("photo") if isinstance(data, dict) else None
             if photo is not None:
@@ -8140,7 +7859,7 @@ def render_member_card(template_row, data):
                     pass
             continue
 
-        # عنصر QR Code — يستخدم صورة QR العضو الموجودة أصلاً في النظام (لا يُنشأ QR جديد)
+
         if key == "qr":
             qr_img = data.get("qr") if isinstance(data, dict) else None
             if qr_img is not None:
@@ -8179,7 +7898,7 @@ def render_member_card(template_row, data):
             else:
                 draw.text((x + w / 2, cy), text, font=font, fill=color, anchor="mm")
         except Exception:
-            # fallback بدون anchor
+
             draw.text((x + 6, y), text, font=font, fill=color)
 
     buf = BytesIO()
@@ -8189,7 +7908,7 @@ def render_member_card(template_row, data):
 
 
 def _card_filename_for(member):
-    """اسم ملف بطاقة واضح: كود الطالبة إن وجد، وإلا اسم مطهّر + جزء من المعرف."""
+
     code = str((member or {}).get("student_code", "") or "").strip()
     if code and code.lower() != "nan":
         return f"{code}.png"
@@ -8207,7 +7926,7 @@ def _parse_template_elements(template_row):
 
 
 def _template_image_data_url(template_row):
-    """تحويل صورة القالب إلى Data URL لعرضها داخل مكوّن المصمم."""
+
     img = load_card_template_image(template_row)
     if img is None:
         return ""
@@ -8217,7 +7936,7 @@ def _template_image_data_url(template_row):
 
 
 def _load_card_designer_assets():
-    """قراءة أجزاء مكوّن المصمم من ملف card_designer.html الموجود بجانب هذا الملف."""
+
     import re
     path = os.path.join(os.path.dirname(__file__), "card_designer.html")
     with open(path, encoding="utf-8") as f:
@@ -8236,7 +7955,7 @@ _CARD_DESIGNER_RENDERER = None
 
 
 def _get_card_designer_renderer():
-    """تسجيل مكوّن المصمم مرة واحدة فقط (CCv2 — ملف HTML واحد، بدون أي مجلد مكوّنات)."""
+
     global _CARD_DESIGNER_RENDERER
     if _CARD_DESIGNER_RENDERER is None:
         css_src, html_src, js_src = _load_card_designer_assets()
@@ -8250,7 +7969,7 @@ def _get_card_designer_renderer():
 
 
 def card_designer_component(template_row, elements, selected_key, tpl_key):
-    """مكوّن تحديد أماكن العناصر بالماوس فوق صورة تصميم البطاقة."""
+
     image_url = _template_image_data_url(template_row)
     if not image_url:
         st.error("❌ صورة تصميم البطاقة غير موجودة.")
@@ -8271,7 +7990,7 @@ def card_designer_component(template_row, elements, selected_key, tpl_key):
 
 
 def _resolve_selected_card_template(card_tpls):
-    """إرجاع صف القالب المختار حالياً (من الجلسة أو الافتراضي أو الأول)."""
+
     if card_tpls is None or card_tpls.empty or "template_id" not in card_tpls.columns:
         return None
     ids = card_tpls["template_id"].astype(str).tolist()
@@ -8285,7 +8004,7 @@ def _resolve_selected_card_template(card_tpls):
 
 
 def _sync_designer_selection(tpl_id):
-    """مزامنة اختيار قائمة العناصر (Widget) إلى حالة التطبيق (Single Source of Truth)."""
+
     w_key = f"designer_widget_{tpl_id}"
     s_key = f"designer_selected_{tpl_id}"
     if w_key in st.session_state and st.session_state[w_key] in CARD_ELEMENT_TYPES:
@@ -8293,7 +8012,7 @@ def _sync_designer_selection(tpl_id):
 
 
 def _handle_designer_result(result, tpl_id, elements):
-    """معالجة نتيجة مكوّن المصمم: حفظ المكان أو تحديد العنصر في حالة التطبيق."""
+
     if not isinstance(result, dict):
         return False, None
     action = str(result.get("action", "") or "").strip()
@@ -8324,7 +8043,7 @@ def _handle_designer_result(result, tpl_id, elements):
             "bold": existing.get("bold", False),
         }
         elements[key] = merged
-        # Set only application state — NEVER mutate widget-owned key after widget instantiation
+
         st.session_state[state_key] = key
         return True, key
 
@@ -8336,7 +8055,7 @@ def _handle_designer_result(result, tpl_id, elements):
 
 
 def show_card_templates_page(db):
-    """صفحة 'تجهيز البطاقات' — Card Template Designer (System Admin فقط)."""
+
     user = st.session_state.user
     role = user.get("role", "")
     if role != "System Admin":
@@ -8347,7 +8066,7 @@ def show_card_templates_page(db):
 
     card_tpls = db.get_card_templates()
 
-    # ===== إضافة Template جديد =====
+
     with st.expander("➕ إضافة Template جديد", expanded=card_tpls.empty):
         new_name = st.text_input("اسم القالب*", placeholder="مثال: بطاقة بنات - إعدادي", key="new_tpl_name")
         new_img = st.file_uploader("🖼️ ارفع صورة تصميم البطاقة الجاهزة (PNG / JPG)", type=["png", "jpg", "jpeg"], key="new_tpl_img")
@@ -8386,7 +8105,7 @@ def show_card_templates_page(db):
         st.info("📭 لا توجد قوالب بعد. ابدأ بإضافة Template جديد من الأعلى.")
         return
 
-    # ===== اختيار القالب =====
+
     tpl_names = card_tpls.set_index(card_tpls["template_id"].astype(str))["template_name"].to_dict()
     cur_sel = str(st.session_state.get("selected_card_template_id", "") or "")
     if cur_sel not in tpl_names:
@@ -8404,7 +8123,7 @@ def show_card_templates_page(db):
     tpl_id = str(tpl_row.get("template_id", ""))
     elements = _parse_template_elements(tpl_row)
 
-    # ===== إعدادات القالب =====
+
     with st.expander("⚙️ إعدادات القالب (اسم / صورة / افتراضي / حذف)"):
         c_set1, c_set2 = st.columns(2)
         with c_set1:
@@ -8455,7 +8174,7 @@ def show_card_templates_page(db):
 
     st.markdown("---")
 
-    # ===== تحديد أماكن البيانات بالماوس =====
+
     st.subheader("🎯 تحديد أماكن البيانات بالماوس")
     placed_keys = [k for k in CARD_ELEMENT_TYPES if k in elements]
     status_line = " | ".join([f"{CARD_ELEMENT_TYPES[k]['label']} ✅" for k in placed_keys]) or "لا توجد عناصر محددة بعد"
@@ -8465,11 +8184,11 @@ def show_card_templates_page(db):
     state_key = f"designer_selected_{tpl_id}"
     widget_key = f"designer_widget_{tpl_id}"
 
-    # Single source of truth initialization
+
     if state_key not in st.session_state or st.session_state[state_key] not in el_options:
         st.session_state[state_key] = el_options[0]
 
-    # Pre-sync application state into widget state before widget instantiation
+
     if widget_key not in st.session_state or st.session_state[widget_key] != st.session_state[state_key]:
         st.session_state[widget_key] = st.session_state[state_key]
 
@@ -8502,7 +8221,7 @@ def show_card_templates_page(db):
             elif res_key == "select":
                 st.rerun()
 
-    # خصائص العنصر المحدد (عناصر الصور QR/الصورة لا تحتاج إعدادات خط)
+
     if selected_el in elements:
         spec = elements[selected_el]
         with st.expander(f"⚙️ خصائص العنصر: {CARD_ELEMENT_TYPES[selected_el]['label']}", expanded=True):
@@ -8547,7 +8266,7 @@ def show_card_templates_page(db):
 
     st.markdown("---")
 
-    # ===== معاينة حقيقية ببيانات عضو فعلي =====
+
     st.subheader("👁️ معاينة البطاقة ببيانات حقيقية")
     users_prev = db.get_users()
     students_prev = db.get_students()
@@ -8589,9 +8308,6 @@ def show_card_templates_page(db):
                 st.error(f"❌ فشل إنشاء البطاقة: {e}")
 
 
-# =============================================================================
-# Main App
-# =============================================================================
 def main():
     inject_css()
     init_session()
@@ -8647,7 +8363,7 @@ def main():
             st.markdown("<div class='content-area'>", unsafe_allow_html=True)
             if st.session_state.get("profile_user_id"):
                 profile_id = st.session_state.profile_user_id
-                # Check if this ID exists in Students sheet first
+
                 students_df = db.get_students()
                 if not students_df.empty and "student_id" in students_df.columns:
                     student_match = students_df[students_df["student_id"] == profile_id]
